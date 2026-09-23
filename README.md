@@ -40,13 +40,13 @@ per-game setup.
 ```
 
 Everything after that is inside the GUI: **Capture** the screen, drag a box over
-the dialogue text, **Auto-detect** to snap it to the text, **Settings** to choose
-a backend, paste an API key, pick a model and set the prompt, then **Start
-translating**. No shell commands, no environment variables required.
+the dialogue text, **Settings** to choose a backend, paste an API key, pick a model
+and set the prompt, then **Start translating**. No shell commands, no environment
+variables required.
 
-The picker also shows the translation of the current selection as you adjust it
-(**Translate automatically**, on by default), which is the quickest way to judge a
-model or prompt without launching the panel.
+The picker also shows the translation of the current selection as you adjust the
+region, which is the quickest way to judge a model or prompt without launching the
+panel.
 
 ---
 
@@ -66,8 +66,10 @@ grant (no dialog after the first call). This is fast enough to poll at 2 fps.
 
 ### 2. Tesseract, not PP-OCR
 
-Measured on a real dialogue box (ground truth: `[It has been determined that this
-case merits preservation as a record. ...`):
+Measured on a reference dialogue frame from a commercial game, kept locally and
+not redistributed (ground truth: `[The committee has resolved that this entry
+warrants retention as a standing record. The material below is the file concerning
+today's submission.]`):
 
 | engine | line 1 | line 2 | warm latency |
 |---|---|---|---|
@@ -75,6 +77,10 @@ case merits preservation as a record. ...`):
 | rapidocr-onnxruntime 1.4.4 (PP-OCRv4) | `[` -> `l` | **word spaces lost** | ~410 ms |
 | rapidocr 3.x (PP-OCRv6) | `[` -> `l` | exact | ~600 ms |
 | tesseract on the **raw** screenshot | garbage | garbage | - |
+
+The reference frame and the exact dialogue text behind these numbers are not in
+the repository, so the table is reproduced from the recorded runs rather than
+re-runnable from a checkout.
 
 Preprocessing is not optional. The last row is the whole reason this project
 crops and upscales before OCR: the same engine that is exact on a cropped,
@@ -86,7 +92,7 @@ crops and upscales before OCR: the same engine that is exact on a cropped,
 Given this project's sample line it produced output unrelated to the input:
 
 ```
-in : [It has been determined that this case merits preservation as a record. ...]
+in : [The committee has resolved that this entry warrants retention as a standing record. The material below is the file concerning today's submission.]
 out: わたし が こう い う 理由 は , 日 ごと に すなわち , 十 分 の 一 と し て 語 ら れ た ...
 ```
 
@@ -127,7 +133,7 @@ them has a fallback:
   `lintranslator reread` over the control socket.
 * **The control socket** lives in `$XDG_RUNTIME_DIR` (`control.py`), and the
   launcher that grants the app the *application id* the portal demands is a
-  `.desktop` file (`packaging/`).
+  `.desktop` file, installed by `lintranslator install-desktop`.
 
 There are no `sys.platform` checks anywhere in `lintranslator/` - not as a guard, and not
 as a portability shim. Nothing was written with another OS in mind.
@@ -178,8 +184,8 @@ and is no longer the default.
 The other extras are for things the app does not need to translate a line:
 `.[calibrate]` adds numpy for the region auto-detection helper, `.[x11]` adds
 python-xlib for keeping the panel above other windows under XWayland (without it
-the panel runs and says why it cannot stay on top), `.[rapidocr]` swaps in
-PP-OCR as the OCR engine, and `.[test]` is what the suite needs.
+the panel runs and says why it cannot stay on top), and `.[test]` is what the
+suite needs.
 
 ### What the conversion actually costs
 
@@ -250,7 +256,7 @@ State lives in the XDG directories, not next to the source:
 |---|---|---|
 | `config.json` | `~/.config/lintranslator/config.json` (`$XDG_CONFIG_HOME`) | **0600** |
 | converted weights, tessdata | `~/.local/share/lintranslator/` (`$XDG_DATA_HOME`) | — |
-| the optional translation cache, the control socket | `~/.cache/lintranslator/` (`$XDG_CACHE_HOME`) | — |
+| the optional translation cache, the control socket | `~/.cache/lintranslator/` (`$XDG_CACHE_HOME`); the socket prefers `$XDG_RUNTIME_DIR/lintranslator.sock` | — |
 
 `LINTRANSLATOR_HOME` puts all three under one directory instead, which is what a
 portable install (or a test run) wants.
@@ -271,10 +277,23 @@ tessdata dir     : /home/you/.local/share/lintranslator/tessdata
   eng           : ok
 portal ScreenCast: v5
 portal Screenshot: v2
-region           : fraction (0.175, 0.838, 0.79, 0.082)
-translate backend: local (facebook/nllb-200-distilled-600M, eng_Latn->jpn_Jpan)
+region           : fraction (0.185, 0.793, 0.775, 0.105)
+translate backend: ct2 (eng_Latn->jpn_Jpan)
+  model: /home/you/.local/share/lintranslator/ct2/nllb-600m-int8 (629 MB)
+  ctranslate2: installed
+languages        : eng_Latn -> jpn_Jpan
+PyGObject (GUI)  : installed
 RESULT: ready
 ```
+
+Anything wrong is named rather than implied: a missing tesseract, a model that has
+not been converted, a language pair NLLB cannot score, a missing PyGObject - the
+one dependency pip cannot install, so it is checked by name and the distro
+package is printed - and any config problem, including a key this version does
+not know (`config warning   : ignoring unknown config key(s): ocr.typo_key`) or a
+file that will not parse, in which case the defaults are used and the reason is
+shown. The exit status is 0 only when everything checked out, so `check` is
+usable from a packaging script.
 
 ### Model licences
 
@@ -283,8 +302,9 @@ which permits non-commercial use only. LinTranslator does not bundle or redistri
 weights — `lintranslator convert` downloads them from HuggingFace on your machine — but
 anyone shipping this app with pre-converted weights, or using the local backend
 commercially, is bound by that licence. Settings states the licence next to the
-Local backends, and `NOTICE` in the repository root lists the third-party terms
-in full, along with the permissive alternatives: `facebook/m2m100_418M` is MIT
+Local backends, and `NOTICE` — shipped with the package as well as kept in the
+repository root — lists the third-party terms, along with the permissive
+alternatives: `facebook/m2m100_418M` is MIT
 and `Helsinki-NLP/opus-mt-en-jap` is Apache-2.0, though a different model family
 expects its own language codes, not NLLB's FLORES-200 ones. The hosted backends
 have no local model licence at all. LinTranslator itself is MIT licensed, separate
@@ -383,7 +403,7 @@ shrinks a resizable window back, so it ratcheted: measured, a four-line reply to
 it from 172 px to 312 px and it *stayed* 312 px when the next line was two
 characters long. One long line permanently covered more of the game. Measured
 after, the card is 207 px at the default budget — 3 translation lines and 2
-original lines at `font_scale` 1.2 — and 207 px for every input tried: a
+original lines with `font_scale` raised to 1.2 — and 207 px for every input tried: a
 two-character line, a 900-character one, a settled translation, a long error.
 `probe/panel_layout_check.py` prints the breakdown and fails if the height moves;
 `probe/panel_contact_sheet.py` renders every state to `data/panel_*.png`.
@@ -542,13 +562,17 @@ while the game is focused has to come from the desktop. LinTranslator asks for o
 `org.freedesktop.portal.GlobalShortcuts`, which KDE implements: the compositor
 shows its own binding dialog once and then sends the keypress. That portal refuses
 callers without an *application id*, which a plain terminal launch does not have
-(KDE answers `An app id is required`) — hence the two fallbacks, and hence
-`packaging/lintranslator.desktop`:
+(KDE answers `An app id is required`) — hence the two fallbacks, and hence the
+menu entry:
 
 ```bash
-cp packaging/lintranslator.desktop ~/.local/share/applications/
-cp packaging/lintranslator-gui ~/.local/bin/          # then launch LinTranslator from the menu
+lintranslator install-desktop     # ~/.local/share/applications + ~/.local/bin
 ```
+
+The `.desktop` file and its launcher ship inside the package
+(`lintranslator/data/`), so this works the same from a checkout, a wheel or a
+distro package. Then launch LinTranslator from the application menu rather than a
+terminal — that launch is what carries the application id.
 
 The panel always says which of these is in force: `global hotkey for Re-read:
 Ctrl+Alt+R`, or `no global hotkey — … Run 'lintranslator shortcut' for the setup`.
@@ -652,7 +676,7 @@ the live screen:
 ```
 
 To let the code find the box itself, call the calibrator on a full screenshot
-(the picker's **Auto-detect** button does this):
+(this is a helper for scripting; the picker has no auto-detect button):
 
 ```python
 from PIL import Image
@@ -725,7 +749,7 @@ what the selected backend is actually sent:
 |---|---|---|
 | `ct2`, `local` | the FLORES code, unchanged | `eng_Latn` → `jpn_Jpan` |
 | `openrouter`, `openai`, `chat` | the name, in the prompt | "English" → "Japanese" |
-| `deepl` | DeepL's code (34 languages) | `EN` → `JA` |
+| `deepl` | DeepL's code (33 languages) | `EN` → `JA` |
 | `none` | unused | — |
 
 Two consequences are shown rather than implied:
@@ -860,10 +884,11 @@ To make it permanent, set it in `config.json`:
 
 #### Comparing models
 
-The picker has a **Translate** button and a **Translate while dragging** toggle,
-so you can frame a region and immediately see how the configured backend renders
-it - without running the full panel. Set the backend in `config.json`, reopen the
-picker, and compare.
+The picker has a **Translate** button, and the preview updates as you adjust the
+region, so you can frame a region and immediately see how the configured backend
+renders it - without running the full panel. The backend is changed in **Settings**
+inside the picker, and saving re-translates the current selection, so you can
+compare without reopening anything.
 
 Translations are cached per **backend and model**, so switching models always
 re-runs the new one. Without that, a switched model would appear to produce
@@ -950,7 +975,7 @@ meaningless there (`Yes.` vs `No.` scores 0.67 - it would drop a real change).
 
 **A pause mid-reveal is not the end of a line - and "stable for N seconds" cannot
 tell the difference.** This shipped as a real bug: the panel showed truncated
-dialogue (`...the proverbial poster child of Work`) because the game held the
+dialogue (`...the proverbial poster child of company`) because the game held the
 reveal for longer than `settle_window` and the fragment was released as final.
 
 Two mechanisms fix it, and both are needed:
@@ -962,8 +987,8 @@ Two mechanisms fix it, and both are needed:
 * **Reveal detection** in the settler - when a new read *extends* the held text
   (the held text is a prefix of it, allowing a few characters of noise at the
   junction), that is the same line still being typed, not a new line. Judging it
-  by edit distance alone failed this: `...child of Work` -> `...child of
-  Workshop-sponsored Fixers.` is a 20-character difference, so the finished
+  by edit distance alone failed this: `...child of company` -> `...child of
+  company-sponsored contractors.` is a 23-character addition, so the finished
   sentence looked like a brand-new line and the fragment had already been sent.
 
 `detect.settle_max_wait` (default 8 s) is a hard ceiling so a line the game never
@@ -1007,8 +1032,10 @@ lintranslator/
   panel.py       GTK4 always-on-top translation panel + worker thread
   gui.py         GTK application entry point
   pipeline.py    the capture -> OCR -> translate loop
-  cli.py         check / grab / read / run / region / gui / convert / models
-tests/           381 tests: core, geometry, pipeline, glossary, backends, languages,
+  cli.py         check / grab / read / run / region / gui / convert / models / reread / status /
+                 shortcut / remove / languages / install-desktop
+  data/          the `.desktop` entry and its launcher, installed by `install-desktop`
+tests/           423 tests: core, geometry, pipeline, glossary, backends, languages,
                  OCR languages, paths/permissions
 probe/           spike scripts, raw measurements, per-phase results
 PLAN.md          feasibility study with the full benchmark tables
@@ -1029,7 +1056,7 @@ PLAN.md          feasibility study with the full benchmark tables
 - Verified against the reference screenshot and live static screen content, not
   yet against a long live play session. Expect to tune the region per game.
 - Tested with English source text. Japanese/Korean source OCR is untested, though
-  `--langs eng+jpn` and the RapidOCR path are wired up.
+  `--langs eng+jpn` is wired up.
 - The PipeWire `ScreenCast` backend is implemented in `portal.py` but the frame
   consumer is not wired to the pipeline yet; `portal-screenshot` is the default
   and is fast enough at 2 fps.
@@ -1060,7 +1087,7 @@ uv pip install --python .venv/bin/python -e '.[test]'   # pytest and numpy
 ```
 
 The suite passes on 3.12 through 3.14. On an interpreter with no PyGObject the
-four GTK modules skip rather than fail (`pytest.importorskip`), so a headless or
+three GTK modules skip rather than fail (`pytest.importorskip`), so a headless or
 pip-only environment still runs everything that does not draw a window.
 
 * `tests/test_core.py` - change detection, settling, config, cache, CJK spacing
@@ -1077,6 +1104,8 @@ pip-only environment still runs everything that does not draw a window.
 * `tests/test_control.py` - the control socket: round trip, no GUI, two GUIs
 * `tests/test_hotkey.py` - what the user is told when a hotkey cannot be bound
 * `tests/test_glossary.py` - term matching, cache interaction, line handling
+* `tests/test_local_backends.py` - the `ct2` and `local` translator construction,
+  and tokenizer naming
 * `tests/test_remote_backends.py` - request shaping, key resolution, failures
 * `tests/test_geometry.py` - region arithmetic, prompt templating
 * `tests/test_calibrate.py` - dialogue detection, including the `near` anchoring
@@ -1084,6 +1113,8 @@ pip-only environment still runs everything that does not draw a window.
   check that every code in it is one the real NLLB tokenizer can score
 * `tests/test_paths.py` - the XDG locations and environment handling, the
   0600-at-creation write, and that no part of a failed save survives
+* `tests/test_cleanup.py` - the `remove` command: what it reports, what it refuses
+  to touch, and that nothing is deleted without confirmation
 * `tests/test_ocr.py` - OCR language-name validation (a name becomes a filename,
   so traversal is refused) and the pinned, checksum-verified tessdata download
 * `tests/test_settings_ui.py` - the backend-dependent rows, and the language

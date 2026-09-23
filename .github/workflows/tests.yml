@@ -1,0 +1,73 @@
+name: tests
+
+# The suite is the project's whole quality story, and it is claimed to pass on
+# 3.12 through 3.14. This is what makes that claim checkable rather than
+# remembered.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # The tesseract binary itself, for the tests that shell out to it. The
+      # language data is downloaded at run time by the app, never by the suite.
+      - run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[test]'
+      # No PyGObject here on purpose: the three GTK modules skip
+      # (`pytest.importorskip`), which is exactly how a headless run behaves for
+      # anyone else.
+      - run: python -m pytest tests/ -q
+
+  # A source distribution that cannot run its own test suite is a broken
+  # release, and it fails in the worst place: on a packager's machine. This job
+  # builds the sdist, unpacks it somewhere else and runs the suite from there, so
+  # a file missing from MANIFEST.in is caught here instead.
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: sudo apt-get update && sudo apt-get install -y tesseract-ocr desktop-file-utils
+      - run: python -m pip install --upgrade pip build
+      - run: python -m build --sdist
+      - name: The published sdist must carry a working test suite
+        run: |
+          mkdir -p /tmp/from-sdist
+          tar xzf dist/*.tar.gz -C /tmp/from-sdist
+          cd /tmp/from-sdist/lintranslator-*
+          pip install -e '.[test]'
+          python -m pytest tests/ -q
+      - name: The desktop entry must be valid
+        run: |
+          mkdir -p /tmp/from-sdist
+          tar xzf dist/*.tar.gz -C /tmp/from-sdist
+          desktop-file-validate \
+            /tmp/from-sdist/lintranslator-*/lintranslator/data/lintranslator.desktop
+      - name: The wheel must ship the launcher, the desktop entry and NOTICE
+        run: |
+          python -m build --wheel
+          python -c "
+          import glob, zipfile
+          names = zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist()
+          missing = [w for w in ('lintranslator/data/lintranslator.desktop',
+                                 'lintranslator/data/lintranslator-gui')
+                     if w not in names]
+          if not any(n.endswith('licenses/NOTICE') for n in names):
+              missing.append('licenses/NOTICE')
+          assert not missing, missing
+          print('wheel contents ok')
+          "
