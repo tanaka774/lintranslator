@@ -639,10 +639,12 @@ class OpenRouterTranslator(ChatCompletionsTranslator):
         return "OPENROUTER_API_KEY"
 
     def __init__(self, api_key: str | None, model: str | None = None, **kw):
-        # OpenRouter attributes traffic via these headers; they are optional but
-        # make the app identifiable in the dashboard.
+        # `X-Title` names the app in OpenRouter's usage dashboard. The optional
+        # `HTTP-Referer` is deliberately not sent: it is an attribution header,
+        # and pointing it at a URL this project does not own would credit
+        # someone else's page for the traffic. Add it here once the project has
+        # a home, or per user through `extra_headers`.
         headers = {
-            "HTTP-Referer": "https://github.com/lintranslator",
             "X-Title": "lintranslator",
             **dict(kw.pop("extra_headers", None) or {}),
         }
@@ -671,19 +673,6 @@ class OpenRouterTranslator(ChatCompletionsTranslator):
 # --------------------------------------------------------------------------- #
 # Factory + cached facade
 # --------------------------------------------------------------------------- #
-def _legacy_env_name(name: str) -> str | None:
-    """The same variable under the app's old name, if it had one.
-
-    `LINTRANSLATOR_API_KEY` was `TLKUN_API_KEY` before the rename. A key exported
-    in a shell profile outlives the rename, and silently finding no key turns into
-    a confusing "no API key" error rather than a missing one.
-    """
-    if "LINTRANSLATOR" not in name:
-        return None
-    old = name.replace("LINTRANSLATOR", "TLKUN")
-    return old if old != name else None
-
-
 def resolve_api_key(cfg, *env_names: str) -> str | None:
     """Find an API key: config first, then environment.
 
@@ -693,14 +682,9 @@ def resolve_api_key(cfg, *env_names: str) -> str | None:
     if getattr(cfg, "api_key", None):
         return str(cfg.api_key)
     for name in env_names:
-        candidates = [name]
-        legacy = _legacy_env_name(name)
-        if legacy and legacy not in env_names:
-            candidates.append(legacy)
-        for candidate in candidates:
-            value = os.environ.get(candidate)
-            if value:
-                return value
+        value = os.environ.get(name)
+        if value:
+            return value
     return None
 
 

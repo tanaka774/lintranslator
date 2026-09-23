@@ -163,9 +163,9 @@ class PipelineThread:
         self.ready.set()
         self.outbox.put(UiMessage("status", text="watching the region"))
         # Anything the config had to say when it was loaded - an unknown key, a
-        # migration out of the source tree, permissions tightened. They were
-        # collected but never shown anywhere, which made them the same as not
-        # being detected. Posted after the status line so the message survives.
+        # file whose permissions had to be tightened. They were collected but
+        # never shown anywhere, which made them the same as not being detected.
+        # Posted after the status line so the message survives.
         for warning in list(getattr(self.config, "warnings", None) or []):
             self.outbox.put(UiMessage("note", text=warning))
 

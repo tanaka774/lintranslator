@@ -222,20 +222,7 @@ class Config:
     # -- persistence ------------------------------------------------------- #
     @classmethod
     def load(cls, path: Path | str | None = None) -> "Config":
-        migration = None
-        if path is None:
-            # First run after the move out of the source tree: copy the old file
-            # into place before reading it, so what gets used is the copy with
-            # the repointed paths and the private mode. When the copy cannot be
-            # written the old file is still perfectly readable, so fall back to
-            # it rather than refusing to start - `config_search_path` finds it.
-            migration = paths.migrate_legacy_config()
-            if migration and migration.succeeded:
-                p = paths.DEFAULT_CONFIG_PATH
-            else:
-                p = paths.config_search_path()
-        else:
-            p = Path(path)
+        p = Path(path) if path else paths.DEFAULT_CONFIG_PATH
 
         if not p.exists():
             cfg = cls()
@@ -252,12 +239,10 @@ class Config:
                     "ignoring unknown config key(s): " + ", ".join(sorted(unknown))
                 )
 
-        if migration:
-            cfg.warnings.append(paths.migration_warning(migration))
-        # A config written before this module existed is 0644 and holds a key.
-        # Tightening on read is what reaches those files; the next save would
-        # only fix the ones that get saved.
-        elif path is None and p == paths.DEFAULT_CONFIG_PATH and p.exists():
+        # A config written before the mode was set at creation is 0644 and holds
+        # a key. Tightening on read is what reaches those files; the next save
+        # would only fix the ones that get saved.
+        if path is None and p.exists():
             if paths.tighten(p):
                 cfg.warnings.append(f"config permissions tightened to 0600 ({p})")
         return cfg

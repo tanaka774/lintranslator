@@ -278,30 +278,11 @@ def test_no_key_anywhere_returns_none(monkeypatch):
     assert resolve_api_key(TranslateConfig(api_key=None), "OPENROUTER_API_KEY") is None
 
 
-def test_the_pre_rename_key_variable_still_works(monkeypatch):
-    """`TLKUN_API_KEY` was exported in a profile before the rename.
-
-    A key that quietly stops being found does not fail loudly - it reports "no key
-    configured", which sends the user looking in the wrong place.
-    """
-    monkeypatch.delenv("LINTRANSLATOR_API_KEY", raising=False)
-    monkeypatch.setenv("TLKUN_API_KEY", "from-the-old-name")
-    assert resolve_api_key(TranslateConfig(api_key=None), "LINTRANSLATOR_API_KEY") == (
-        "from-the-old-name"
-    )
-
-
-def test_the_new_key_variable_wins_over_the_old(monkeypatch):
-    monkeypatch.setenv("TLKUN_API_KEY", "old")
-    monkeypatch.setenv("LINTRANSLATOR_API_KEY", "new")
-    assert resolve_api_key(TranslateConfig(api_key=None), "LINTRANSLATOR_API_KEY") == "new"
-
-
-def test_a_backend_with_its_own_variable_does_not_read_the_legacy_one(monkeypatch):
-    """`OPENROUTER_API_KEY` has no old form, so nothing is invented for it."""
+def test_only_the_variables_it_is_given_are_consulted(monkeypatch):
+    """A variable for another backend's provider must not be picked up as a key."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("LINTRANSLATOR_API_KEY", raising=False)
-    monkeypatch.setenv("TLKUN_API_KEY", "not-this-backends-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "not-this-backends-key")
     assert resolve_api_key(TranslateConfig(api_key=None), "OPENROUTER_API_KEY") is None
 
 

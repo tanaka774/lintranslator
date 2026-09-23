@@ -198,39 +198,11 @@ State lives in the XDG directories, not next to the source:
 | the optional translation cache, the control socket | `~/.cache/lintranslator/` (`$XDG_CACHE_HOME`) | — |
 
 `LINTRANSLATOR_HOME` puts all three under one directory instead, which is what a
-portable install (or a test run) wants. The pre-rename `TLKUN_HOME` is still read
-when it is set and the new one is not.
+portable install (or a test run) wants.
 
-Two consequences worth knowing. The config is written **0600 at creation**, not
-chmodded afterwards, because it can hold an API key in plain text; a config left
-in a checkout from an older version is tightened the first time it is read. And
-an install that still has its state beside the source keeps working: the old
-locations are read, and the first run copies `config.json` into place — repointing
-its `ct2_model_dir` and `cache_path` — and says so in the panel. The old file is
-never deleted, so if the message says one is still in your checkout, it is right,
-and it is the copy that still holds your key.
-
-### Upgrading from tl-kun
-
-LinTranslator was called **tl-kun** until the rename. Nothing is lost, and nothing
-is moved twice:
-
-* A config in `~/.config/tl-kun/config.json` is copied to
-  `~/.config/lintranslator/config.json` on the first run, with its API key and
-  settings intact, and the panel says so. The old file is left alone — it is yours
-  to delete once the new one is working, and it still holds your key until you do.
-* The converted weights in `~/.local/share/tl-kun/ct2/` are **used where they
-  are**, not copied: moving 600 MB to rename a directory is a lot of I/O for no
-  benefit, and a move that fails part way loses the one artefact here that is
-  expensive to rebuild. They are re-converted only if you ask.
-* `TLKUN_API_KEY` and `TLKUN_HOME` are still honoured, so a shell profile written
-  before the rename keeps working. `LINTRANSLATOR_API_KEY` /
-  `LINTRANSLATOR_HOME` win when both are set.
-* The application id and the window title both changed with the rename
-  (`dev.tlkun.translator` → `dev.lintranslator.translator`, and the title
-  `tl-kun` → `LinTranslator`). That has two one-time effects: the compositor asks
-  to grant screen capture again, and a KWin window rule written against the old
-  title needs updating — see "Always on top".
+The config is written **0600 at creation**, not chmodded afterwards, because it
+can hold an API key in plain text; an existing config file is tightened to 0600
+when it is read.
 
 Verify everything:
 
@@ -260,7 +232,8 @@ Local backends, and `NOTICE` in the repository root lists the third-party terms
 in full, along with the permissive alternatives: `facebook/m2m100_418M` is MIT
 and `Helsinki-NLP/opus-mt-en-jap` is Apache-2.0, though a different model family
 expects its own language codes, not NLLB's FLORES-200 ones. The hosted backends
-have no local model licence at all.
+have no local model licence at all. LinTranslator itself is MIT licensed, separate
+from every model and data licence above — see `LICENSE`.
 
 ---
 
@@ -790,9 +763,8 @@ To make it permanent, set it in `config.json`:
 * **`model` is required** and has no default. Model ids change often, and a stale
   default would fail confusingly rather than obviously.
 * **`api_key: null` means "read the environment"**, checked in this order:
-  `OPENROUTER_API_KEY`, then `LINTRANSLATOR_API_KEY` (or its pre-rename spelling,
-  `TLKUN_API_KEY`). A key saved through the GUI wins
-  over the environment, and the Settings dialog says which one is in use.
+  `OPENROUTER_API_KEY`, then `LINTRANSLATOR_API_KEY`. A key saved through the GUI
+  wins over the environment, and the Settings dialog says which one is in use.
   `lintranslator check` masks the key when reporting it.
 * An error body a provider returns is collapsed to a single line, capped at 200
   characters, and has anything credential-shaped — including the configured key —
@@ -937,7 +909,7 @@ wasted seconds per line and corrupted the output.
 
 ```
 lintranslator/
-  paths.py       XDG directories, private writes, migration out of the source tree
+  paths.py       XDG directories, private/0600 write helpers
   config.py      config model, JSON load/save, unknown-key warnings
   portal.py      xdg-desktop-portal D-Bus clients (Screenshot, ScreenCast)
   capture.py     full-screen grab -> crop to region
@@ -960,8 +932,8 @@ lintranslator/
   gui.py         GTK application entry point
   pipeline.py    the capture -> OCR -> translate loop
   cli.py         check / grab / read / run / region / gui / convert / models
-tests/           389 tests: core, geometry, pipeline, glossary, backends, languages,
-                 OCR languages, paths/migration
+tests/           381 tests: core, geometry, pipeline, glossary, backends, languages,
+                 OCR languages, paths/permissions
 probe/           spike scripts, raw measurements, per-phase results
 PLAN.md          feasibility study with the full benchmark tables
 ```
@@ -1028,9 +1000,8 @@ PLAN.md          feasibility study with the full benchmark tables
 * `tests/test_calibrate.py` - dialogue detection, including the `near` anchoring
 * `tests/test_languages.py` - the language table, per-backend codes, and the
   check that every code in it is one the real NLLB tokenizer can score
-* `tests/test_paths.py` - the XDG locations, the 0600-at-creation write (including
-  that no part of a failed save survives), and the migration: the copy, the
-  repointed state paths, and that the original file is never deleted
+* `tests/test_paths.py` - the XDG locations and environment handling, the
+  0600-at-creation write, and that no part of a failed save survives
 * `tests/test_ocr.py` - OCR language-name validation (a name becomes a filename,
   so traversal is refused) and the pinned, checksum-verified tessdata download
 * `tests/test_settings_ui.py` - the backend-dependent rows, and the language

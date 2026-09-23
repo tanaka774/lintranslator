@@ -1126,8 +1126,7 @@ class SettingsDialog(Gtk.Window):
             # of claiming one is needed or that none ever is.
             typed = self.key_entry.get_text().strip()
             # Through `resolve_api_key` rather than `os.environ` directly, so the
-            # pre-rename `TLKUN_API_KEY` is seen here exactly as the translator
-            # sees it - the label must not disagree with what will be used.
+            # label cannot disagree with what the translator will actually use.
             from .translate import resolve_api_key
 
             env = resolve_api_key(None, "LINTRANSLATOR_API_KEY")

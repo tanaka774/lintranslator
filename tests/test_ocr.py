@@ -72,42 +72,6 @@ def test_find_tessdata_refuses_a_bad_name(tmp_path):
         find_tessdata(["../evil"], str(tmp_path))
 
 
-def test_language_data_left_under_the_old_name_is_still_found(monkeypatch, tmp_path):
-    """The pre-rename XDG data dir is read, not ignored.
-
-    The weights already work this way (`paths.default_ct2_dir`), and the same
-    argument applies here: re-downloading the language data because the app was
-    renamed is wasted work, and the copy on disk is already checksum-verified.
-    """
-    from lintranslator import paths
-
-    legacy = tmp_path / "old-data" / "tessdata"
-    legacy.mkdir(parents=True)
-    (legacy / "eng.traineddata").write_bytes(b"x" * 2048)
-    monkeypatch.setattr(paths, "LEGACY_XDG_DATA_DIR", tmp_path / "old-data")
-    monkeypatch.setattr(
-        "lintranslator.ocr.urllib.request.urlopen",
-        lambda *a, **kw: pytest.fail("should not download what is already on disk"),
-    )
-
-    assert find_tessdata(["eng"]) == legacy
-
-
-def test_a_new_install_still_prefers_its_own_data_dir(monkeypatch, tmp_path):
-    """The legacy directory is a fallback, not a new home."""
-    from lintranslator import paths
-
-    legacy = tmp_path / "old-data" / "tessdata"
-    legacy.mkdir(parents=True)
-    (legacy / "eng.traineddata").write_bytes(b"old" * 512)
-    current = paths.DATA_DIR / "tessdata"
-    current.mkdir(parents=True)
-    (current / "eng.traineddata").write_bytes(b"new" * 512)
-    monkeypatch.setattr(paths, "LEGACY_XDG_DATA_DIR", tmp_path / "old-data")
-
-    assert find_tessdata(["eng"]) == current
-
-
 # --------------------------------------------------------------------------- #
 # Downloading
 # --------------------------------------------------------------------------- #

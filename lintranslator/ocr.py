@@ -345,13 +345,6 @@ def find_tessdata(
     if preferred:
         candidates.append(Path(preferred))
     candidates.append(paths.DATA_DIR / "tessdata")
-    # Read, never written, wherever an older install left the language data:
-    # beside the source (the original layout) or under the pre-rename XDG
-    # directory. Re-downloading 6 MB of eng+jpn because a path or a name moved
-    # would be silly, and the weights already behave this way - see
-    # `paths.default_ct2_dir`.
-    candidates.append(paths.LEGACY_DATA_DIR / "tessdata")
-    candidates.append(paths.LEGACY_XDG_DATA_DIR / "tessdata")
     candidates.extend(Path(p) for p in SYSTEM_TESSDATA_CANDIDATES)
 
     for path in candidates:

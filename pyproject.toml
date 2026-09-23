@@ -2,6 +2,34 @@
 name = "lintranslator"
 version = "0.1.0"
 description = "Screen translator for Linux: watches a screen region, reads it with OCR and translates it (Wayland/KDE first)"
+readme = "README.md"
+# The app is MIT. The models it downloads are not: NLLB is CC-BY-NC-4.0
+# (non-commercial). See NOTICE.
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "chiba" }]
+keywords = [
+    "translation",
+    "ocr",
+    "tesseract",
+    "screen-capture",
+    "wayland",
+    "kde",
+    "games",
+    "overlay",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: GTK",
+    "Environment :: X11 Applications :: KDE",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: Japanese",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment",
+    "Topic :: Text Processing :: Linguistic",
+]
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "pillow>=10.0",
@@ -34,7 +62,8 @@ rapidocr = [
 lintranslator = "lintranslator.cli:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+# >=77 for PEP 639: `license = "MIT"` as an SPDX expression and `license-files`.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]

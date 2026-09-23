@@ -1,9 +1,8 @@
 LinTranslator — third-party notices and model licences
 ===============================================
 
-LinTranslator itself has no licence file yet. Choose one (MIT / Apache-2.0 / GPL-3.0)
-before publishing; this file covers everything LinTranslator uses, downloads or is
-built around.
+LinTranslator itself is MIT licensed (see LICENSE). This file covers everything
+it uses, downloads or is built around, whose terms are not all the same.
 
 The short version, because it is the one that can bite a user:
 
