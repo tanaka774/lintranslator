@@ -158,6 +158,9 @@ class Pipeline:
             tessdata_dir=config.ocr.tessdata_dir,
             min_confidence=config.ocr.min_confidence,
             allow_unverified_tessdata=config.ocr.allow_unverified_tessdata,
+            # A first run fetches language data during warmup; the card has to
+            # say so rather than appear to hang on "starting…".
+            on_progress=self._note,
         )
         self.detector = ChangeDetector(
             min_changed_fraction=config.detect.min_changed_fraction,
@@ -200,6 +203,12 @@ class Pipeline:
     # -- lifecycle --------------------------------------------------------- #
     def warmup(self) -> None:
         """Validate OCR data and load the translation model before the loop."""
+        # Both of these can touch the network: the first run fetches language
+        # data here (and, for a local backend, the tokenizer). It runs on the
+        # caller's thread - the panel's worker, not its main loop - and says so
+        # through the same note channel the rest of the loop uses, because a
+        # card that sits on "starting…" with no explanation is indistinguishable
+        # from one that has hung.
         self.ocr.ensure_ready()
         self.translator.warmup()
 

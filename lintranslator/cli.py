@@ -11,6 +11,7 @@
     lintranslator status                  what the running GUI is doing
     lintranslator shortcut                how to bind a global Re-read hotkey
     lintranslator convert                 build the int8 model (629 MB out, ~2.5 GB down)
+    lintranslator remove                  what this app has downloaded, and how to free it
     lintranslator models                  list OpenRouter models for your key
     lintranslator languages [filter]      list the language codes NLLB can translate
 """
@@ -52,6 +53,16 @@ def _load(args) -> Config:
     return cfg
 
 
+def _report_fetch(message: str) -> None:
+    """Say what is being downloaded, on stderr.
+
+    A first run fetches language data; it used to do that in silence, so the
+    command simply took longer. stderr rather than stdout because `run --json`
+    writes machine-readable events to stdout.
+    """
+    print(f"  {message}", file=sys.stderr, flush=True)
+
+
 # --------------------------------------------------------------------------- #
 def cmd_check(args) -> int:
     from .ocr import TesseractOcr, find_tessdata, tesseract_version
@@ -72,6 +83,7 @@ def cmd_check(args) -> int:
         langs=cfg.ocr.langs,
         tessdata_dir=cfg.ocr.tessdata_dir,
         allow_unverified_tessdata=cfg.ocr.allow_unverified_tessdata,
+        on_progress=_report_fetch,
     )
     try:
         tessdata = engine.ensure_ready()
@@ -243,6 +255,7 @@ def cmd_read(args) -> int:
         tessdata_dir=cfg.ocr.tessdata_dir,
         min_confidence=cfg.ocr.min_confidence,
         allow_unverified_tessdata=cfg.ocr.allow_unverified_tessdata,
+        on_progress=_report_fetch,
     )
     with ScreenGrabber(cfg.capture.region) as grabber:
         for i in range(args.repeat):
@@ -321,7 +334,7 @@ def cmd_run(args) -> int:
     def on_error(exc: Exception) -> None:
         print(f"! {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
 
-    pipe = Pipeline(cfg, on_event=on_event)
+    pipe = Pipeline(cfg, on_event=on_event, on_note=_report_fetch)
     pipe.on_error = on_error  # type: ignore[attr-defined]
 
     print(f"loading backend '{cfg.translate.backend}' ...", file=sys.stderr, flush=True)
@@ -495,6 +508,116 @@ def cmd_convert(args) -> int:
     return 0
 
 
+def cmd_remove(args) -> int:
+    """Report what the app has on disk, or delete a named piece of it.
+
+    With no target this changes nothing: it prints the paths, their sizes and
+    what each one costs to get back. That is the more useful half - the app
+    downloads 2.5 GB that nothing ever cleans up, and until now the only way to
+    find that out was to go looking in `~/.cache`.
+    """
+    from . import cleanup
+
+    cfg = _load(args)
+    found = cleanup.targets(cfg)
+
+    if args.target is None:
+        print("what lintranslator has downloaded:")
+        print("-" * 60)
+        total = 0
+        for target in found:
+            size = target.size
+            total += size
+            marker = "" if size else "  (absent)"
+            print(f"{target.name:<11} {cleanup.format_size(size):>9}  {target.path}{marker}")
+            print(f"            {target.detail}")
+            if target.cost:
+                print(f"            removing it costs {target.cost}")
+            if target.note:
+                print(f"            note: {target.note}")
+        print("-" * 60)
+        print(f"{'total':<11} {cleanup.format_size(total):>9}")
+        # The cache this app shares with everything else the user runs. Saying so
+        # is the difference between "remove freed 2.5 GB" and "remove deleted a
+        # directory full of my other models".
+        others = cleanup.others_in_hf_cache(next(t for t in found if t.name == "checkpoint"))
+        if others:
+            other_total = sum(size for _path, size in others)
+            print(
+                f"\n(not ours, not touched: {len(others)} other model(s) in "
+                f"{cleanup.hf_cache_root()} take {cleanup.format_size(other_total)})"
+            )
+        print()
+        print("nothing was removed. to free the space:")
+        print("  lintranslator remove checkpoint   # the 2.5 GB download, safe to drop")
+        print("  lintranslator remove model        # the converted weights (asks first)")
+        print("  lintranslator remove tessdata     # language data, re-fetched on demand")
+        if any(t.name == "cache" for t in found):
+            print("  lintranslator remove cache        # the screen-text transcript")
+        print("  add --yes to skip the confirmation")
+        return 0
+
+    if args.target == "all":
+        chosen = [t for t in found if t.exists]
+    else:
+        chosen = [t for t in found if t.name == args.target and t.exists]
+
+    if not chosen:
+        print(f"nothing to remove ({args.target}: not found)")
+        return 0
+
+    # Never delete outside the app's own directories: the config can point
+    # `ct2_model_dir` or `cache_path` at anything, and a path the user chose
+    # themselves is not this command's to remove.
+    for target in chosen:
+        why = cleanup.refusal(target.path)
+        if why:
+            print(f"refusing to remove {target.name}: {why}", file=sys.stderr)
+            return 1
+
+    total = sum(t.size for t in chosen)
+    _warn_if_a_gui_is_running(chosen)
+
+    if not args.yes:
+        for target in chosen:
+            print(f"  {target.name:<11} {cleanup.format_size(target.size):>9}  {target.path}")
+        if not sys.stdin.isatty():
+            print(
+                f"refusing to delete {cleanup.format_size(total)} without --yes "
+                "(no terminal to ask on)",
+                file=sys.stderr,
+            )
+            return 1
+        answer = input(f"remove {len(chosen)} item(s), {cleanup.format_size(total)}? [y/N] ")
+        if answer.strip().lower() not in ("y", "yes"):
+            print("nothing removed")
+            return 0
+
+    freed = 0
+    for target in chosen:
+        freed += cleanup.remove(target)
+        print(f"removed {target.name}: {cleanup.format_size(target.size)} ({target.path})")
+    print(f"freed {cleanup.format_size(freed)}")
+    return 0
+
+
+def _warn_if_a_gui_is_running(chosen) -> None:
+    """Say so when a running GUI is about to lose the weights under it."""
+    if not any(t.name in ("model", "checkpoint") for t in chosen):
+        return
+    from .control import send
+
+    try:
+        send("status", timeout=1.0)
+    except Exception:  # noqa: BLE001 - no GUI is the normal case
+        return
+    print(
+        "note: a GUI is running. Deleting the weights does not disturb it, but "
+        "its next Start or re-read will fail until they are converted again.",
+        file=sys.stderr,
+    )
+
+
 def cmd_region(args) -> int:
     cfg = _load(args)
     path = cfg.save(args.config)
@@ -535,6 +658,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     def add_common(sp):
+        # `--config` is defined on the top-level parser, so argparse only accepts
+        # it *before* the subcommand - `lintranslator check --config x` failed
+        # with a bare "unrecognized arguments". Repeating it here accepts both
+        # orders. SUPPRESS matters: with an ordinary default, the subparser would
+        # overwrite the value parsed before it with None.
+        sp.add_argument("--config", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
         sp.add_argument("--region", help="x,y,w,h (fractions if all <= 1.0)")
         sp.add_argument("--fps", type=float, help="polls per second")
         sp.add_argument(
@@ -640,6 +769,27 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--filter", help="only show ids containing this substring")
     sp.add_argument("--free", action="store_true", help="only show :free models")
     sp.set_defaults(func=cmd_models)
+
+    sp = sub.add_parser(
+        "remove",
+        help="show what has been downloaded, or delete part of it",
+        description=(
+            "With no target: report the fp32 checkpoint, the converted weights, "
+            "the language data and the optional cache, with their sizes, and "
+            "change nothing. Naming a target deletes it."
+        ),
+    )
+    sp.add_argument(
+        "target",
+        nargs="?",
+        choices=["checkpoint", "model", "tessdata", "cache", "all"],
+        help="what to remove; omit it for a report",
+    )
+    sp.add_argument(
+        "--yes", action="store_true", help="do not ask before deleting"
+    )
+    add_common(sp)
+    sp.set_defaults(func=cmd_remove)
 
     sp = sub.add_parser("convert", help="build the int8 CTranslate2 model")
     sp.add_argument("--model", default="facebook/nllb-200-distilled-600M")

@@ -200,16 +200,24 @@ afterwards.
 **Nothing deletes the checkpoint.** After the conversion only the tokenizer is
 still read — the `ct2` backend loads it once per run — so the 2.5 GB of fp32
 weights are dead weight, and re-converting a second model adds another 2.5 GB
-next to them:
+next to them. `remove` shows what is there and takes it back:
 
 ```bash
-rm -rf ~/.cache/huggingface/hub/models--facebook--nllb-200-distilled-600M
+lintranslator remove                # what is on disk, and what each piece costs to get back
+lintranslator remove checkpoint     # the 2.5 GB, safe once convert has finished
+lintranslator remove model          # the converted weights (asks first)
 ```
 
-That is safe once `lintranslator convert` has finished (`huggingface-cli
-delete-cache` does the same thing with a menu). It costs a 22 MB re-download of
-the tokenizer the next time the model is loaded, which is the whole of what the
-`ct2` path fetches.
+The report names the exact paths, so nothing is deleted blindly, and it says how
+much of the HuggingFace cache belongs to *other* projects — the app shares that
+directory with whatever else you run, and only ever removes its own repository
+inside it. It also flags a config that points `ct2_model_dir` somewhere the
+weights are not, and says where they actually are.
+
+`remove checkpoint` is the same thing as `huggingface-cli delete-cache`, without
+the menu. It costs a
+22 MB re-download of the tokenizer the next time the model is loaded, which is
+the whole of what the `ct2` path fetches.
 
 If you ever find a HuggingFace cache twice the size of one checkpoint, it is two
 *revisions* of the same model rather than two formats: this one changed its
@@ -219,7 +227,10 @@ cache is what records the lookup that decides it — transformers asks for
 safetensors, is told 404 for the current revision, and falls back to the `.bin`.
 
 `eng.traineddata` / `jpn.traineddata` are downloaded on first use, so no root is
-needed. The fetch is pinned to a `tessdata_fast`
+needed — and the first run says so rather than going quiet: the panel's status
+row and the CLI both print `downloading eng.traineddata (4.1 MB) -> …` while it
+happens, and the picker does its preparation on a background thread so a slow
+link cannot freeze the window it is drawing in. The fetch is pinned to a `tessdata_fast`
 revision and the file is checked against a SHA-256 before it is installed — a
 language file is a binary that tesseract parses. The pinned set is eng, jpn, kor,
 chi_sim, chi_tra, rus, deu, fra, spa, por, ita, pol, tur, vie, tha, ara; a
@@ -294,6 +305,10 @@ from every model and data licence above — see `LICENSE`.
 .venv/bin/python -m lintranslator reread              # read the box again, now (bind a hotkey to this)
 .venv/bin/python -m lintranslator status              # what the running GUI is doing
 .venv/bin/python -m lintranslator shortcut            # how to set up a global hotkey
+
+# --- housekeeping ---
+.venv/bin/python -m lintranslator remove             # what has been downloaded, and its size
+.venv/bin/python -m lintranslator remove checkpoint  # free the 2.5 GB the conversion cached
 
 # --- headless ---
 # capture the region once, to check you framed the dialogue box

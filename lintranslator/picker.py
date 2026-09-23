@@ -87,7 +87,16 @@ class RegionPicker(Gtk.ApplicationWindow):
             tessdata_dir=config.ocr.tessdata_dir,
             min_confidence=config.ocr.min_confidence,
             allow_unverified_tessdata=config.ocr.allow_unverified_tessdata,
+            on_progress=self._ocr_progress,
         )
+        # The first OCR may have to fetch language data. Doing that here, on the
+        # main loop, froze the whole window - the picker is the one place that
+        # reads the screen *on* the main loop (the panel's pipeline has its own
+        # thread), so its preparation is moved off it. Until this is set, the
+        # preview says what it is waiting for instead of calling into tesseract.
+        self._ocr_ready = threading.Event()
+        self._ocr_error: Exception | None = None
+        threading.Thread(target=self._prepare_ocr, name="lintranslator-ocr-setup", daemon=True).start()
 
         # Selection in *screen* pixels; mapped to widget space for drawing.
         self.sel: tuple[int, int, int, int] | None = None
@@ -719,6 +728,51 @@ class RegionPicker(Gtk.ApplicationWindow):
             image.width * 3,
         )
 
+    # -- OCR preparation ---------------------------------------------------- #
+    def _ocr_progress(self, message: str) -> None:
+        """Show what the background preparation is doing.
+
+        Called from the setup thread, so the label is touched through the main
+        loop rather than from that thread.
+        """
+        GLib.idle_add(self.status_label.set_text, message)
+
+    def _prepare_ocr(self) -> None:
+        """Fetch and validate the language data before the first read needs it.
+
+        Off the main loop on purpose: `ensure_ready` can spend seconds on the
+        network the first time, and this window is the one that reads the screen
+        on the main loop - a picker frozen mid-drag with no explanation is worse
+        than one that says what it is waiting for.
+        """
+        try:
+            self.ocr.ensure_ready()
+        except Exception as exc:  # noqa: BLE001 - surfaced through the status row
+            self._ocr_error = exc
+            GLib.idle_add(self.status_label.set_text, f"OCR unavailable: {exc}")
+        finally:
+            self._ocr_ready.set()
+            GLib.idle_add(self._repreview_if_selected)
+
+    def _repreview_if_selected(self) -> bool:
+        """Run the preview that was skipped while preparation was in flight."""
+        if self.sel is not None and self.screen_image is not None:
+            self._schedule_preview()
+        return False
+
+    def _ocr_blocked_reason(self) -> str | None:
+        """Why OCR cannot run yet, or None when it can.
+
+        A failure is reported rather than retried: `ensure_ready` would raise
+        again on the main loop, and a network failure can take a minute to say
+        so.
+        """
+        if self._ocr_error is not None:
+            return f"OCR unavailable: {self._ocr_error}"
+        if not self._ocr_ready.is_set():
+            return "preparing OCR language data…"
+        return None
+
     # -- preview ----------------------------------------------------------- #
     def _schedule_preview(self) -> None:
         self._preview_token += 1
@@ -761,6 +815,12 @@ class RegionPicker(Gtk.ApplicationWindow):
             self.preview.set_paintable(self._to_texture(shown))
         except Exception as exc:  # noqa: BLE001
             self.status_label.set_text(f"preview failed: {exc}")
+
+        blocked = self._ocr_blocked_reason()
+        if blocked:
+            self.ocr_label.set_text(blocked)
+            self.conf_label.set_text("")
+            return
 
         try:
             result = self.ocr.read(crop)
@@ -1164,12 +1224,12 @@ class RegionPicker(Gtk.ApplicationWindow):
         if self.sel is None or self.screen_image is None:
             self.status_label.set_text("capture the screen and drag a rectangle first")
             return
-        if self.ocr is not None:
-            try:
-                self.ocr.ensure_ready()
-            except Exception as exc:  # noqa: BLE001
-                self.status_label.set_text(f"cannot use this region yet: {exc}")
-                return
+        if self.ocr is not None and self._ocr_error is not None:
+            # A known-broken OCR is worth refusing the save for, but waiting for
+            # one that is merely still preparing is not: the region does not
+            # depend on it, and this used to block the window until it finished.
+            self.status_label.set_text(f"cannot use this region yet: {self._ocr_error}")
+            return
 
         x, y, w, h = self.sel
         screen_w, screen_h = self.screen_size

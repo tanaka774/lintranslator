@@ -19,6 +19,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from PIL import Image, ImageOps
 
@@ -271,7 +272,11 @@ def parse_langs(langs: str) -> list[str]:
 
 
 def download_tessdata(
-    langs: list[str], dest: Path | None = None, *, allow_unverified: bool = False
+    langs: list[str],
+    dest: Path | None = None,
+    *,
+    allow_unverified: bool = False,
+    on_progress: Callable[[str], None] | None = None,
 ) -> Path:
     """Fetch `tessdata_fast` language files into the app data dir (no root).
 
@@ -279,6 +284,12 @@ def download_tessdata(
     written. A language with no pinned digest is only downloaded when
     `allow_unverified` is set, because the alternative - fetching whatever the
     URL serves today and handing it to tesseract - is the thing this avoids.
+
+    `on_progress` is called once per file, before its bytes are read, with a line
+    fit for a status bar. It exists because this is the app's one automatic
+    download: it happens inside whatever ran first - the panel's warmup, the
+    picker's preview, `check` - and on a slow link that was a window that simply
+    stopped responding, with nothing saying why.
     """
     dest = dest or (paths.DATA_DIR / "tessdata")
     dest.mkdir(parents=True, exist_ok=True)
@@ -305,6 +316,12 @@ def download_tessdata(
         url = TESSDATA_URL.format(lang=lang)
         try:
             with urllib.request.urlopen(url, timeout=60) as resp:  # noqa: S310
+                if on_progress is not None:
+                    # The size comes from the response headers, so the message
+                    # costs no extra request and is exact rather than a guess.
+                    length = resp.headers.get("Content-Length")
+                    size = f" ({int(length) / 1e6:.1f} MB)" if length else ""
+                    on_progress(f"downloading {lang}.traineddata{size} -> {dest}")
                 payload = resp.read()
         except (urllib.error.URLError, TimeoutError) as exc:
             raise OcrError(
@@ -331,7 +348,11 @@ def download_tessdata(
 
 
 def find_tessdata(
-    langs: list[str], preferred: str | None = None, *, allow_unverified: bool = False
+    langs: list[str],
+    preferred: str | None = None,
+    *,
+    allow_unverified: bool = False,
+    on_progress: Callable[[str], None] | None = None,
 ) -> Path:
     """Locate a tessdata dir containing all `langs`, downloading if necessary."""
     for lang in langs:
@@ -352,7 +373,9 @@ def find_tessdata(
             return path
 
     # Nothing usable: fetch into the app data dir rather than failing outright.
-    return download_tessdata(langs, allow_unverified=allow_unverified)
+    return download_tessdata(
+        langs, allow_unverified=allow_unverified, on_progress=on_progress
+    )
 
 
 def tesseract_version() -> str | None:
@@ -379,6 +402,7 @@ class TesseractOcr:
         min_confidence: float = 40.0,
         invert: bool = False,
         allow_unverified_tessdata: bool = False,
+        on_progress: Callable[[str], None] | None = None,
     ) -> None:
         self.langs = langs
         self.psm = psm
@@ -387,6 +411,9 @@ class TesseractOcr:
         self.min_confidence = min_confidence
         self.invert = invert
         self.allow_unverified_tessdata = allow_unverified_tessdata
+        # Called before a language file is fetched. The GUI passes its status
+        # row here; the CLI prints it. A first run has to say what it is doing.
+        self.on_progress = on_progress
         self._explicit_dir = tessdata_dir
         self._tessdata: Path | None = None
 
@@ -415,6 +442,7 @@ class TesseractOcr:
                 self.lang_list,
                 self._explicit_dir,
                 allow_unverified=self.allow_unverified_tessdata,
+                on_progress=self.on_progress,
             )
         return self._tessdata
 

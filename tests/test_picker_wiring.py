@@ -978,3 +978,37 @@ def test_a_vertical_drag_does_pin_the_height(picker):
     panel._on_resize_end(None, 0, 90, "s")
 
     assert cfg.height == 390, f"expected the dragged height, got {cfg.height}"
+
+
+# --------------------------------------------------------------------------- #
+# OCR preparation
+# --------------------------------------------------------------------------- #
+def test_the_picker_prepares_ocr_on_a_background_thread(picker):
+    """The preview reads the screen on the main loop, so preparing for it there
+    froze the window on a first run, while `ensure_ready` fetched language data.
+    The preparation is a thread now, and this is what the preview waits on.
+    """
+    assert picker._ocr_ready.wait(5.0), "preparation never finished"
+    assert picker._ocr_blocked_reason() is None
+
+
+def test_the_preview_says_what_it_is_waiting_for(picker):
+    """Blocked means an honest status, not a call into tesseract."""
+    picker._ocr_ready.clear()
+    assert "preparing" in (picker._ocr_blocked_reason() or "")
+
+
+def test_a_failed_preparation_is_reported_once_and_not_retried(picker):
+    picker._ocr_error = RuntimeError("no tesseract on PATH")
+    reason = picker._ocr_blocked_reason()
+    assert reason is not None and "no tesseract" in reason
+
+
+def test_skipping_the_preview_does_not_lose_it(picker):
+    """A drag that arrives mid-preparation is re-run, not silently dropped."""
+    picker._ocr_ready.clear()
+    picker.sel = (10, 10, 40, 20)
+    picker.screen_image = __import__("PIL.Image", fromlist=["Image"]).new("RGB", (200, 200))
+    picker._preview_token = 0
+    assert picker._repreview_if_selected() is False
+    assert picker._preview_token > 0, "the skipped preview should have been rescheduled"

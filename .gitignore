@@ -14,6 +14,8 @@ build/
 .build-check/
 # Development scratch: bench scripts, render logs, reference screenshots.
 .cache/
+# A throwaway LINTRANSLATOR_HOME, used to exercise a first run by hand.
+.dl-demo/
 
 # Model weights. data/ct2 is ~600 MB of converted NLLB - a `git add .` would
 # try to commit it, and GitHub rejects files over 100 MB.
