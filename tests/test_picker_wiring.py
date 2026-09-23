@@ -16,6 +16,7 @@ Requires a GTK display; skips cleanly without one.
 """
 from __future__ import annotations
 
+import queue
 from io import BytesIO
 
 import pytest
@@ -638,6 +639,83 @@ def test_a_notice_never_replaces_a_translation(picker):
     assert not panel.target_label.has_css_class("lintranslator-notice")
     # The short form still reaches the status row, so it is not swallowed.
     assert "Not always-on-top" in panel.status_label.get_text()
+
+
+# --------------------------------------------------------------------------- #
+# A worker that died must not look like a worker that is watching
+# --------------------------------------------------------------------------- #
+class _DeadWorker:
+    """A worker whose thread has exited, as the panel sees one."""
+
+    alive = False
+
+    def __init__(self, error=None):
+        self.error = error
+
+    def stop(self, timeout: float = 1.0):
+        pass
+
+    def request_region(self, region):
+        pass
+
+    def request_reread(self):
+        pass
+
+
+def test_a_dead_worker_is_reported_instead_of_claimed_as_watching(picker):
+    """The failure this was written for: the thread died and the card said nothing.
+
+    On a live screen that read as a working translator with nothing to translate.
+    The button still said Pause, the status row kept the picker's last message,
+    and the translation area kept the setup notice it was given at startup -
+    which is only displaced by a translation, so it stayed there for the whole
+    session.
+    """
+    panel = picker._panel
+    picker._on_start()
+    panel.worker = _DeadWorker("RuntimeError: grab failed")
+    panel.status_label.set_text("capturing the screen for the picker…")
+
+    panel._drain()
+
+    assert panel.worker is None, "a dead worker must not be kept"
+    assert panel.toggle_btn.get_label() == "Start", "the fix has to be one click"
+    text = panel.status_label.get_text()
+    assert "stopped" in text and "RuntimeError: grab failed" in text
+    assert panel.status_label.has_css_class("lintranslator-warn")
+
+
+def test_a_dead_worker_is_not_reported_as_watching_over_the_control_socket(picker):
+    """`lintranslator status` said "watching, reading" for a dead thread."""
+    panel = picker._panel
+    picker._on_start()
+    panel.worker = _DeadWorker()
+    assert panel._on_control("status").startswith("stopped,")
+
+
+def test_a_worker_that_cannot_even_start_says_why(monkeypatch):
+    """A startup failure used to kill the thread with nothing said at all.
+
+    `Pipeline(...)` is built outside the warmup guard, so an exception there
+    ended the worker before any message could be posted: no error, no status,
+    no translation, for the life of the window. Driven directly rather than
+    through the `picker` fixture, which stands a recorder in for this class.
+    """
+
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("no tessdata")
+
+    monkeypatch.setattr(panel_mod, "Pipeline", explode)
+    outbox = queue.Queue()
+    panel_mod.PipelineThread(Config(), outbox)._run()
+
+    messages = []
+    while not outbox.empty():
+        messages.append(outbox.get_nowait())
+    assert any(
+        message.kind == "error" and "no tessdata" in (message.text or "")
+        for message in messages
+    ), f"the death left no message behind: {messages}"
 
 
 def test_an_error_shares_the_status_row_instead_of_adding_a_line(picker):

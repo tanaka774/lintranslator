@@ -29,6 +29,7 @@ import os
 import queue
 import threading
 import time
+import traceback
 from dataclasses import dataclass
 
 import gi
@@ -101,8 +102,22 @@ class PipelineThread:
         self.pipeline: Pipeline | None = None
         self.ready = threading.Event()
         self.warmup_error: Exception | None = None
+        # Why the loop ended, when it ended by itself. Read by the panel, which
+        # says so rather than claiming to be watching (see `_check_worker`).
+        self.error: str | None = None
         self._pending_region = None
         self._pending_reread = False
+
+    @property
+    def alive(self) -> bool:
+        """Whether the loop is still running.
+
+        The panel used to treat "a worker object exists" as "watching", which is
+        why a thread that had died left the card saying "watching" forever with
+        nothing translated.
+        """
+        thread = self._thread
+        return thread is not None and thread.is_alive()
 
     def start(self) -> None:
         if self._thread is not None:
@@ -135,6 +150,28 @@ class PipelineThread:
             pipe.request_reread()
 
     def _run(self) -> None:
+        """Run the loop, and report it if it dies.
+
+        Nothing here may end silently. A single uncaught exception used to kill
+        this thread with at most one line in the status row - which the next
+        status write (the picker's, for one) overwrote - and the card then looked
+        exactly like a working one that had nothing to translate yet. It kept a
+        setup notice on screen for a whole session that way. Every exit now
+        leaves a reason behind, for `_check_worker` to say out loud.
+        """
+        try:
+            self._loop()
+        except Exception as exc:  # noqa: BLE001 - a dead worker must be visible
+            self.error = f"{type(exc).__name__}: {exc}"
+            # The card gets one line; the terminal keeps the traceback. Catching
+            # the exception here would otherwise lose it, since nothing escapes
+            # the thread any more for `threading.excepthook` to print.
+            traceback.print_exc()
+            self.outbox.put(
+                UiMessage("error", text=f"translation stopped: {self.error}")
+            )
+
+    def _loop(self) -> None:
         pipe = Pipeline(
             self.config,
             on_event=self._on_event,
@@ -157,6 +194,7 @@ class PipelineThread:
             pipe.warmup()
         except Exception as exc:  # noqa: BLE001
             self.warmup_error = exc
+            self.error = f"startup failed: {exc}"
             self.outbox.put(UiMessage("error", text=f"startup failed: {exc}"))
             self.ready.set()
             return
@@ -176,8 +214,10 @@ class PipelineThread:
                 # Sleep in short slices so stop() is responsive.
                 self._stop.wait(min(pipe.sleep_time(), 0.1))
         finally:
+            # Said before `close`, not after: closing talks to the portal and the
+            # backend, and an exception from that would swallow the one line that
+            # says the loop has ended.
             report = pipe.report()
-            pipe.close()
             self.outbox.put(
                 UiMessage(
                     "status",
@@ -188,6 +228,10 @@ class PipelineThread:
                     ),
                 )
             )
+            try:
+                pipe.close()
+            except Exception:  # noqa: BLE001 - closing must not hide the stop
+                pass
 
     def _on_event(self, event: Event) -> None:
         self.outbox.put(UiMessage("event", event=event))
@@ -784,7 +828,11 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         return f"unknown command {verb!r}; try: reread, status"
 
     def _status_reply(self) -> str:
-        running = self.worker is not None
+        # A worker object is not the same as a running loop: `lintranslator status`
+        # used to answer "watching, reading" for a thread that had died, which is
+        # the one answer that makes a stuck card impossible to diagnose.
+        worker = self.worker
+        running = worker is not None and getattr(worker, "alive", True)
         gated = "paused" if self._gated else "reading"
         return (
             f"{'watching' if running else 'stopped'}, {gated}, "
@@ -1197,6 +1245,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
 
     # -- worker -> UI ------------------------------------------------------ #
     def _drain(self) -> bool:
+        self._check_worker()
         drained = 0
         while drained < 20:
             try:
@@ -1219,6 +1268,31 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             elif message.kind == "status":
                 self.status_label.set_text(message.text)
         return True
+
+    def _check_worker(self) -> None:
+        """Say it when the pipeline has stopped, instead of claiming to watch.
+
+        The card used to read "watching" from the mere existence of a worker
+        object, so a thread that had died looked like a working translator with
+        nothing to translate: the button still said Pause, the status row kept
+        whatever was written last, and the translation area kept whatever was in
+        it - for a whole session, in the case this was written for, which is how
+        an always-on-top notice stayed on the card forever.
+
+        A dead worker is not restarted automatically: if it died of something
+        that is still wrong (no model, no key, no screen access), a restart loop
+        would only hide it. Start is one click, and it is already the label the
+        button carries when nothing is running.
+        """
+        worker = self.worker
+        # Duck-typed on purpose: tests stand a recorder in for the real thread.
+        if worker is None or getattr(worker, "alive", True):
+            return
+        self.worker = None
+        self.toggle_btn.set_label("Start")
+        detail = getattr(worker, "error", None) or "the worker thread exited"
+        self.status_label.add_css_class("lintranslator-warn")
+        self.status_label.set_text(f"translation stopped — {detail}. Press Start.")
 
     def _show_gate(self, reason: str) -> None:
         """Reading is paused because one of our own windows is on screen.
