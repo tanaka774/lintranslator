@@ -1090,3 +1090,62 @@ def test_skipping_the_preview_does_not_lose_it(picker):
     picker._preview_token = 0
     assert picker._repreview_if_selected() is False
     assert picker._preview_token > 0, "the skipped preview should have been rescheduled"
+
+
+def test_applying_settings_rebuilds_the_ocr_engine(picker, monkeypatch):
+    """Regression: the preview kept reading with the language it opened with.
+
+    Measured on a live screen. The source language was set to Korean, Settings
+    was applied, `ocr.langs` became `eng+kor` and `kor.traineddata` was fetched -
+    and this window still called tesseract with `eng`. That returns nothing at
+    all for a clean printed Korean line (92% confidence with `kor`), so a
+    correctly framed box was reported as "(no text found in this region)" while
+    `config.json` was right the whole time.
+
+    The live panel never had this bug: it restarts its pipeline on Apply, and
+    the pipeline builds its own engine from the config.
+    """
+    # The rebuild prepares language data on a thread; this test is about which
+    # engine the window ends up holding, not about the network.
+    monkeypatch.setattr(
+        picker_mod.TesseractOcr, "ensure_ready", lambda self: picker.config.path.parent
+    )
+    before = picker.ocr
+
+    picker.config.ocr.langs = "eng+kor"
+    picker._on_settings_applied()
+
+    assert picker.ocr is not before, "the engine survived a Settings apply"
+    assert picker.ocr.langs == "eng+kor", "the preview still reads with the old language"
+    assert picker._ocr_ready.wait(5.0), "the new engine was never prepared"
+    assert picker._ocr_blocked_reason() is None
+
+
+def test_a_settings_apply_ocr_does_not_read_keeps_the_engine(picker):
+    """Only the engine's own settings rebuild it.
+
+    Nothing here is worth clearing `_ocr_ready` for: rebuilding on every Apply
+    would flash "preparing OCR language data…" at a font-size change.
+    """
+    before = picker.ocr
+    picker.config.display.font_scale = 1.4
+    picker._on_settings_applied()
+    assert picker.ocr is before
+
+
+def test_applying_settings_retries_a_failed_preparation(picker, monkeypatch):
+    """A failure is remembered so the preview stops calling into tesseract, but
+    it must not be permanent.
+
+    The fix for "no language data" is to install it - or to change the setting -
+    and apply that, which has to clear the remembered error or the window stays
+    unusable for the rest of the session.
+    """
+    monkeypatch.setattr(picker_mod.TesseractOcr, "ensure_ready", lambda self: None)
+    picker._ocr_error = RuntimeError("tesseract has no model for it")
+    picker.config.ocr.langs = "eng+kor"
+
+    picker._on_settings_applied()
+
+    assert picker._ocr_ready.wait(5.0), "the retry never ran"
+    assert picker._ocr_blocked_reason() is None, "the old failure still blocks OCR"

@@ -515,7 +515,11 @@ seconds and avoids a whole class of surprises from guessing at screen content.
 
 **Settings** is available here too, so backend, model, API key and prompt can all
 be changed without leaving the picker. Saving re-translates the current selection
-immediately. A no-op would look like the setting had been ignored.
+immediately. A no-op would look like the setting had been ignored. The OCR engine
+is rebuilt on that same signal, because `ocr.langs` is a setting like any other: a
+window that kept the engine it was opened with went on reading a Korean box with
+`eng` after the dialog said `eng+kor`, and all that produces is "(no text found in
+this region)", with nothing on screen saying why.
 
 #### Re-read: when a line comes out wrong
 
@@ -1068,7 +1072,8 @@ pip-only environment still runs everything that does not draw a window.
 * `tests/test_occlusion.py` - the two self-capture guards, and that real dialogue
   is never mistaken for LinTranslator's own text
 * `tests/test_picker_wiring.py` - what the picker tells the pipeline, and when,
-  plus the drag handlers' half of a resize
+  plus the drag handlers' half of a resize and the OCR engine Settings must
+  replace
 * `tests/test_control.py` - the control socket: round trip, no GUI, two GUIs
 * `tests/test_hotkey.py` - what the user is told when a hotkey cannot be bound
 * `tests/test_glossary.py` - term matching, cache interaction, line handling

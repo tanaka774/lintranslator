@@ -79,16 +79,11 @@ class RegionPicker(Gtk.ApplicationWindow):
         self.screen_image: Image.Image | None = None
         self.screen_size: tuple[int, int] = (0, 0)
 
-        self.ocr = TesseractOcr(
-            langs=config.ocr.langs,
-            psm=config.ocr.psm,
-            upscale=config.ocr.upscale,
-            autocontrast=config.ocr.autocontrast,
-            tessdata_dir=config.ocr.tessdata_dir,
-            min_confidence=config.ocr.min_confidence,
-            allow_unverified_tessdata=config.ocr.allow_unverified_tessdata,
-            on_progress=self._ocr_progress,
-        )
+        # The engine reads `config.ocr`, and Settings can move those values while
+        # this window is open, so it is built here and rebuilt by `_rebuild_ocr`.
+        # `_ocr_built_from` is the settings the current engine was built from.
+        self._ocr_built_from = self._ocr_kwargs()
+        self.ocr = self._build_ocr()
         # The first OCR may have to fetch language data. Doing that here, on the
         # main loop, froze the whole window - the picker is the one place that
         # reads the screen *on* the main loop (the panel's pipeline has its own
@@ -96,7 +91,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         # preview says what it is waiting for instead of calling into tesseract.
         self._ocr_ready = threading.Event()
         self._ocr_error: Exception | None = None
-        threading.Thread(target=self._prepare_ocr, name="lintranslator-ocr-setup", daemon=True).start()
+        self._prepare_ocr_async()
 
         # Selection in *screen* pixels; mapped to widget space for drawing.
         self.sel: tuple[int, int, int, int] | None = None
@@ -737,22 +732,94 @@ class RegionPicker(Gtk.ApplicationWindow):
         """
         GLib.idle_add(self.status_label.set_text, message)
 
-    def _prepare_ocr(self) -> None:
+    def _ocr_kwargs(self) -> dict:
+        """The config values the OCR engine is built from.
+
+        Kept in one place so "build the engine" and "did anything the engine
+        reads move?" cannot disagree about what those values are.
+        """
+        ocr = self.config.ocr
+        return {
+            "langs": ocr.langs,
+            "psm": ocr.psm,
+            "upscale": ocr.upscale,
+            "autocontrast": ocr.autocontrast,
+            "tessdata_dir": ocr.tessdata_dir,
+            "min_confidence": ocr.min_confidence,
+            "allow_unverified_tessdata": ocr.allow_unverified_tessdata,
+        }
+
+    def _build_ocr(self) -> TesseractOcr:
+        """A new engine for the current config. Building is cheap; preparing is not."""
+        return TesseractOcr(on_progress=self._ocr_progress, **self._ocr_kwargs())
+
+    def _prepare_ocr_async(self) -> None:
+        """Prepare the current engine off the main loop.
+
+        Re-runnable, because `_rebuild_ocr` installs a new engine and this has to
+        run again for it. Clearing `_ocr_ready` first is what makes that safe:
+        until the new engine's language data is known to be there, the preview
+        says what it is waiting for rather than letting `read` call
+        `ensure_ready` on the main loop - the freeze this thread exists to avoid.
+        """
+        self._ocr_ready.clear()
+        # A retry is a deliberate act (Settings were just applied), so an earlier
+        # failure must not stick: `_ocr_blocked_reason` reports `_ocr_error`
+        # forever otherwise.
+        self._ocr_error = None
+        # Handed to the thread instead of read from `self` inside it: a rebuild
+        # while this is in flight must not have its result attributed to the
+        # engine it was not preparing for.
+        engine = self.ocr
+        threading.Thread(
+            target=self._prepare_ocr,
+            args=(engine,),
+            name="lintranslator-ocr-setup",
+            daemon=True,
+        ).start()
+
+    def _rebuild_ocr(self) -> None:
+        """Install the engine the current config describes.
+
+        Called when Settings are applied. Without it this window kept the engine
+        it was opened with: setting the source language to Korean wrote
+        `ocr.langs` and fetched `kor.traineddata`, while the preview went on
+        reading with `eng` - which returns nothing at all for a clean printed
+        Korean line, so a correct box was reported as "(no text found in this
+        region)". The live panel never had this bug, because it restarts its
+        pipeline and the pipeline builds its own engine from the config.
+        """
+        settings = self._ocr_kwargs()
+        if settings == self._ocr_built_from:
+            # Nothing the engine reads has moved - the box, the display or an
+            # unrelated setting changed - so the preview only needs re-running.
+            GLib.idle_add(self._repreview_if_selected)
+            return
+        self._ocr_built_from = settings
+        self.ocr = self._build_ocr()
+        self._prepare_ocr_async()
+
+    def _prepare_ocr(self, ocr: TesseractOcr) -> None:
         """Fetch and validate the language data before the first read needs it.
 
         Off the main loop on purpose: `ensure_ready` can spend seconds on the
         network the first time, and this window is the one that reads the screen
         on the main loop - a picker frozen mid-drag with no explanation is worse
         than one that says what it is waiting for.
+
+        A preparation whose engine has since been replaced reports nothing: the
+        newer preparation owns the ready flag, the error and the status row.
         """
         try:
-            self.ocr.ensure_ready()
+            ocr.ensure_ready()
         except Exception as exc:  # noqa: BLE001 - surfaced through the status row
-            self._ocr_error = exc
-            GLib.idle_add(self.status_label.set_text, f"OCR unavailable: {exc}")
+            if ocr is self.ocr:
+                self._ocr_error = exc
+                GLib.idle_add(self.status_label.set_text, f"OCR unavailable: {exc}")
         finally:
-            self._ocr_ready.set()
-            GLib.idle_add(self._repreview_if_selected)
+            if ocr is self.ocr:
+                self._ocr_ready.set()
+                GLib.idle_add(self._repreview_if_selected)
 
     def _repreview_if_selected(self) -> bool:
         """Run the preview that was skipped while preparation was in flight."""
@@ -1086,7 +1153,13 @@ class RegionPicker(Gtk.ApplicationWindow):
         self._settings_dialog.present()
 
     def _on_settings_applied(self) -> None:
-        """Drop the cached translator so the new backend/model is used."""
+        """Install the saved settings: the OCR engine, the translator, the preview."""
+        # The OCR engine is built from the same config, so it is rebuilt here
+        # too: `ocr.langs` is what reads the box, and a window that kept the
+        # engine it was opened with went on reading a Korean box with `eng`
+        # after Settings said `eng+kor` - reported as "(no text found in this
+        # region)" while `config.json` was correct the whole time.
+        self._rebuild_ocr()
         if self._translator is not None:
             self._translator.close()
             self._translator = None
