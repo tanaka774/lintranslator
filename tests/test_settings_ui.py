@@ -106,6 +106,52 @@ def test_the_custom_endpoint_row_says_which_protocol_it_wants(dialog):
     assert "localhost" in dialog.base_entry.get_placeholder_text()
 
 
+def test_the_prompt_row_is_only_for_the_backends_that_read_it(dialog):
+    """ct2/local decode a language code, and DeepL has no prompt parameter.
+
+    The hint above the field calls the prompt "the biggest quality lever", so
+    showing it over a backend that ignores it is a control that silently does
+    nothing - which is what the default backend (ct2) did on a fresh install.
+    """
+    for backend in ("openrouter", "openai", "chat"):
+        select(dialog, backend)
+        assert dialog.prompt_section.get_visible(), backend
+    for backend in ("ct2", "local", "deepl", "none"):
+        select(dialog, backend)
+        assert not dialog.prompt_section.get_visible(), backend
+
+
+def test_hiding_the_prompt_does_not_erase_a_stored_one():
+    """Switching to a local backend and saving must keep the chat prompt.
+
+    The field is hidden, not cleared: `translate.prompt` is still in the config,
+    and a Save made while ct2 is selected must not drop it.
+    """
+    cfg = Config()
+    cfg.translate.prompt = "keep Faust in Latin script"
+    dlg = SettingsDialog(None, cfg)
+    try:
+        select(dlg, "ct2")
+        dlg._on_save(_save_button(dlg))
+        assert dlg.config.translate.prompt == "keep Faust in Latin script"
+    finally:
+        dlg.destroy()
+
+
+def test_the_prompt_box_shows_the_builtin_default_rather_than_an_empty_box():
+    """An empty field means "use the built-in default", so showing nothing would
+    hide the prompt that is actually in force."""
+    from lintranslator.geometry import DEFAULT_PROMPT
+
+    dlg = SettingsDialog(None, Config())
+    try:
+        buffer = dlg.prompt_view.get_buffer()
+        text = buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), False)
+        assert text == DEFAULT_PROMPT
+    finally:
+        dlg.destroy()
+
+
 def test_a_stored_base_url_is_only_shown_to_the_backend_it_was_set_for(dialog):
     """Ollama's URL left in the field while OpenRouter is selected would be
     saved over the provider default."""

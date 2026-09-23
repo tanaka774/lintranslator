@@ -682,10 +682,10 @@ suggestion and confirm by looking at the crop.
 |---|---|---|
 | `ct2` | **~0.2-0.35 s/line** | int8 NLLB via CTranslate2, ~630 MB, offline. **Default.** |
 | `local` | ~0.8-1.7 s/line | the same 2.5 GB checkpoint through transformers; needs torch |
-| `openrouter` | network-bound | **many models, one key**; needs a key + model id |
+| `openrouter` | network-bound | **many models, one key**; needs a key + model id; prompt-tunable |
 | `deepl` | network-bound | best fluency for JA; needs a key |
 | `openai` | network-bound | prompt-tunable, needs a key |
-| `chat` | network-bound | any OpenAI-compatible server (llama.cpp, Ollama, vLLM, Groq, Together); needs `api_base`; key optional |
+| `chat` | network-bound | any OpenAI-compatible server (llama.cpp, Ollama, vLLM, Groq, Together); needs `api_base`; key optional; prompt-tunable |
 | `none` | 0 | pass-through, for testing the pipeline |
 
 The unofficial Google endpoint was removed, so every remote backend is now an
@@ -815,6 +815,7 @@ To make it permanent, set it in `config.json`:
   "model": "google/gemini-2.0-flash-001",
   "api_key": null,
   "temperature": 0.0,
+  "prompt": "",
   "glossary_hint": "Faust keeps her name in Latin script. Manager is a title."
 }
 ```
@@ -834,6 +835,18 @@ To make it permanent, set it in `config.json`:
   What is not a trade is who can read it: the file is written 0600 in your own
   config directory (`~/.config/lintranslator/`), not beside the source.
   Use **Clear** to remove it, or leave the field empty to rely on the environment.
+* **`prompt`** is the instruction sent to the model before every line, and the
+  single biggest lever on quality: use it to say which game is being translated
+  and how its characters speak. `{source}` and `{target}` are replaced with the
+  language names. It is read by the three chat backends (`openrouter`, `openai`,
+  `chat`) — the local ones decode a language code rather than follow an
+  instruction, and DeepL has no prompt parameter, so Settings hides the field for
+  them. **An empty value means the built-in default**, which is also the
+  **Default prompt** entry in the Settings preset list (`Limbus Company` and
+  `Literal / faithful` are the other two starting points); clearing the field and
+  saving is how you go back to it. A prompt that never names the target language
+  gets a "translate into X, output only" line appended, so a vague prompt still
+  translates instead of being answered as chat.
 * **`glossary_hint`** appends free-form instructions to the translation prompt.
   This is how you steer a large model on names and tone - use it instead of
   `glossary.pre`, which is for the local model.

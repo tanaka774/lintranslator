@@ -121,6 +121,13 @@ def test_every_preset_uses_the_language_placeholders():
         assert "{target}" in template, name
 
 
+def test_the_default_preset_is_the_builtin_default_and_is_named_for_it():
+    """It is what an empty `translate.prompt` falls back to, not one choice among
+    three: "Generic game dialogue" read as a genre option while actually being
+    the prompt in force, and the Settings dialog pre-fills the box with it."""
+    assert PROMPT_PRESETS["Default prompt"] == DEFAULT_PROMPT
+
+
 def test_limbus_preset_names_the_game_and_its_terms():
     """The whole point of the preset is telling the model which game this is."""
     preset = PROMPT_PRESETS["Limbus Company"]

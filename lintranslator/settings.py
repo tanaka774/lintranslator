@@ -26,6 +26,7 @@ from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 from . import paths  # noqa: E402
 from .config import Config  # noqa: E402
 from .geometry import (  # noqa: E402
+    DEFAULT_PROMPT,
     PROMPT_PRESETS,
     nudge_region,
     region_to_fraction,
@@ -97,6 +98,13 @@ BASE_URL_PLACEHOLDERS = {
     "openai": "https://api.openai.com/v1 (default)",
     "chat": "http://localhost:11434/v1",
 }
+
+# Which backends read `translate.prompt`. The Model and Base URL rows already
+# hide themselves for the backends that ignore them; the prompt did not, so the
+# dialog called it "the biggest quality lever" over a field the default backend
+# (ct2) never reads - NLLB is given a language code, not an instruction, and
+# DeepL has no prompt parameter at all.
+BACKENDS_WITH_PROMPT = ("openrouter", "openai", "chat")
 
 # Curated shortlist, ordered cheapest-first inside each group. Not exhaustive on
 # purpose: `Fetch list` loads every model the key can reach, and free-text entry
@@ -823,14 +831,16 @@ class SettingsDialog(Gtk.Window):
         self.licence_hint.set_visible(False)
         grid.attach(self.licence_hint, 1, 9, 1, 1)
 
-        # Prompt
+        # Prompt. Wrapped in a box of its own so the whole control - text, hint
+        # and preset list - can be hidden for the backends that never send one.
+        self.prompt_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         prompt_head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         prompt_head.append(Gtk.Label(label="Prompt", xalign=0))
         self.preset_dd = Gtk.DropDown.new_from_strings(list(PROMPT_PRESETS))
         self.preset_dd.set_tooltip_text("Load a starting prompt")
         self.preset_dd.connect("notify::selected", self._on_preset_chosen)
         prompt_head.append(self.preset_dd)
-        frame.append(prompt_head)
+        self.prompt_section.append(prompt_head)
 
         hint = Gtk.Label(
             label=(
@@ -843,18 +853,23 @@ class SettingsDialog(Gtk.Window):
             max_width_chars=70,
         )
         hint.add_css_class("lintranslator-hint")
-        frame.append(hint)
+        self.prompt_section.append(hint)
 
         self.prompt_view = Gtk.TextView()
         self.prompt_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.prompt_view.set_monospace(False)
         buffer = self.prompt_view.get_buffer()
-        buffer.set_text(self.config.translate.prompt or PROMPT_PRESETS["Generic game dialogue"])
+        # Show the built-in default rather than an empty box: the field being
+        # empty means "use this", so an empty box would hide the very prompt that
+        # is in force. Read from the constant, not from the preset list, so the
+        # two cannot drift apart.
+        buffer.set_text(self.config.translate.prompt or DEFAULT_PROMPT)
         prompt_scroll = Gtk.ScrolledWindow()
         prompt_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         prompt_scroll.set_min_content_height(170)
         prompt_scroll.set_child(self.prompt_view)
-        frame.append(prompt_scroll)
+        self.prompt_section.append(prompt_scroll)
+        frame.append(self.prompt_section)
 
         # Paint the backend-dependent bits (placeholder, key row) on open, not
         # only after the dropdown is touched.
@@ -922,6 +937,11 @@ class SettingsDialog(Gtk.Window):
                 if self.config.translate.backend == key
                 else ""
             )
+
+        # The prompt is an instruction to a chat model. Nothing else reads it, and
+        # a field that describes itself as the biggest quality lever while doing
+        # nothing is worse than no field at all.
+        self.prompt_section.set_visible(key in BACKENDS_WITH_PROMPT)
 
         # The local weights are non-commercial (CC-BY-NC-4.0). Saying so here is
         # cheaper than a user finding out after shipping something with them.

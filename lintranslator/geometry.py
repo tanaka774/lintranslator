@@ -17,11 +17,13 @@ DEFAULT_PROMPT = (
     "Keep the speaker's tone, and preserve leading or trailing brackets and symbols."
 )
 
-# Offered in the GUI so nobody has to write a prompt from scratch. The Limbus one
-# exists because the game's terminology is unusual enough that a generic prompt
-# produces wrong names and a wrong register.
+# Offered in the GUI so nobody has to write a prompt from scratch. The first
+# entry *is* the built-in default, and is named for that rather than for a genre:
+# it is what an empty `translate.prompt` falls back to, not one choice among
+# three. The Limbus one exists because the game's terminology is unusual enough
+# that a generic prompt produces wrong names and a wrong register.
 PROMPT_PRESETS: dict[str, str] = {
-    "Generic game dialogue": DEFAULT_PROMPT,
+    "Default prompt": DEFAULT_PROMPT,
     "Limbus Company": (
         "You are translating dialogue from the video game Limbus Company "
         "({source} into {target}).\n"
