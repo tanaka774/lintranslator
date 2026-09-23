@@ -8,12 +8,16 @@ then through the real pipeline, to show what actually reaches the translator:
   3. dim/noisy small glyphs  - text-ish, but OCR is not sure
   4. clean UI gibberish      - nonsense OCR is *confident* about
 
-Run:  .venv-gi/bin/python probe/empty_region.py
+Run:  .venv/bin/python probe/empty_region.py
 """
 import random
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 from PIL import Image, ImageDraw  # noqa: E402
 
@@ -22,7 +26,6 @@ from lintranslator.config import Config  # noqa: E402
 from lintranslator.ocr import TesseractOcr  # noqa: E402
 from lintranslator.pipeline import Pipeline  # noqa: E402
 
-CONFIG = "/home/chiba/workspace/lintranslator/config.json"
 WIDTH, HEIGHT = 900, 120
 
 
@@ -146,7 +149,7 @@ def describe(title: str, images: list[Image.Image], engine: TesseractOcr, cfg: C
 
 
 def main() -> int:
-    cfg = Config.load(CONFIG)
+    cfg = Config.load()
     cfg.translate.backend = "none"  # the stub translator stands in for the model
     engine = TesseractOcr(
         langs=cfg.ocr.langs,

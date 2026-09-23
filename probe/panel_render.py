@@ -1,6 +1,6 @@
 """Render the two windows of the picker flow, to check the layout visually.
 
-Run:  .venv-gi/bin/python probe/panel_render.py
+Run:  .venv/bin/python probe/panel_render.py
 
 Renders the picker and the panel it owns exactly as `lintranslator gui` builds them, and
 exits. Used to confirm that the panel gained a reachable **Region** button (the
@@ -18,7 +18,10 @@ cached node is invalidated and the compositor has not drawn the replacement.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import cairo  # noqa: E402
 import gi  # noqa: E402
@@ -31,7 +34,7 @@ from lintranslator import picker as picker_mod  # noqa: E402
 from lintranslator.config import Config  # noqa: E402
 from lintranslator.portal import ScreenshotPortal  # noqa: E402
 
-OUT = Path("/home/chiba/workspace/lintranslator/data")
+OUT = APP_DIR / "data"
 CONFIG = Path("/tmp/lintranslator_probe_config.json")  # never write the real config
 failures: list[str] = []
 
@@ -55,7 +58,7 @@ def shoot(widget, name: str) -> None:
 
 
 def main() -> int:
-    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg = Config.load()
     cfg.path = CONFIG
     cfg.translate.backend = "none"  # no network calls in a render probe
 

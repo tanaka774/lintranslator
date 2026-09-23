@@ -10,7 +10,7 @@ ignored** - the window stays mapped for the whole two seconds after the call - s
 button is the only way back. Run this again after a compositor or GTK upgrade to
 see whether that is still true.
 
-Run:  .venv-gi/bin/python probe/minimise_check.py
+Run:  .venv/bin/python probe/minimise_check.py
 """
 import gi
 

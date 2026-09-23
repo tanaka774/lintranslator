@@ -1,6 +1,6 @@
 """Does a typewriter pause make the pipeline emit a half-finished sentence?
 
-Run:  .venv-gi/bin/python probe/pause_repro.py
+Run:  .venv/bin/python probe/pause_repro.py
 
 Simulates the real failure reported from the panel: the game reveals a line,
 pauses mid-sentence (Limbus holds briefly at punctuation and between reveal
@@ -12,8 +12,12 @@ Prints each emitted line, so a fragment is visible as an emission whose text is
 a prefix of a later emission.
 """
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 from lintranslator.config import Config
 from lintranslator.pipeline import Pipeline

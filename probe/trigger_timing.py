@@ -10,11 +10,15 @@ is visible:
 The knobs it exercises are the ones in config.json: capture.fps, settle_window,
 incomplete_grace, settle_max_wait, refresh_interval, ocr_min_interval.
 
-Run:  .venv-gi/bin/python probe/trigger_timing.py
+Run:  .venv/bin/python probe/trigger_timing.py
 """
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 from PIL import Image, ImageDraw  # noqa: E402
 
@@ -22,8 +26,6 @@ from lintranslator.capture import Frame  # noqa: E402
 from lintranslator.config import Config  # noqa: E402
 from lintranslator.ocr import OcrLine, OcrResult  # noqa: E402
 from lintranslator.pipeline import Pipeline  # noqa: E402
-
-CONFIG = "/home/chiba/workspace/lintranslator/config.json"
 
 FRAGMENT = "Herr Gregor is the proverbial poster child of Work"
 FULL = "Herr Gregor is the proverbial poster child of Workshop-sponsored Fixers."
@@ -110,7 +112,7 @@ class Translator:
 
 def run(title: str, readings: list[str], *, blinking: bool = False,
         call_seconds: float = 0.0, note: str = "") -> None:
-    cfg = Config.load(CONFIG)
+    cfg = Config.load()
     cfg.translate.backend = "none"
     fps = cfg.capture.fps
     step = 1.0 / fps

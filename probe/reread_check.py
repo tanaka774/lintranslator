@@ -7,7 +7,7 @@ and reports what the panel did each time.
 The translation backend is forced to `none` so this costs nothing and needs no
 network; what is being tested is the re-read path, not the model.
 
-Run:  .venv-gi/bin/python probe/reread_check.py
+Run:  .venv/bin/python probe/reread_check.py
 """
 import os
 import subprocess
@@ -15,7 +15,10 @@ import sys
 import threading
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import gi  # noqa: E402
 
@@ -30,10 +33,12 @@ CONFIG = Path("/tmp/lintranslator_probe_config.json")  # never write the real co
 # A writable XDG_RUNTIME_DIR for this probe: this sandbox blocks /run/user/1000,
 # which a normal desktop session allows. The CLI subprocess gets the same value,
 # which is what lets two processes agree on the socket path.
-RUNTIME = Path("/home/chiba/workspace/lintranslator/data/probe_runtime")
+RUNTIME = APP_DIR / "data" / "probe_runtime"
 RUNTIME.mkdir(parents=True, exist_ok=True)
 os.environ["XDG_RUNTIME_DIR"] = str(RUNTIME)
-VENV = Path("/home/chiba/workspace/lintranslator/.venv-gi/bin/lintranslator")
+# The CLI as this interpreter sees it, so the probe does not care what the
+# virtualenv is called or where it lives.
+VENV = [sys.executable, "-m", "lintranslator"]
 
 results: list[tuple[str, bool, str]] = []
 
@@ -57,7 +62,7 @@ def guard(step):
 
 
 def main() -> int:
-    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg = Config.load()
     cfg.path = CONFIG
     cfg.translate.backend = "none"
     cfg.capture.fps = 2.0
@@ -129,13 +134,13 @@ def main() -> int:
             # `lintranslator reread` waits on a loop that is free.
             env = dict(os.environ, XDG_RUNTIME_DIR=str(RUNTIME))
             out["reread"] = subprocess.run(
-                [str(VENV), "--config", str(CONFIG), "reread"],
+                [*VENV, "--config", str(CONFIG), "reread"],
                 capture_output=True,
                 text=True,
                 env=env,
             )
             out["status"] = subprocess.run(
-                [str(VENV), "--config", str(CONFIG), "status"],
+                [*VENV, "--config", str(CONFIG), "status"],
                 capture_output=True,
                 text=True,
                 env=env,

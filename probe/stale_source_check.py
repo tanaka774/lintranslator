@@ -11,7 +11,7 @@ joined for translation), a typewriter reveal and blinking-caret jitter, plus an
 optional Re-read - then reports what the panel's source label would say beside
 each new translation.
 
-Run:  .venv-gi/bin/python probe/stale_source_check.py
+Run:  .venv/bin/python probe/stale_source_check.py
 """
 from __future__ import annotations
 

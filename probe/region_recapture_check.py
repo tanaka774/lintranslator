@@ -18,14 +18,17 @@ No window is presented and no pipeline is started: `present` is stubbed out, so
 nothing appears on screen. The screen itself *is* captured - that is the point -
 so run this at a moment when that is acceptable.
 
-Run:  .venv-gi/bin/python probe/region_recapture_check.py
+Run:  .venv/bin/python probe/region_recapture_check.py
 """
 import sys
 import threading
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import gi  # noqa: E402
 
@@ -117,7 +120,7 @@ def main() -> int:
     panel_mod.PipelineThread = RecordingPipelineThread
     panel_mod.TranslatorPanel = QuietPanel
 
-    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg = Config.load()
     cfg.path = Path("/tmp/lintranslator_recapture_probe.json")  # never the real config
 
     portal = ScreenshotPortal()

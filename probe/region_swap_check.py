@@ -9,12 +9,15 @@ Nothing here captures the screen: `PipelineThread` is replaced with a recorder a
 the panel is never presented, so this is a wiring check, not a live one. The config
 it writes goes to /tmp, never to the real one.
 
-Run:  .venv-gi/bin/python probe/region_swap_check.py
+Run:  .venv/bin/python probe/region_swap_check.py
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import gi  # noqa: E402
 
@@ -64,7 +67,7 @@ def main() -> int:
     panel_mod.PipelineThread = RecordingPipelineThread
     panel_mod.TranslatorPanel = QuietPanel
 
-    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg = Config.load()
     cfg.path = Path("/tmp/lintranslator_probe_config.json")  # never write the real config
 
     portal = ScreenshotPortal()

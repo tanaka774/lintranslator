@@ -1,6 +1,6 @@
 """Live diagnostic: why did a line get translated, or not?
 
-Run:  .venv-gi/bin/python probe/live_trace.py [seconds]
+Run:  .venv/bin/python probe/live_trace.py [seconds]
 
 Logs the pipeline's own settle state on every poll, so a dropped line can be
 attributed to a specific cause instead of guessed at:
@@ -13,8 +13,12 @@ reading keeps changing but nothing is ever emitted.
 """
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 from lintranslator.config import Config
 from lintranslator.detect import _edit_distance, is_same_reading
@@ -22,7 +26,7 @@ from lintranslator.pipeline import Pipeline
 
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 90.0
 
-cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+cfg = Config.load()
 cfg.translate.backend = "none"          # translation is not what is under test
 p = Pipeline(cfg)
 p.warmup()

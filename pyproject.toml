@@ -7,7 +7,7 @@ readme = "README.md"
 # (non-commercial). See NOTICE.
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "chiba" }]
+authors = [{ name = "tanaka" }]
 keywords = [
     "translation",
     "ocr",
@@ -30,7 +30,11 @@ classifiers = [
     "Topic :: Games/Entertainment",
     "Topic :: Text Processing :: Linguistic",
 ]
-requires-python = ">=3.12,<3.14"
+# Tested on 3.12 (the floor: 275 tests plus 4 GTK modules skipped, since
+# PyGObject is a system package) and on 3.14, which is what the development venv
+# runs. It used to say `<3.14`, which made pip refuse to install on the very
+# interpreter the suite is green on.
+requires-python = ">=3.12,<3.15"
 dependencies = [
     "pillow>=10.0",
     "jeepney>=0.9",
@@ -56,6 +60,24 @@ local = [
 # Alternate OCR engine (PP-OCR). Slower here, kept for non-Latin sources.
 rapidocr = [
     "rapidocr-onnxruntime>=1.4",
+]
+# Region auto-detection (`lintranslator.calibrate`). The GUI deliberately has no
+# auto-detect button and the pipeline never calls it, so numpy is not needed to
+# run the app - only to use the helper, or to run the test suite.
+calibrate = [
+    "numpy>=1.26",
+]
+# Keep the panel above other windows under XWayland, by setting
+# `_NET_WM_STATE_ABOVE`. Without it the panel still runs; it says why it cannot
+# stay on top.
+x11 = [
+    "python-xlib>=0.33",
+]
+# `pytest` and the suite's own imports. `numpy` is repeated rather than pulled in
+# from `calibrate` because extras cannot reference each other.
+test = [
+    "pytest>=8",
+    "numpy>=1.26",
 ]
 
 [project.scripts]

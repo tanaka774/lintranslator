@@ -146,16 +146,19 @@ code, not observed.
 
 ## Install
 
-Requires Linux with a Wayland session (or X11), Python 3.12/3.13, and tesseract
+Requires Linux with a Wayland session (or X11), Python 3.12-3.14, and tesseract
 (see "Compatibility" above).
 
 ```bash
-# 1. tesseract binary (language data is fetched automatically at first run)
-sudo pacman -S tesseract            # Arch / CachyOS
-# sudo apt install tesseract-ocr    # Debian / Ubuntu
+# 1. tesseract, and the GTK stack. PyGObject and pycairo come from the distro
+#    rather than from pip: they are bindings to system libraries, and a pip
+#    build of them needs a compiler and the cairo headers.
+sudo pacman -S tesseract python-gobject python-cairo   # Arch / CachyOS
+# sudo apt install tesseract-ocr python3-gi python3-gi-cairo python3-cairo \
+#                  gir1.2-gtk-4.0                       # Debian / Ubuntu
 
-# 2. environment. PyGObject comes from the system (GTK4 GUI) and tesseract
-#    language data is fetched at first run, so no root is needed after this.
+# 2. environment. --system-site-packages is what lets the venv see the
+#    distro's PyGObject; tesseract language data is fetched at first run.
 uv venv --python 3.12 --system-site-packages .venv
 uv pip install --python .venv/bin/python -e .
 uv pip install --python .venv/bin/python -e '.[ct2]'
@@ -168,6 +171,12 @@ uv pip install --python .venv/bin/python -e '.[ct2]'
 `.[ct2]` is the fast path. `.[local]` is the older transformers route, which
 pulls in torch and needs ~4.7 GB of weights; it exists for models that cannot be
 converted and is no longer the default.
+
+The other extras are for things the app does not need to translate a line:
+`.[calibrate]` adds numpy for the region auto-detection helper, `.[x11]` adds
+python-xlib for keeping the panel above other windows under XWayland (without it
+the panel runs and says why it cannot stay on top), `.[rapidocr]` swaps in
+PP-OCR as the OCR engine, and `.[test]` is what the suite needs.
 
 `eng.traineddata` / `jpn.traineddata` are downloaded on first use, so no root is
 needed. The fetch is pinned to a `tessdata_fast`
@@ -741,11 +750,11 @@ compatible endpoint.
 export OPENROUTER_API_KEY=sk-or-...
 
 # 2. see what your key can reach
-.venv-gi/bin/python -m lintranslator models --backend openrouter --filter gemini
-.venv-gi/bin/python -m lintranslator models --backend openrouter --free     # free tier only
+.venv/bin/python -m lintranslator models --backend openrouter --filter gemini
+.venv/bin/python -m lintranslator models --backend openrouter --free     # free tier only
 
 # 3. point the config at one
-.venv-gi/bin/python -m lintranslator check --backend openrouter --model google/gemini-2.0-flash-001
+.venv/bin/python -m lintranslator check --backend openrouter --model google/gemini-2.0-flash-001
 ```
 
 To make it permanent, set it in `config.json`:
@@ -979,8 +988,13 @@ PLAN.md          feasibility study with the full benchmark tables
 ## Tests
 
 ```bash
+uv pip install --python .venv/bin/python -e '.[test]'   # pytest and numpy
 .venv/bin/python -m pytest tests/ -v
 ```
+
+The suite passes on 3.12 through 3.14. On an interpreter with no PyGObject the
+four GTK modules skip rather than fail (`pytest.importorskip`), so a headless or
+pip-only environment still runs everything that does not draw a window.
 
 * `tests/test_core.py` - change detection, settling, config, cache, CJK spacing
 * `tests/test_selection.py` - picker coordinate mapping and drag geometry, with

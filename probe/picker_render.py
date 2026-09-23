@@ -1,6 +1,6 @@
 """Exercise the settings model picker and capture its popover.
 
-Run:  .venv-gi/bin/python probe/picker_render.py
+Run:  .venv/bin/python probe/picker_render.py
 
 Checks the three things the old DropDown could not do: hold the real fetched
 list, filter as you type, and hand the picked id back to the entry.
@@ -8,7 +8,10 @@ list, filter as you type, and hand the picked id back to the entry.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import cairo  # noqa: E402
 import gi  # noqa: E402
@@ -18,7 +21,7 @@ from gi.repository import GLib, Gtk  # noqa: E402
 
 from lintranslator.settings import MODEL_SUGGESTIONS, ModelPicker  # noqa: E402
 
-OUT = Path("/home/chiba/workspace/lintranslator/.cache")
+OUT = APP_DIR / ".cache"
 
 # A slice of the real 445-model list, in the order OpenRouter returns it.
 FAKE_FETCH = MODEL_SUGGESTIONS["openrouter"] + [

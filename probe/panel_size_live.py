@@ -1,6 +1,6 @@
 """Present the real panel and report the size the compositor is actually given.
 
-Run:  .venv-gi/bin/python probe/panel_size_live.py
+Run:  .venv/bin/python probe/panel_size_live.py
 
 `panel_layout_check.py` asks GTK what the card *would* like to be. This asks the
 mapped window what it *is*, which is the number that decides how much of the
@@ -12,7 +12,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import gi  # noqa: E402
 
@@ -22,8 +25,6 @@ from gi.repository import Gio, GLib, Gtk  # noqa: E402
 from lintranslator.config import Config  # noqa: E402
 from lintranslator.panel import TranslatorPanel  # noqa: E402
 from lintranslator.pipeline import Event  # noqa: E402
-
-CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
 
 LONG_SOURCE = (
     "[It has been determined that this case merits preservation as a record. "
@@ -55,7 +56,7 @@ def event(target: str, source: str = LONG_SOURCE) -> Event:
 
 
 def main() -> int:
-    cfg = Config.load(str(CONFIG))
+    cfg = Config.load()
     cfg.translate.backend = "none"
     cfg.gui.autostart = False
     asked = cfg.display.width

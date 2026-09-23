@@ -8,5 +8,9 @@ Icon=accessories-dictionary
 Terminal=false
 Categories=Utility;Accessibility;Game;
 Keywords=translate;ocr;screen;overlay;game;
-StartupWMClass=lintranslator
+# The GTK application id (`lintranslator/gui.py`), which is what the compositor
+# reports as the window's app_id on Wayland. KDE matches a window to this file by
+# that id or by this key, and the file is not named after the id, so the key has
+# to carry it - otherwise the window does not group under its launcher icon.
+StartupWMClass=dev.lintranslator.translator
 X-GNOME-UsesNotifications=false

@@ -8,11 +8,15 @@ prints every step and waits for an answer rather than assuming one.
 If you press the bound key while this is running, it prints ACTIVATED - which is
 the whole mechanism the Re-read hotkey uses.
 
-Run:  .venv-gi/bin/python probe/hotkey_check.py [seconds]
+Run:  .venv/bin/python probe/hotkey_check.py [seconds]
 """
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import gi  # noqa: E402
 

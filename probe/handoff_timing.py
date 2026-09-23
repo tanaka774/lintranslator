@@ -14,12 +14,16 @@ tesseract - and records, per grab:
 Then it hides the app's own windows, one at a time, and keeps capturing. If the
 early reads differ from the late ones, the app was reading itself.
 
-Run:  .venv-gi/bin/python probe/handoff_timing.py
+Run:  .venv/bin/python probe/handoff_timing.py
 """
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import gi  # noqa: E402
 
@@ -36,7 +40,7 @@ RUN_SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 9.0
 WATCH_AT = 1.5
 HIDE_PICKER_AT = WATCH_AT + 4.0
 HIDE_PANEL_AT = WATCH_AT + 6.5
-DATA = "/home/chiba/workspace/lintranslator/data"
+DATA = APP_DIR / "data"
 
 STATE = {
     "t0": None,
@@ -242,7 +246,7 @@ class Probe:
 
 
 def main():
-    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg = Config.load()
     cfg.translate.backend = "none"  # no network calls in a timing probe
     cfg.capture.fps = 2.0
     # `_on_start` calls config.save(); never let a probe write the user's config.

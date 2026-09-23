@@ -19,13 +19,16 @@ expected boxes can be read straight off the pointer positions. The scaled and
 letterboxed mapping is covered by tests/test_selection.py. No window is presented
 and no screen is captured: this is drag arithmetic, not pixels.
 
-Run:  .venv-gi/bin/python probe/region_resize_check.py
+Run:  .venv/bin/python probe/region_resize_check.py
 """
 import sys
 from io import BytesIO
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import gi  # noqa: E402
 
@@ -182,7 +185,7 @@ def main() -> int:
         print("no display: this probe drives the picker's own drag handlers")
         return 2
 
-    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg = Config.load()
     cfg.path = Path("/tmp/lintranslator_resize_probe.json")  # never the real config
 
     app = Gtk.Application(

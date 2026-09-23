@@ -1,6 +1,6 @@
 """Check the panel can be resized by dragging its edge.
 
-Run:  .venv-gi/bin/python probe/panel_resize_check.py
+Run:  .venv/bin/python probe/panel_resize_check.py
 
 The panel is frameless, so it has no window-manager resize handles; the grips
 are widgets this app draws itself. Two things have to be true and neither can be
@@ -23,7 +23,10 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import gi  # noqa: E402
 
@@ -36,7 +39,6 @@ from lintranslator.panel import TranslatorPanel  # noqa: E402
 
 # Never the real config: this probe *saves* the size it drags to, and pointing
 # it at config.json overwrote the developer's card width once already.
-CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
 SCRATCH = Path("/tmp/lintranslator_resize_probe_config.json")
 failures: list[str] = []
 
@@ -63,7 +65,7 @@ def check(condition: bool, message: str) -> None:
 
 
 def main() -> int:
-    cfg = Config.load(str(CONFIG))
+    cfg = Config.load()
     cfg.path = SCRATCH  # every save below lands here, not in the real config
     cfg.translate.backend = "none"
     cfg.display.width = 555

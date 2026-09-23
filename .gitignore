@@ -8,6 +8,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 *.egg-info/
+# `uv build` / `python -m build` output. None of it is source.
+dist/
+build/
+.build-check/
 # Development scratch: bench scripts, render logs, reference screenshots.
 .cache/
 

@@ -871,7 +871,10 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             from Xlib import X, display as xdisplay
             from Xlib import protocol as xprotocol
         except ImportError:
-            self._note_keep_above(False, "python-xlib not installed")
+            # Name the install, not just the module: this is the XWayland path for
+            # always-on-top, and "not installed" alone leaves the user guessing
+            # which package that is.
+            self._note_keep_above(False, "python-xlib not installed (pip install 'lintranslator[x11]')")
             return False
         try:
             conn = xdisplay.Display(display_name)

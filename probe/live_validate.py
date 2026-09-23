@@ -1,6 +1,6 @@
 """Live end-to-end validation: real portal capture + tesseract + ct2 NLLB.
 
-Run:  .venv-gi/bin/python probe/live_validate.py [seconds]
+Run:  .venv/bin/python probe/live_validate.py [seconds]
 
 Prints every translation the pipeline emits, flags duplicate emissions, and
 reports the OCR edit-distance jitter seen between consecutive reads on the live
@@ -8,8 +8,12 @@ screen (the quantity the settle/dedupe rules have to tolerate).
 """
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 from lintranslator.config import Config
 from lintranslator.detect import _edit_distance, is_same_reading
@@ -17,7 +21,7 @@ from lintranslator.pipeline import Pipeline
 
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 75.0
 
-cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+cfg = Config.load()
 # Force the local model by default: the configured backend may be a remote API,
 # and a validation run should not spend credits or depend on the network.
 if "--here" not in sys.argv:

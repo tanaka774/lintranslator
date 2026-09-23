@@ -1,6 +1,6 @@
 """Measure the region picker's sidebar: who sets its width, and how tall it is.
 
-Run:  .venv-gi/bin/python probe/picker_sidebar_check.py
+Run:  .venv/bin/python probe/picker_sidebar_check.py
 
 Two questions, both about the picker's right column:
 
@@ -22,7 +22,10 @@ import sys
 from io import BytesIO
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import gi  # noqa: E402
 
@@ -33,8 +36,6 @@ from PIL import Image  # noqa: E402
 
 from lintranslator import picker as picker_mod  # noqa: E402
 from lintranslator.config import Config  # noqa: E402
-
-CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
 
 # What the picker really holds once a region has been dragged: the coordinate
 # readout is one long unwrapped line and the OCR text is a whole sentence.
@@ -111,7 +112,7 @@ def main() -> int:
         print("no display; cannot measure")
         return 1
 
-    cfg = Config.load(str(CONFIG))
+    cfg = Config.load()
     cfg.translate.backend = "none"
     app = Gtk.Application(application_id="dev.lintranslator.sidebar.check", flags=0)
 

@@ -29,7 +29,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError as exc:  # pragma: no cover - depends on the install
+    # A missing numpy used to surface as a bare `No module named 'numpy'` from
+    # deep inside an import chain, which says nothing about what to install. It
+    # is an extra precisely because the GUI and the pipeline never need it.
+    raise ImportError(
+        "lintranslator.calibrate needs numpy:\n"
+        "  pip install 'lintranslator[calibrate]'"
+    ) from exc
+
 from PIL import Image
 
 from .config import Region

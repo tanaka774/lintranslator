@@ -15,12 +15,16 @@ Reported per line: was it translated, and how long after it appeared. Phase 2 is
 the one that produced "it stopped detecting": the panel's status line changes
 constantly, so every read looked like ours and the dialogue never settled.
 
-Run:  .venv-gi/bin/python probe/detect_latency.py
+Run:  .venv/bin/python probe/detect_latency.py
 """
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 from PIL import Image, ImageDraw  # noqa: E402
 

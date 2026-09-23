@@ -5,11 +5,15 @@ Takes the frame the pipeline really captured 10 ms after "Watch live" was presse
 through the real `Pipeline` on a virtual clock, with real tesseract and the
 echoing `none` backend. Deterministic - no screen, no network.
 
-Run:  .venv-gi/bin/python probe/first_emit_sim.py
+Run:  .venv/bin/python probe/first_emit_sim.py
 """
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 from PIL import Image  # noqa: E402
 
@@ -43,11 +47,11 @@ class FrozenScreen:
 
 
 def main():
-    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg = Config.load()
     cfg.translate.backend = "none"
     cfg.capture.fps = 2.0
 
-    path = sys.argv[1] if len(sys.argv) > 1 else "/home/chiba/workspace/lintranslator/data/probe_first_crop.png"
+    path = sys.argv[1] if len(sys.argv) > 1 else APP_DIR / "data" / "probe_first_crop.png"
     image = Image.open(path).convert("RGB")
     print(f"frame: {path}")
 

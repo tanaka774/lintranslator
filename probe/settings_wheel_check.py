@@ -1,6 +1,6 @@
 """Check the wheel no longer changes the display sliders.
 
-Run:  .venv-gi/bin/python probe/settings_wheel_check.py
+Run:  .venv/bin/python probe/settings_wheel_check.py
 
 A `Gtk.Scale` changes value on every scroll it receives, and the settings dialog
 is a tall scrolling column of them, so wheeling down to the buttons at the bottom
@@ -27,7 +27,10 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import gi  # noqa: E402
 
@@ -38,7 +41,6 @@ from lintranslator import theme  # noqa: E402
 from lintranslator.config import Config  # noqa: E402
 from lintranslator.settings import SettingsDialog  # noqa: E402
 
-CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
 failures: list[str] = []
 
 SLIDERS = ("font_scale", "width_scale", "target_lines", "source_lines")
@@ -68,7 +70,7 @@ def scroll_controllers(widget):
 
 
 def main() -> int:
-    cfg = Config.load(str(CONFIG))
+    cfg = Config.load()
     cfg.path = Path("/tmp/lintranslator_wheel_probe.json")
     theme.install_for(cfg)
     dlg = SettingsDialog(None, cfg)

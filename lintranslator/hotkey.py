@@ -247,9 +247,12 @@ class GlobalHotkey:
         return self._bound
 
     def close(self) -> None:
-        """Drop the session and the signal subscriptions."""
-        from gi.repository import GLib
+        """Drop the session and the signal subscriptions.
 
+        Safe to call when nothing was ever bound, and on a machine with no
+        PyGObject at all: there is then no timeout to cancel and no subscription
+        to drop, and the import is the only thing that could raise.
+        """
         self._clear_timeout()
         if self._session is not None and self._conn is not None:
             try:

@@ -13,13 +13,17 @@ Two questions, measured rather than reasoned about:
    PNG through both paths (`Region.to_pixels` + `Image.crop` vs `ScreenGrabber.grab`),
    so a mismatch cannot hide behind a live screen that moved between grabs.
 
-Run:  .venv-gi/bin/python probe/capture_timing.py
+Run:  .venv/bin/python probe/capture_timing.py
 """
 import sys
 import time
 from io import BytesIO
+from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 from PIL import Image
 
@@ -27,7 +31,7 @@ from lintranslator.capture import ScreenGrabber
 from lintranslator.config import Config
 from lintranslator.portal import ScreenshotPortal
 
-cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+cfg = Config.load()
 region = cfg.capture.region
 
 print("== portal screenshot path ==")

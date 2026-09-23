@@ -16,13 +16,16 @@ call a missing handle a pass.
 
 Writes .cache/region_resize_handles.png so the result can be looked at.
 
-Run:  .venv-gi/bin/python probe/region_resize_render.py
+Run:  .venv/bin/python probe/region_resize_render.py
 """
 import sys
 from io import BytesIO
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import cairo  # noqa: E402
 import gi  # noqa: E402
@@ -36,7 +39,7 @@ from lintranslator import panel as panel_mod  # noqa: E402
 from lintranslator.config import Config  # noqa: E402
 from lintranslator.picker import RegionPicker  # noqa: E402
 
-OUT = Path("/home/chiba/workspace/lintranslator/.cache/region_resize_handles.png")
+OUT = APP_DIR / ".cache" / "region_resize_handles.png"
 SCREEN = (1600, 1000)
 CANVAS = (800, 500)  # what the screenshot is letterboxed into
 BOX = (300, 200, 400, 200)
@@ -77,7 +80,7 @@ def main() -> int:
         print("no display: GTK cannot be initialised")
         return 2
 
-    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg = Config.load()
     cfg.path = Path("/tmp/lintranslator_resize_render.json")  # never the real config
 
     app = Gtk.Application(

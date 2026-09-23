@@ -16,8 +16,8 @@ than typed by hand:
 
 Run it when a source changes, then read the diff:
 
-    .venv-gi/bin/python probe/gen_languages.py            # needs network
-    .venv-gi/bin/python -m pytest tests/test_languages.py
+    .venv/bin/python probe/gen_languages.py            # needs network
+    .venv/bin/python -m pytest tests/test_languages.py
 
 Everything it cannot establish confidently is left as `None` rather than guessed:
 `None` becomes "this backend has no code for that language", which is a message

@@ -1,6 +1,6 @@
 """Render the panel in every state it can be in, as PNGs, to look at them.
 
-Run:  .venv-gi/bin/python probe/panel_contact_sheet.py
+Run:  .venv/bin/python probe/panel_contact_sheet.py
 
 The panel is the one window that floats over a game, so its size and its button
 placement cannot be judged from the source. This presents the real window and
@@ -16,7 +16,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import cairo  # noqa: E402
 import gi  # noqa: E402
@@ -29,8 +32,7 @@ from lintranslator.config import Config  # noqa: E402
 from lintranslator.panel import TranslatorPanel  # noqa: E402
 from lintranslator.pipeline import Event  # noqa: E402
 
-CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
-OUT = Path("/home/chiba/workspace/lintranslator/data")
+OUT = APP_DIR / "data"
 
 TWO_LINE_SOURCE = (
     "[It has been determined that this case merits preservation as a record. "
@@ -90,7 +92,7 @@ def shoot(window, name: str) -> None:
 
 
 def main() -> int:
-    cfg = Config.load(str(CONFIG))
+    cfg = Config.load()
     cfg.translate.backend = "none"
     cfg.gui.autostart = False
     # The real config's font scale, so the render matches the user's screen.

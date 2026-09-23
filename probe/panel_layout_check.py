@@ -1,6 +1,6 @@
 """Measure the panel's geometry, to check the card's size budget.
 
-Run:  .venv-gi/bin/python probe/panel_layout_check.py
+Run:  .venv/bin/python probe/panel_layout_check.py
 
 Builds the *real* panel widget tree (no pipeline, no network, no window shown)
 and asks GTK for its natural and minimum sizes. The numbers this prints are the
@@ -22,7 +22,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/lintranslator")
+# Run from anywhere: the package is imported from this checkout, not from
+# whatever happens to be on `sys.path`.
+APP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(APP_DIR))
 
 import gi  # noqa: E402
 
@@ -33,8 +36,6 @@ from lintranslator import panel as panel_mod  # noqa: E402
 from lintranslator import theme  # noqa: E402
 from lintranslator.config import Config  # noqa: E402
 from lintranslator.pipeline import Event  # noqa: E402
-
-CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
 
 LONG_SOURCE = (
     "[It has been determined that this case merits preservation as a record. "
@@ -96,7 +97,7 @@ def measure(widget: Gtk.Widget, width: int) -> tuple[int, int, int, int]:
 
 
 def main() -> int:
-    cfg = Config.load(str(CONFIG))
+    cfg = Config.load()
     cfg.translate.backend = "none"
     target_w = cfg.display.width
 
@@ -231,7 +232,7 @@ def sweep() -> int:
     for scale in (0.7, 1.0, 1.2, 2.0, 2.6):
         for width in (420, 900):
             for target_lines, source_lines in ((1, 1), (3, 2), (8, 6)):
-                cfg = Config.load(str(CONFIG))
+                cfg = Config.load()
                 cfg.translate.backend = "none"
                 cfg.display.font_scale = scale
                 cfg.display.width = width

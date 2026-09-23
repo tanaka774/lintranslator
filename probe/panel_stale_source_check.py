@@ -8,7 +8,7 @@ emits, exactly as `TranslatorPanel._drain` does for an "event" message.
 Nothing is presented on screen and no pipeline thread is started, so this does
 not touch the live desktop or the screen capture path.
 
-Run:  .venv-gi/bin/python probe/panel_stale_source_check.py
+Run:  .venv/bin/python probe/panel_stale_source_check.py
 """
 from __future__ import annotations
 
@@ -38,13 +38,12 @@ from lintranslator.config import Config  # noqa: E402
 from lintranslator.panel import TranslatorPanel  # noqa: E402
 from lintranslator.pipeline import Pipeline  # noqa: E402
 
-CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
 rows: list[tuple[float, str, str, str, str, str]] = []
 failures: list[str] = []
 
 
 def main() -> int:
-    cfg = Config.load(str(CONFIG))  # the settings the app is really running with
+    cfg = Config.load()  # the settings the app is really running with
     cfg.translate.backend = "none"  # no model, no network
     cfg.cache_path = ""  # never touch the real translation cache
 
