@@ -185,8 +185,8 @@ def main() -> int:
 
             def translation(target):
                 return Event(
-                    source="[It has been determined that this case merits "
-                    "preservation as a record.]",
+                    source="[The committee has resolved that this entry warrants "
+                    "retention as a standing record.]",
                     target=target,
                     confidence=94.0,
                     translate_elapsed=1.7,
@@ -199,10 +199,10 @@ def main() -> int:
             pump(300)
             short = (panel.get_width(), panel.get_height())
             panel._show_event(translation(
-                "Of all the actions taken by our men during the last operation, "
-                "his alone merits compliment. It was an efficient method of "
-                "neutralizing the enemy. The record will be preserved in full, "
-                "and the request filed today shall be attached to it."
+                "Of all the work done by our team during the last deployment, "
+                "hers alone deserves praise. It was an efficient way of defusing "
+                "the situation. The file will be kept in full, and the request "
+                "submitted today shall be attached to it as an appendix."
             ))
             pump(300)
             long = (panel.get_width(), panel.get_height())

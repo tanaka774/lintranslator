@@ -32,8 +32,8 @@ from lintranslator.translate import Translation  # noqa: E402
 # Limbus-shaped lines, each wrapped by the game across two rows. `rows` is what
 # the OCR recovers: `display_text` keeps the break, `text` does not.
 LINES = [
-    ("It has been determined that this case merits preservation as a record.",
-     "The following is the case record pertaining to today's request."),
+    ("The committee has resolved that this entry warrants retention as a standing record.",
+     "The material below is the file concerning today's submission."),
     ("Manager, the abnormality is approaching.",
      "Prepare for combat."),
     ("Don't worry. I have already calculated",

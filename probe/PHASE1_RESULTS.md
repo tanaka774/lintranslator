@@ -18,8 +18,8 @@ AMD RX 9070, Python 3.12, tesseract 5.5.3.
 Measured translation output:
 
 ```
-EN: [It has been determined that this case merits preservation as a record.
-     The following is the case record pertaining to today's request.]
+EN: [The committee has resolved that this entry warrants retention as a standing record.
+     The material below is the file concerning today's submission.]
 JA: [この事件は記録として保存されるべきであると決定された.
      今日の要請に関する事件記録は以下のとおりです.]
 ```

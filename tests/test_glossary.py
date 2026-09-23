@@ -177,14 +177,14 @@ def _result(*texts: str) -> OcrResult:
 
 
 def test_text_joins_wrapped_lines_for_translation():
-    r = _result("The following is the case", "record pertaining to today's request.")
-    assert r.text == "The following is the case record pertaining to today's request."
+    r = _result("The material below is the file", "concerning today's submission.")
+    assert r.text == "The material below is the file concerning today's submission."
 
 
 def test_display_text_preserves_the_game_line_breaks():
     """The panel should not show one long run where the game showed two lines."""
-    r = _result("The following is the case", "record pertaining to today's request.")
-    assert r.display_text == "The following is the case\nrecord pertaining to today's request."
+    r = _result("The material below is the file", "concerning today's submission.")
+    assert r.display_text == "The material below is the file\nconcerning today's submission."
 
 
 def test_visual_rows_counts_wrapped_lines():

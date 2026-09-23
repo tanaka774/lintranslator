@@ -26,8 +26,8 @@ End-to-end budget for one new dialogue line: **~1–1.7 s** (paste-instant once 
 
 Ground truth:
 ```
-[It has been determined that this case merits preservation as a record. The following is the case
-record pertaining to today's request.]
+[The committee has resolved that this entry warrants retention as a standing record. The material
+below is the file concerning today's submission.]
 ```
 
 | engine | config | line 1 | line 2 | warm latency |

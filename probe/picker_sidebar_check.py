@@ -41,9 +41,8 @@ from lintranslator.config import Config  # noqa: E402
 # readout is one long unwrapped line and the OCR text is a whole sentence.
 COORDS = "x=307 y=1213 w=1175 h=165   (fractions 0.1199, 0.8424, 0.4590, 0.1146)"
 OCR = (
-    "Hm. Of all the actions taken by our men during the last operation, his "
-    "alone merits compliment. It was an efficient method of neutralizing the "
-    "enemy. 2"
+    "Hm. Of all the work done by our team during the last deployment, hers "
+    "alone deserves praise. It was an efficient way of defusing the situation. 2"
 )
 TRANSLATION = (
     "我々の部下が前回の作戦で行った行動の中で、彼の功績だけが称賛に値する。"

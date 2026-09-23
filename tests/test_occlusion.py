@@ -121,11 +121,11 @@ def test_real_dialogue_is_never_flagged():
     for line in (
         "The city was captured by the enemy.",
         "Watching the city burn, he said nothing.",
-        "I have the ability to rewind them back to life, after all.",
-        "Herr Gregor is the proverbial poster child of Workshop-sponsored Fixers.",
+        "I can bring them back, if it comes to that.",
+        "The inspector is the proverbial poster child of company-sponsored contractors.",
         "See you around.",
-        "Manager! The abnormality is approaching. Prepare for combat.",
-        "It has been determined that this case merits preservation as a record.",
+        "Captain! The creature is closing in. Ready your weapons.",
+        "The committee has resolved that this entry warrants retention as a record.",
         "",
         "   ",
     ):
@@ -170,7 +170,7 @@ def test_real_dialogue_is_never_flagged_as_noise():
         ("The city was captured by the enemy.", 96.0),
         ("If I'm to put it m", 57.4),  # a real mid-reveal read, measured live
         ("Here, however... everyone seems to be mired... in ennui.", 88.0),
-        ("Herr Gregor is the proverbial poster child of Workshop-sponsored Fixers.", 93.0),
+        ("The inspector is the proverbial poster child of company-sponsored contractors.", 93.0),
         ("Yes.", 91.0),
     ):
         assert noise_reason(text, confidence) is None, text

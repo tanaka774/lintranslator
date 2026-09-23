@@ -117,17 +117,23 @@ class LinTranslatorApp:
 
     @staticmethod
     def _demo_event():
-        """A representative translation, for checking the panel layout."""
+        """A representative translation, for checking the panel layout.
+
+        Written for this demo rather than copied from a game: the panel needs a
+        two-line source and a two-line target of realistic length, and that is
+        all it needs.
+        """
         from .pipeline import Event
 
         return Event(
             source=(
-                "[It has been determined that this case merits preservation as a "
-                "record. The following is the case record pertaining to today's request.]"
+                "[The committee has resolved that this entry warrants retention as a "
+                "standing record. The material below is the file concerning today's "
+                "submission.]"
             ),
             target=(
-                "[この事件は記録として保存されるべきであると決定された."
-                "今日の要請に関する事件記録は以下のとおりです.]"
+                "[委員会は、この記録を保存する価値があると判断しました。"
+                "以下の資料は本日の申請に関するファイルです。]"
             ),
             confidence=94.0,
             translate_elapsed=1.69,

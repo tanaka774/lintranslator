@@ -441,11 +441,12 @@ def test_the_panel_keeps_the_configured_width(picker):
     # areas had to stop dictating the width.
     panel._show_event(
         Event(
-            source="[It has been determined that this case merits preservation as a "
-            "record. The following is the case record pertaining to today's request.]",
-            target="Of all the actions taken by our men during the last operation, his "
-            "alone merits compliment. It was an efficient method of neutralizing the "
-            "enemy.",
+            source="[The committee has resolved that this entry warrants retention as a "
+            "standing record. The material below is the file concerning today's "
+            "submission.]",
+            target="Of all the work done by our team during the last deployment, hers "
+            "alone deserves praise. It was an efficient way of defusing the "
+            "situation.",
             confidence=94.0,
             translate_elapsed=1.69,
             total_elapsed=1.9,
@@ -494,12 +495,12 @@ def test_the_panel_height_does_not_follow_its_text(picker):
     short = height()
     panel._show_event(
         Event(
-            source="[It has been determined that this case merits preservation as a "
-            "record.]",
-            target="Of all the actions taken by our men during the last operation, his "
-            "alone merits compliment. It was an efficient method of neutralizing the "
-            "enemy. The record will be preserved in full, and the request filed today "
-            "shall be attached to it as an appendix.",
+            source="[The committee has resolved that this entry warrants retention as a "
+            "standing record.]",
+            target="Of all the work done by our team during the last deployment, hers "
+            "alone deserves praise. It was an efficient way of defusing the "
+            "situation. The file will be kept in full, and the request submitted "
+            "today shall be attached to it as an appendix.",
             confidence=94.0,
             translate_elapsed=1.7,
             total_elapsed=2.1,
@@ -768,10 +769,10 @@ def test_applying_settings_does_not_wipe_the_translation(picker):
     short_h = panel.measure(Gtk.Orientation.VERTICAL, width).natural
     panel._show_event(
         Event(
-            source="[It has been determined that this case merits preservation.]",
-            target="Of all the actions taken by our men during the last operation, "
-            "his alone merits compliment. It was an efficient method of "
-            "neutralizing the enemy.",
+            source="[The committee has resolved that this entry warrants retention.]",
+            target="Of all the work done by our team during the last deployment, "
+            "hers alone deserves praise. It was an efficient way of "
+            "defusing the situation.",
             confidence=94.0,
             translate_elapsed=1.7,
             total_elapsed=2.1,

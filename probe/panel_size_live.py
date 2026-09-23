@@ -27,17 +27,17 @@ from lintranslator.panel import TranslatorPanel  # noqa: E402
 from lintranslator.pipeline import Event  # noqa: E402
 
 LONG_SOURCE = (
-    "[It has been determined that this case merits preservation as a record. "
-    "The following is the case record pertaining to today's request.]"
+    "[The committee has resolved that this entry warrants retention as a standing record. "
+    "The material below is the file concerning today's submission.]"
 )
 LONG_TARGET = (
     "[この事件は記録として保存されるべきであると決定された。"
     "今日の要請に関する事件記録は以下のとおりです。]"
 )
 VERBOSE_TARGET = (
-    "Of all the actions taken by our men during the last operation, his alone "
-    "merits compliment. It was an efficient method of neutralizing the enemy. "
-    "The record will be preserved in full, and the request filed today shall be "
+    "Of all the work done by our team during the last deployment, hers alone "
+    "deserves praise. It was an efficient way of defusing the situation. The "
+    "file will be kept in full, and the request submitted today shall be "
     "attached to it as an appendix."
 )
 

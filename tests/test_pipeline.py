@@ -123,8 +123,8 @@ class _NullCache:
 def test_translates_once_when_the_screen_goes_static():
     """The regression case: text appears, the screen then stops changing, and the
     line must still be translated via the time-based release."""
-    frame = _frame("The abnormality is approaching")
-    pipe = _pipeline(["The abnormality is approaching"] * 4, [frame])
+    frame = _frame("The reactor is overheating")
+    pipe = _pipeline(["The reactor is overheating"] * 4, [frame])
 
     now = 0.0
     emitted = []
@@ -140,15 +140,15 @@ def test_translates_once_when_the_screen_goes_static():
         time.sleep(0.25)
 
     assert emitted, "static text was never translated"
-    assert emitted[0].source == "The abnormality is approaching"
+    assert emitted[0].source == "The reactor is overheating"
     assert emitted[0].target.startswith("[ja]")
     pipe.close()
 
 
 def test_no_translation_while_text_keeps_changing():
     """A typewriter reveal must not produce a translation per character."""
-    frames = [_frame(f"The abno{'x' * i}") for i in range(6)]
-    texts = [f"The abno{'x' * i}" for i in range(6)]
+    frames = [_frame(f"The react{'x' * i}") for i in range(6)]
+    texts = [f"The react{'x' * i}" for i in range(6)]
     pipe = _pipeline(texts, frames)
     emitted = []
     for _ in range(5):
@@ -371,8 +371,8 @@ def test_a_pause_mid_reveal_does_not_emit_a_fragment():
     The overrides match production (`config.json`); the shared fixture defaults
     (1s windows) are deliberately tighter than the real ones.
     """
-    partial = "Herr Gregor is the proverbial poster child of Work"
-    full = "Herr Gregor is the proverbial poster child of Workshop-sponsored Fixers."
+    partial = "The inspector is the proverbial poster child of company"
+    full = "The inspector is the proverbial poster child of company-sponsored contractors."
     # The partial sits on screen for 3s (6 polls) before the rest appears.
     readings = [partial] * 6 + [full] * 6
     pipe, screen, events = _pipeline_for(
@@ -386,9 +386,9 @@ def test_a_pause_mid_reveal_does_not_emit_a_fragment():
 
 def test_a_finished_line_is_not_delayed_by_the_reveal_grace():
     """The unfinished-text grace must not cost normal dialogue its timing."""
-    pipe, screen, events = _pipeline_for(["The abnormality is approaching."] * 4)
+    pipe, screen, events = _pipeline_for(["The reactor is overheating."] * 4)
     _drive(pipe, screen, events)
-    assert [e.source for e in events] == ["The abnormality is approaching."]
+    assert [e.source for e in events] == ["The reactor is overheating."]
 
 
 def test_static_screen_produces_no_repeat_translations():
@@ -527,7 +527,7 @@ def test_a_pause_does_not_release_the_text_it_was_holding():
     timer that kept running would emit a line that is already gone - or release a
     paused reveal's fragment the instant reading resumed.
     """
-    partial = "Herr Gregor is the proverbial poster child of Work"
+    partial = "The inspector is the proverbial poster child of company"
     pipe, screen, events = _pipeline_for([partial] * 20)
     gate = {"value": None}
     pipe.gate = lambda: gate["value"]

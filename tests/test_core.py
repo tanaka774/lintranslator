@@ -60,11 +60,11 @@ def test_incremental_typewriter_change_is_detected():
     characters changes so little of the frame that the average stays flat. The
     typewriter reveal is precisely this kind of localized change."""
     det = ChangeDetector()
-    det.update(_frame("The abnormality is"))
+    det.update(_frame("The reactor is"))
     # one more word revealed in an otherwise identical frame
-    assert det.update(_frame("The abnormality is approach")) is True
+    assert det.update(_frame("The reactor is overheat")) is True
     # repeating the same frame is still not a change
-    assert det.update(_frame("The abnormality is approach")) is False
+    assert det.update(_frame("The reactor is overheat")) is False
 
 
 def test_single_character_change_is_detected():
@@ -102,13 +102,13 @@ def test_partial_typewriter_text_is_held_then_released():
     """
     settler = TextSettler(settle_frames=2, settle_max_wait=2.0, settle_window=1.2)
     # Typewriter reveal, one OCR sample at a time.
-    assert settler.observe("The abno", 0.0) is False
-    assert settler.observe("The abnormality is", 0.5) is False
-    assert settler.observe("The abnormality is approaching.", 1.0) is False
+    assert settler.observe("The react", 0.0) is False
+    assert settler.observe("The reactor is", 0.5) is False
+    assert settler.observe("The reactor is overheating.", 1.0) is False
     # Still inside the stability window: the reveal only just finished.
-    assert settler.observe("The abnormality is approaching.", 1.5) is False
+    assert settler.observe("The reactor is overheating.", 1.5) is False
     # Past the window -> final.
-    assert settler.observe("The abnormality is approaching.", 2.3) is True
+    assert settler.observe("The reactor is overheating.", 2.3) is True
 
 
 def test_oscillating_text_still_settles():
@@ -174,21 +174,21 @@ def test_short_lines_still_decide_by_edit_distance():
 def test_typewriter_reveal_is_not_mistaken_for_jitter():
     """A reveal grows, so it must keep resetting the settle window."""
     assert not is_same_reading("Ah, let me set it on your", "Ah, let me set it on your table, Master")
-    assert not is_same_reading("The abno", "The abnormality is approaching.")
+    assert not is_same_reading("The react", "The reactor is overheating.")
 
 
 def test_unfinished_text_waits_out_a_reveal_pause():
     """Regression: a game pauses mid-reveal, and "stable for N seconds" cannot
     tell that pause from the end of a line. Releasing on the pause put a fragment
-    in the panel ("...the proverbial poster child of Work") and then translated
+    in the panel ("...the proverbial poster child of company") and then translated
     the line again when the rest arrived."""
     settler = TextSettler(settle_frames=2, settle_max_wait=8.0, settle_window=1.2)
-    partial = "Herr Gregor is the proverbial poster child of Work"  # no terminator
+    partial = "The inspector is the proverbial poster child of company"  # no terminator
     assert settler.observe(partial, 0.0) is False
     # Still unfinished 3s later (the pause a live game took), so it must be held.
     assert settler.tick(3.0) is False, "a paused reveal was released as final"
     # The rest of the sentence arrives and the line is now complete.
-    full = "Herr Gregor is the proverbial poster child of Workshop-sponsored Fixers."
+    full = "The inspector is the proverbial poster child of company-sponsored contractors."
     assert settler.observe(full, 3.5) is False   # reveal continues, window restarts
     assert settler.held == full, "the completed sentence must replace the fragment"
     assert settler.tick(4.6) is False            # settle_window is 1.2s from 3.5s
@@ -198,7 +198,7 @@ def test_unfinished_text_waits_out_a_reveal_pause():
 def test_finished_line_is_released_on_the_normal_window():
     """The unfinished-text grace must not slow down ordinary dialogue."""
     settler = TextSettler(settle_frames=2, settle_max_wait=8.0, settle_window=1.2)
-    assert settler.observe("The abnormality is approaching.", 0.0) is False
+    assert settler.observe("The reactor is overheating.", 0.0) is False
     assert settler.tick(1.1) is False
     assert settler.tick(1.3) is True
 
@@ -245,9 +245,9 @@ def test_confirm_prevents_re_emitting_the_same_line():
 def test_a_reveal_converges_instead_of_being_discarded():
     """A changing read must keep the newest text, not drop back to the first."""
     settler = TextSettler(settle_frames=2, settle_max_wait=5.0, settle_window=1.0)
-    settler.observe("The abno", 0.0)
-    settler.observe("The abnormality is approaching.", 0.3)
-    assert settler.held == "The abnormality is approaching."
+    settler.observe("The react", 0.0)
+    settler.observe("The reactor is overheating.", 0.3)
+    assert settler.held == "The reactor is overheating."
 
 
 def test_static_screen_still_releases_via_tick():
@@ -434,11 +434,11 @@ def test_jitter_of_one_line_is_still_not_a_new_line():
     """The fix above must not undo the reason 'keep the longer read' exists:
     OCR noise on one line must not restart the stability window."""
     settler = TextSettler(settle_frames=2, settle_window=1.0, settle_max_wait=8.0)
-    settler.observe("The abnormality is approaching, Manager.", 0.0)
+    settler.observe("The reactor is overheating, Captain.", 0.0)
     # A jittering read, one character shorter, half a second in. If that counted
     # as a new line the window would restart and the release would move to 1.5s.
-    assert settler.observe("The abnormality is approaching, Manager", 0.5) is False
-    assert settler.observe("The abnormality is approaching, Manager.", 1.2) is True
+    assert settler.observe("The reactor is overheating, Captain", 0.5) is False
+    assert settler.observe("The reactor is overheating, Captain.", 1.2) is True
 
 
 def test_force_re_translates_instead_of_serving_the_cache(tmp_path):

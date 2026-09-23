@@ -30,10 +30,19 @@ data/tessdata/
 data/*.png
 config.json
 
-# Probe leftovers
+# Probe leftovers.
+#
+# Reference screenshots are the one category here that is not merely untidy:
+# `probe/shot.webp` was a full frame of a commercial game, and it rode into the
+# repository on the strength of `probe/*.png` not covering `.webp`. Screenshots
+# of a game you did not write are not ours to redistribute, so every image
+# extension the probes use is listed, and none of them are tracked.
 probe/dl/
 probe/wheels*/
 probe/*.png
+probe/*.webp
+probe/*.jpg
+probe/*.jpeg
 probe/tessdata/
 probe/*.out
 

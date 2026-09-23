@@ -171,7 +171,9 @@ LIMBUS_GLOSSARY = Glossary(
 )
 
 # NOTE: there is deliberately no pre-map for "Manager". Rewriting the source was
-# measured against the real model and made things worse, not better:
+# measured against the real model and made things worse, not better. The four
+# inputs below are short fragments of in-game lines, quoted only as the evidence
+# for that claim - a handful of words each, not script:
 #
 #   "Manager! The abnormality is approaching."  -> 管理者異常が近づいてる戦闘準備
 #   "Executive Manager! The abnormality ..."    -> 管理者異常が近づいてる戦闘準備  (no change)

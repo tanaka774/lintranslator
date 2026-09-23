@@ -24,9 +24,9 @@ from lintranslator.pipeline import Pipeline
 
 # A realistic reveal: the full sentence arrives in growing chunks, with a pause
 # in the middle (the reported case), measured against the real panel output.
-FULL = "You did not? Hm, odd. Herr Gregor is the proverbial poster child of Workshop-sponsored Fixers."
+FULL = "You did not? Hm, odd. The inspector is the proverbial poster child of company-sponsored contractors."
 STEPS = [
-    "zz ... You did not? Hm, odd. Herr Gregor is the proverbial poster child of Work",
+    "zz ... You did not? Hm, odd. The inspector is the proverbial poster child of company",
     FULL,
 ]
 # Polls (0.5 s each) spent on each step. Step 0 is held for PAUSE polls - that is

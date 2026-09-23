@@ -27,10 +27,10 @@ from lintranslator.config import Config  # noqa: E402
 from lintranslator.ocr import OcrLine, OcrResult  # noqa: E402
 from lintranslator.pipeline import Pipeline  # noqa: E402
 
-FRAGMENT = "Herr Gregor is the proverbial poster child of Work"
-FULL = "Herr Gregor is the proverbial poster child of Workshop-sponsored Fixers."
-STEP_ONE = "Herr Gregor is the proverbial"
-STEP_TWO = "Herr Gregor is the proverbial poster child of Work"
+FRAGMENT = "The inspector is the proverbial poster child of company"
+FULL = "The inspector is the proverbial poster child of company-sponsored contractors."
+STEP_ONE = "The inspector is the proverbial"
+STEP_TWO = "The inspector is the proverbial poster child of company"
 
 
 class Screen:

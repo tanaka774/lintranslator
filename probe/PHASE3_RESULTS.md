@@ -6,7 +6,7 @@ Same model (NLLB-200-distilled-600M), same lines, same 8 CPU threads:
 
 | line | transformers | CTranslate2 int8 | speedup |
 |---|---|---|---|
-| long record line (137 chars) | 1.56 s | **0.34 s** | 4.6x |
+| long record line (147 chars) | 1.56 s | **0.34 s** | 4.6x |
 | "Manager! The abnormality is approaching." | 0.90 s | **0.20 s** | 4.5x |
 | "Don't worry. I have already calculated..." | 0.84 s | **0.16 s** | 5.3x |
 

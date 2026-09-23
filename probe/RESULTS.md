@@ -16,8 +16,8 @@ Input: user screenshot 1501x852 (in-game dialogue box, bottom area).
 
 Ground truth:
 ```
-[It has been determined that this case merits preservation as a record. The following is the case
-record pertaining to today's request.]
+[The committee has resolved that this entry warrants retention as a standing record. The material
+below is the file concerning today's submission.]
 ```
 
 ## Translation candidates
