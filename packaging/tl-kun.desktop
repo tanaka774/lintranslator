@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=tl-kun
+GenericName=Game dialogue translator
+Comment=Translate game dialogue by reading a screen region (Wayland/KDE)
+Exec=tlk-gui
+Icon=accessories-dictionary
+Terminal=false
+Categories=Utility;Accessibility;Game;
+Keywords=translate;ocr;japanese;game;
+StartupWMClass=tl-kun
+X-GNOME-UsesNotifications=false

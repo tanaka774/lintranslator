@@ -1,0 +1,32 @@
+# Local environment and caches - none of this belongs in version control.
+.venv/
+.venv-*/
+.uvcache/
+.uvpython/
+.hf/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+# Development scratch: bench scripts, render logs, reference screenshots.
+.cache/
+
+# Model weights. data/ct2 is ~600 MB of converted NLLB - a `git add .` would
+# try to commit it, and GitHub rejects files over 100 MB.
+data/ct2/
+data/*.bin
+data/*.safetensors
+
+# Runtime state. The app keeps this in the XDG directories now (tlkun/paths.py);
+# these paths are what an older checkout left behind.
+data/cache.json
+data/tessdata/
+data/*.png
+config.json
+
+# Probe leftovers
+probe/dl/
+probe/wheels*/
+probe/*.png
+probe/tessdata/
+probe/*.out

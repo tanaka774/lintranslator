@@ -1,0 +1,41 @@
+[project]
+name = "tl-kun"
+version = "0.1.0"
+description = "Screen-region OCR + auto-translation for game dialogue (Wayland/KDE first)"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "pillow>=10.0",
+    "jeepney>=0.9",
+    "pytesseract>=0.3.13",
+]
+
+[project.optional-dependencies]
+# Recommended local backend: int8 NLLB via CTranslate2. The tokenizer still
+# comes from transformers, but no torch is needed to run inference.
+ct2 = [
+    "ctranslate2>=4.0",
+    "transformers>=4.40,<5",
+    "sentencepiece>=0.2",
+]
+# The slower transformers path, for models that cannot be converted or as a
+# fallback if CTranslate2 is unavailable. Pulls in torch.
+local = [
+    "transformers>=4.40,<5",
+    "torch>=2.2",
+    "sentencepiece>=0.2",
+    "sacremoses>=0.1",
+]
+# Alternate OCR engine (PP-OCR). Slower here, kept for non-Latin sources.
+rapidocr = [
+    "rapidocr-onnxruntime>=1.4",
+]
+
+[project.scripts]
+tlkun = "tlkun.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["tlkun"]

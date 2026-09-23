@@ -1,0 +1,998 @@
+# tl-kun
+
+Screen-region OCR + auto-translation for game dialogue. Point it at the dialogue
+box once, and it watches that rectangle, reads the text, and translates it.
+
+Built and verified against **Limbus Company** on **KDE Plasma 6 / Wayland**, but
+nothing is game-specific: the region is a rectangle, and the OCR/translation
+layers are generic.
+
+Current state: **Phase 3 complete** (pipeline + GUI + int8 backend + glossary).
+Verified end-to-end against the reference screenshot and live screen content.
+
+---
+
+## Quick start
+
+```bash
+.venv/bin/python -m tlkun gui     # picks a region, then starts translating
+```
+
+Everything after that is inside the GUI: **Capture** the screen, drag a box over
+the dialogue text, **Auto-detect** to snap it to the text, **Settings** to choose
+a backend, paste an API key, pick a model and set the prompt, then **Start
+translating**. No shell commands, no environment variables required.
+
+The picker also shows the translation of the current selection as you adjust it
+(**Translate automatically**, on by default), which is the quickest way to judge a
+model or prompt without launching the panel.
+
+---
+
+## Why it works this way
+
+Three decisions were driven by measurement, not preference.
+
+### 1. Capture must go through xdg-desktop-portal
+
+On Wayland a client cannot read the framebuffer. `mss`, `import`, X11 grabs and
+friends all fail or return black. The supported path is
+`org.freedesktop.portal.Screenshot` / `ScreenCast`, which KWin backs with
+`zkde_screencast_unstable_v1`.
+
+Measured on this machine: **~0.2 s per grab**, silently reusing the permission
+grant (no dialog after the first call). This is fast enough to poll at 2 fps.
+
+### 2. Tesseract, not PP-OCR
+
+Measured on a real dialogue box (ground truth: `[It has been determined that this
+case merits preservation as a record. ...`):
+
+| engine | line 1 | line 2 | warm latency |
+|---|---|---|---|
+| **tesseract** `-l eng --psm 6`, 3x upscale | exact | exact | **~105 ms** |
+| rapidocr-onnxruntime 1.4.4 (PP-OCRv4) | `[` -> `l` | **word spaces lost** | ~410 ms |
+| rapidocr 3.x (PP-OCRv6) | `[` -> `l` | exact | ~600 ms |
+| tesseract on the **raw** screenshot | garbage | garbage | - |
+
+Preprocessing is not optional. The last row is the whole reason this project
+crops and upscales before OCR: the same engine that is exact on a cropped,
+3x-upscaled, autocontrasted region returns noise on the untouched frame.
+
+### 3. NLLB, never `opus-mt-en-jap`
+
+`Helsinki-NLP/opus-mt-en-jap` is the obvious-looking choice and it is unusable.
+Given this project's sample line it produced output unrelated to the input:
+
+```
+in : [It has been determined that this case merits preservation as a record. ...]
+out: わたし が こう い う 理由 は , 日 ごと に すなわち , 十 分 の 一 と し て 語 ら れ た ...
+```
+
+`facebook/nllb-200-distilled-600M` is correct and fast (**~1.7 s/line** on an
+8-thread CPU, greedy decoding):
+
+```
+out: [この事件は記録として保存されるべきであると決定された. 今日の要請に関する事件記録は以下のとおりです.]
+```
+
+---
+
+## Compatibility
+
+| target | status | why |
+|---|---|---|
+| **Linux + KDE Plasma 6 / Wayland** | **verified** | the environment every measurement in this README was taken on |
+| **Linux + X11 / XWayland** | works | and window placement and keep-above genuinely work here, unlike native Wayland |
+| **Linux + Wayland, other compositors** | depends on the portal backend | the parts that are not KDE are the hotkey and the keep-above workaround |
+| **Linux + GNOME** | core expected to work, untested here | `xdg-desktop-portal-gnome` implements Screenshot and ScreenCast, so capture should be fine; the automatic hotkey will not bind |
+| **macOS / Windows** | **not supported** | not merely untested: the capture and hotkey layers have nothing to talk to |
+
+Linux is a hard requirement, not a preference. Three layers assume it, and none of
+them has a fallback:
+
+* **Capture** is `org.freedesktop.portal.Screenshot` / `ScreenCast` over D-Bus
+  (`portal.py`). There is no other grabber in the tree, because on Wayland
+  `mss`, `import` and X11 grabs return black - see "Why it works this way".
+  No portal, no pixels.
+* **The global hotkey** is `org.freedesktop.portal.GlobalShortcuts` (`hotkey.py`).
+  KDE implements it; the compositor shows its own binding dialog and then sends
+  the key. Coverage elsewhere is patchy: `xdg-desktop-portal-gnome` does not
+  implement the interface at all
+  ([issue 197](https://gitlab.gnome.org/GNOME/xdg-desktop-portal-gnome/-/work_items/197)),
+  so outside KDE expect to bind the shortcut by hand. Where the portal is absent
+  the app still runs - the hotkey is best-effort by design, every failure goes to
+  the status line, and the fallback is a desktop custom shortcut running
+  `tlkun reread` over the control socket.
+* **The control socket** lives in `$XDG_RUNTIME_DIR` (`control.py`), and the
+  launcher that grants the app the *application id* the portal demands is a
+  `.desktop` file (`packaging/`).
+
+There are no `sys.platform` checks anywhere in `tlkun/` - not as a guard, and not
+as a portability shim. Nothing was written with another OS in mind.
+
+The GUI itself is plain GTK4, so it is not a KDE application: it runs on any
+Wayland or X11 desktop with PyGObject. What is KDE-specific is the shortcut
+portal, plus the KWin window rule recommended for keep-above under native Wayland
+(see "Always on top"). Under GNOME, expect to bind the shortcut by hand and to
+manage stacking yourself.
+
+Elsewhere in this README, "verified" and "measured" mean this machine: KDE Plasma
+6, Wayland, CT2 on CPU. Every other row of the table above is reasoned from the
+code, not observed.
+
+---
+
+## Install
+
+Requires Linux with a Wayland session (or X11), Python 3.12/3.13, and tesseract
+(see "Compatibility" above).
+
+```bash
+# 1. tesseract binary (language data is fetched automatically at first run)
+sudo pacman -S tesseract            # Arch / CachyOS
+# sudo apt install tesseract-ocr    # Debian / Ubuntu
+
+# 2. environment. PyGObject comes from the system (GTK4 GUI) and tesseract
+#    language data is fetched at first run, so no root is needed after this.
+uv venv --python 3.12 --system-site-packages .venv
+uv pip install --python .venv/bin/python -e .
+uv pip install --python .venv/bin/python -e '.[ct2]'
+
+# 3. convert the model to int8 - one time, ~600 MB, takes seconds
+#    (it lands in ~/.local/share/tl-kun/ct2/ - see "Where it keeps things")
+.venv/bin/python -m tlkun convert
+```
+
+`.[ct2]` is the fast path. `.[local]` is the older transformers route, which
+pulls in torch and needs ~4.7 GB of weights; it exists for models that cannot be
+converted and is no longer the default.
+
+`eng.traineddata` / `jpn.traineddata` are downloaded on first use, so no root is
+needed. The fetch is pinned to a `tessdata_fast`
+revision and the file is checked against a SHA-256 before it is installed — a
+language file is a binary that tesseract parses. The pinned set is eng, jpn, kor,
+chi_sim, chi_tra, rus, deu, fra, spa, por, ita, pol, tur, vie, tha, ara; a
+language without a pinned checksum is not downloaded automatically — install it
+from the distro, or set `ocr.allow_unverified_tessdata: true` to fetch it anyway.
+
+The default `ct2` backend needs only the ~600 MB converted model. The `.hf/`
+HuggingFace cache is used by the converters and by the
+`local` fallback backend; to share it with your other projects, export
+`HF_HOME=~/.cache/huggingface` before running. The `ct2` tokenizer is small and
+is all that path fetches.
+
+Only `local` needs the full ~4.7 GB of weights: NLLB ships both safetensors and
+`.bin`, and this transformers/torch combination loads the `.bin`, so both end up
+on disk (forcing `use_safetensors=True` trips a torch 2.14 meta-device bug).
+
+### Where it keeps things
+
+State lives in the XDG directories, not next to the source:
+
+| what | where | mode |
+|---|---|---|
+| `config.json` | `~/.config/tl-kun/config.json` (`$XDG_CONFIG_HOME`) | **0600** |
+| converted weights, tessdata | `~/.local/share/tl-kun/` (`$XDG_DATA_HOME`) | — |
+| the optional translation cache, the control socket | `~/.cache/tl-kun/` (`$XDG_CACHE_HOME`) | — |
+
+`TLKUN_HOME` puts all three under one directory instead, which is what a
+portable install (or a test run) wants.
+
+Two consequences worth knowing. The config is written **0600 at creation**, not
+chmodded afterwards, because it can hold an API key in plain text; a config left
+in a checkout from an older version is tightened the first time it is read. And
+an install that still has its state beside the source keeps working: the old
+locations are read, and the first run copies `config.json` into place — repointing
+its `ct2_model_dir` and `cache_path` — and says so in the panel. The old file is
+never deleted, so if the message says one is still in your checkout, it is right,
+and it is the copy that still holds your key.
+
+Verify everything:
+
+```bash
+.venv/bin/python -m tlkun check
+```
+
+```
+tesseract binary : tesseract 5.5.3
+tessdata dir     : /home/you/.local/share/tl-kun/tessdata
+  eng           : ok
+portal ScreenCast: v5
+portal Screenshot: v2
+region           : fraction (0.175, 0.838, 0.79, 0.082)
+translate backend: local (facebook/nllb-200-distilled-600M, eng_Latn->jpn_Jpan)
+RESULT: ready
+```
+
+### Model licences
+
+The default local model, `facebook/nllb-200-distilled-600M`, is **CC-BY-NC-4.0**,
+which permits non-commercial use only. tl-kun does not bundle or redistribute the
+weights — `tlkun convert` downloads them from HuggingFace on your machine — but
+anyone shipping this app with pre-converted weights, or using the local backend
+commercially, is bound by that licence. Settings states the licence next to the
+Local backends, and `NOTICE` in the repository root lists the third-party terms
+in full, along with the permissive alternatives: `facebook/m2m100_418M` is MIT
+and `Helsinki-NLP/opus-mt-en-jap` is Apache-2.0, though a different model family
+expects its own language codes, not NLLB's FLORES-200 ones. The hosted backends
+have no local model licence at all.
+
+---
+
+## Use
+
+```bash
+# --- GUI ---
+.venv/bin/python -m tlkun gui                 # pick a region, then watch (default)
+.venv/bin/python -m tlkun gui --panel         # skip the picker, straight to the panel
+.venv/bin/python -m tlkun gui --pick          # region picker only, then exit
+.venv/bin/python -m tlkun gui --demo          # panel with a sample line (no model)
+
+# --- while it is running ---
+.venv/bin/python -m tlkun reread              # read the box again, now (bind a hotkey to this)
+.venv/bin/python -m tlkun status              # what the running GUI is doing
+.venv/bin/python -m tlkun shortcut            # how to set up a global hotkey
+
+# --- headless ---
+# capture the region once, to check you framed the dialogue box
+.venv/bin/python -m tlkun grab -o /tmp/frame.png
+
+# OCR only - no translation, no waiting. Use this to tune the region.
+.venv/bin/python -m tlkun read --repeat 5
+
+# the real thing
+.venv/bin/python -m tlkun run
+```
+
+### The GUI
+
+**Region picker** (the first window of `tlkun gui`) shows a frozen screenshot and
+lets you drag a rectangle over the dialogue text. The box can be resized from any
+edge or corner: grips sit at every corner and at the middle of every edge, the
+pointer changes shape over them, and the edge you grabbed travels with the pointer
+instead of snapping under it. The controls are one toolbar row: **Capture**,
+**Save**, **Settings** and **Close** grouped on the right, with **Watch live** —
+the action the window exists for — carrying the accent. It used to be two rows of
+equal-width buttons with no primary action, which made the one button that matters
+look like its four neighbours.
+
+The sidebar is a 340 px control column and the canvas takes everything else —
+1160 px of a 1500 px window, against 840 px before. The culprit was one
+`set_hexpand(True)` on the crop thumbnail: `GtkBox` decides which children share
+the spare width with `gtk_widget_compute_expand`, which is true for a widget any of
+whose *descendants* expands, so that single flag propagated up through the sidebar
+and its scroller and split the surplus evenly with the canvas — the sidebar's own
+340 px request was ignored. `probe/picker_sidebar_check.py` measures both columns
+and prints them.
+
+**Watch live** saves the region, starts the panel, and then **takes itself off the
+screen** — minimise where the compositor honours it, hide where it does not
+(measured: kwin_wayland 6.7.4 + GTK4 ignores `minimize()` outright, so the hide is
+what usually runs; see `probe/minimise_check.py`). That is not politeness: the
+pipeline reads pixels off the screen, so a picker sitting over the dialogue box is
+captured along with it. Measured before this was fixed, the first frame after the
+click contained the picker's own status line ("captured 2560x1440 — drag over the
+dialogue text") at 93 % confidence, while the dialogue line underneath it fell to
+54.7 % and was dropped by the confidence gate — a real line, silently lost.
+
+Reading starts about half a second later, when the window is actually gone — not
+after a guessed delay. The card itself honours `display.width` (its long labels
+are ellipsised or scroll, never stretching it), and pauses are shown in amber: an
+unexplained pause is indistinguishable from a broken translator. The window comes
+back through the panel's **Region…** entry, which **captures the screen again on
+the way back**: the shot the picker
+holds was taken when watching started, and re-framing the box is the only reason to
+press it, so reopening on a screen the game has moved on from defeats the point.
+The box you had is kept — what is replaced is the screen underneath it. While
+watching the picker is already off screen, so the grab starts at once instead of
+paying the Capture button's 1 s countdown (measured: click → fresh shot in ~0.7 s,
+~0.5 s of it the portal round trip; `probe/region_recapture_check.py` also checks
+that the pipeline polling the same portal on another thread does not make either
+grab fail). While it is on screen reading pauses (the panel says why), and **Apply
+box** takes it off screen again and resumes on the new area — without rebuilding
+the pipeline or moving the card. Dragging a new box while watching re-points the
+running pipeline immediately, so the rectangle on screen is never a lie about what
+is being read.
+
+#### The card: one control row, and a size that does not move
+
+The card is the output, so it is the one window that stays on screen while
+watching. Two properties matter more than how it looks.
+
+**It never changes size.** `display.target_lines` and `display.source_lines`
+reserve space for each text area, and anything longer scrolls inside its own area
+instead of growing the card. Before this the card was content-sized, and GTK never
+shrinks a resizable window back, so it ratcheted: measured, a four-line reply took
+it from 172 px to 312 px and it *stayed* 312 px when the next line was two
+characters long. One long line permanently covered more of the game. Measured
+after, the card is 207 px at the default budget — 3 translation lines and 2
+original lines at `font_scale` 1.2 — and 207 px for every input tried: a
+two-character line, a 900-character one, a settled translation, a long error.
+`probe/panel_layout_check.py` prints the breakdown and fails if the height moves;
+`probe/panel_contact_sheet.py` renders every state to `data/panel_*.png`.
+
+**You can still drag it to the size you want.** The window is frameless, so it has
+no window-manager resize handles; the grips along the edge are widgets this app
+draws, and a drag on one applies the new size with `set_default_size`, which does
+resize an already-mapped window (measured: 555×207 → 700×340 on a mapped panel).
+`gtk_window_begin_resize_drag` is no help here — GTK4 removed it, and its
+replacement `Gdk.Toplevel.begin_resize()` needs the Wayland input *serial*, which
+GTK4 exposes nowhere.
+
+Only the **east, south and south-east** edges resize, and that is deliberate. On
+Wayland a client cannot move its own window, so a drag on the north or west edge
+could not hold the opposite edge still: the card would grow rightward while the
+pointer moved left. Offering those edges would be worse than not offering them.
+A drag is floored at the card's own contents, so it cannot be shrunk into
+uselessness, and the result is written to `display.width` / `display.height` and
+restored next launch — a size that silently reverted would be worse than no
+resizing. `display.height: 0` means "size it from the line budgets"; dragging
+pins it, and changing either budget in Settings releases it again, because
+otherwise those two sliders would appear to do nothing after the first drag. The
+grips paint nothing — the cursor is the affordance — and they do not have to:
+GTK4 still hit-tests a widget that has a size request but no background, which
+`probe/panel_resize_check.py` checks with `Gtk.Widget.pick()`.
+
+**The wheel does not change the display settings.** Those four sliders are the
+card's style values, and `Gtk.Scale` changes value on every scroll it is given —
+in a tall scrolling dialog that means reaching the buttons at the bottom drags the
+style along with it. Measured, one wheel notch over the font-size slider took it
+from 1.2 to 0.7. Each slider now carries a **capture-phase** scroll controller,
+which runs on the way *down* the widget tree, ahead of the scale's own
+bubble-phase handling. It does not simply swallow the event: that would stop the
+dialog scrolling wherever the pointer happened to rest on a slider, so the wheel
+is handed to the dialog's scroller and the gesture does what it looked like it
+would. Dragging, clicking and the arrow keys are untouched. `probe/settings_wheel_check.py`
+prints the controller phases, shows `Gtk.Widget.pick()` landing on each slider, and
+demonstrates that the built-in handler really does move the value when it is
+reached.
+
+**The control row re-flows as the card is resized.** Every action lives on the
+card while it fits, and the ones that stop fitting move into the **⋮** menu — the
+same widget either way, so an action is never in two places and never missing from
+both. It is priority order, left to right, so the row always holds a *prefix* of it
+and **Region…** — the only way back to the picker once the panel owns the box — is
+leftmost and last to leave. Measured as the card narrows:
+
+| card width | on the card | in ⋮ |
+|---|---|---|
+| 560 px | Region, Re-read, Start, Copy, Settings, Quit | — |
+| 460 px | Region, Re-read, Start, Copy | Settings, Quit |
+| 380 px | Region, Re-read | Start, Copy, Settings, Quit |
+| 300 px | Region | Re-read, Start, Copy, Settings, Quit |
+
+`⋮` hides itself when nothing overflowed, because an empty menu promises actions
+that are already on the card. `probe/panel_overflow_check.py` walks those widths and
+renders each to `data/overflow_<width>.png`.
+
+Two details that are easy to get wrong, both commented where they live. The split is
+decided from the width the card is *meant* to be, not the width it is currently
+allocated: a button can never be laid out narrower than its own text, so until
+enough of them have left, the window's minimum keeps the row wide — deciding from
+that allocation would hold the extra buttons on the card, clamped, for a frame. And
+`do_size_allocate` is the only hook GTK4 offers for "the width changed": the
+`size-allocate` signal was removed and `Gtk.Widget` has no width property.
+
+The layout before this put all six buttons in two right-aligned rows, which cost
+62 px of a 172 px card *and did not line up* — the rows measured 133 px and 152 px
+wide, so the left edge stepped in by 19 px.
+
+The translation is the headline and the original text sits below it, because a
+translation panel that covers the text you are trying to read is worse than no
+panel. Notes that run to several lines — "not always-on-top", "no global hotkey" —
+take over the translation area while it is still empty, where they are readable,
+rather than being ellipsised into the one-line status row; the first translation
+displaces them and their text stays in the status tooltip. Errors share the status
+row instead of adding a line of their own, so the card cannot grow taller exactly
+when something has gone wrong.
+
+The header strip is the **drag handle**, and it names the backend, the model and
+the box being read. It is the only draggable part: when the whole card was the
+handle, a drag that started on the translation moved the window instead of
+selecting the text.
+
+#### One stylesheet for all three windows
+
+`tlkun/theme.py` is the single source of visual truth, and `tlkun gui` installs it
+before building any window. The panel used to be the only window with any CSS at
+all, which left the picker and the settings dialog as stock widgets beside a custom
+dark card.
+
+Nothing is styled by bare element name — every rule is scoped to a `.tlkun-*` class
+or to a window class — so the picker's hand-drawn cairo area, and any widget nobody
+has classified, keep the toolkit's own look. Where the app does paint a control it
+paints it explicitly rather than inheriting: this machine runs **Breeze light**, so
+an unstyled button on the dark card was a white block, the overflow menu's labels
+were dark text on a dark popover and could not be read at all, and the picker's
+checkboxes were filled white squares that read as "already ticked" whether or not
+they were. The app also asks for the dark variant of the desktop theme, but does
+not rely on getting it — Breeze loads no dark variant here, so the window
+background went dark while its labels, scales and buttons stayed light.
+
+Widgets inside `window.tlkun-app` (the picker and the settings dialog) are
+therefore painted explicitly too. That needs two pieces of care, both of which are
+commented where they live: a `window.tlkun-app label` rule outranks a bare
+`.tlkun-hint`, and `window.tlkun-app button` outranks `button.tlkun-primary`, so
+the semantic classes are re-stated scoped rather than left to source order.
+
+
+It previews what the pipeline will see:
+
+* the **Preview** dropdown — **raw** (nothing added), **OCR input**
+  (autocontrasted, the closest view to what tesseract reads) or **threshold**
+  (the ink mask, which makes it obvious when a region is mostly background art).
+  It is one three-way choice, not two switches: the crop is drawn one way at a
+  time. All three are display only — OCR reads the crop itself, so changing this
+  cannot change the text below.
+* live **OCR text and confidence**, so framing is judged by the actual result
+  rather than by eye
+* the **translation**, updated as you adjust the region. It is not optional: the
+  debounce coalesces a drag into one request and the cache makes unchanged text
+  free, so a switch to turn it off only bought a stale translation — it also
+  gated the re-translate after **Apply** in Settings, which left the old model's
+  answer on screen under the new settings. This is the fastest way to judge a
+  model or prompt.
+
+There is no automatic region finder. Frame the box by hand — it takes a few
+seconds and avoids a whole class of surprises from guessing at screen content.
+
+**Settings** is available here too, so backend, model, API key and prompt can all
+be changed without leaving the picker. Saving re-translates the current selection
+immediately. A no-op would look like the setting had been ignored.
+
+#### Re-read: when a line comes out wrong
+
+**Re-read** reads the box again *now* and translates it from scratch. It skips
+everything that normally suppresses a repeat — the change detector, the OCR
+throttle, the settle window, the "already translated" check and the translation
+cache — because pressing it means "do that again", and an answer served from the
+cache would look like the button did nothing.
+
+Three ways to trigger it, in order of how well they survive the game having focus:
+
+| how | where it works | setup |
+|---|---|---|
+| a **global hotkey** | any window, game included | none if tl-kun was started from the application menu (it asks the compositor itself); otherwise bind `tlkun reread` as a desktop shortcut — `tlkun shortcut` prints the exact command |
+| `tlkun reread` | any window, game included | run it from a terminal or a script; it talks to the running window over its control socket |
+| **Ctrl+R** / **F5** | while the translation panel has focus | none |
+
+Wayland gives an application no way to read global keys, so a shortcut that works
+while the game is focused has to come from the desktop. tl-kun asks for one through
+`org.freedesktop.portal.GlobalShortcuts`, which KDE implements: the compositor
+shows its own binding dialog once and then sends the keypress. That portal refuses
+callers without an *application id*, which a plain terminal launch does not have
+(KDE answers `An app id is required`) — hence the two fallbacks, and hence
+`packaging/tl-kun.desktop`:
+
+```bash
+cp packaging/tl-kun.desktop ~/.local/share/applications/
+cp packaging/tlk-gui ~/.local/bin/          # then launch tl-kun from the menu
+```
+
+The panel always says which of these is in force: `global hotkey for Re-read:
+Ctrl+Alt+R`, or `no global hotkey — … Run 'tlkun shortcut' for the setup`.
+
+#### Live translation
+
+**Live translation** (on by default) is the continuous mode: it watches the
+region and translates whenever the text changes. This is what makes translation
+follow the game, and it is what the panel uses.
+
+How it decides a line is ready:
+
+0. **Never while tl-kun's own window is on screen.** The picker and the settings
+   window report when they are mapped (`tlkun/occlusion.py`), and the loop does not
+   capture at all until they are gone — a paused poll, not a fixed delay, so
+   reading starts the moment the window actually unmaps. The panel is the one
+   window that cannot be gated (it is the output), so its text is caught instead by
+   `tlkun/selftext.py`, **line by line**: the lines that are ours are dropped and
+   the game's are kept, because dropping the whole read loses the dialogue under a
+   panel that clips the edge of the box. A read that echoes the translation we just
+   produced is dropped too. Both are *said* to be dropped in the status line rather
+   than silently translated.
+0b. **Not dialogue at all.** A read with no real words ("e¢", "12", "| / \") is
+   dropped, and a read shorter than a dozen characters has to be *more* confident
+   than `ocr.min_confidence` before a model is asked about it
+   (`detect.short_text_confidence`). Measured: a patterned poster inside the box
+   read as `e¢` at 62.5 %, above the ordinary gate, and was translated until this
+   existed. Long confident nonsense still gets through — there is no cheap way to
+   tell it from dialogue — so a wrong translation is one **Re-read** (or a better
+   box) away.
+1. **Capture** polls the region (`capture.fps`, default 2/s), and reports the whole
+   grab cost — portal round trip plus PNG decode — because that is what the poll
+   budget has to cover.
+2. **Change detection** compares a downscaled signature. Unchanged frames skip OCR
+   entirely — that is what makes an always-on loop cheap.
+3. **OCR** runs on a change, throttled to at most once per `detect.ocr_min_interval`
+   so a blinking advance cursor cannot make it run flat out.
+4. **Settling** waits until the text stops changing, comparing reads by edit
+   distance so OCR jitter ("line" vs "line.") is not mistaken for new text. A
+   timed re-read (`detect.refresh_interval`) confirms the line even when the
+   screen never goes pixel-stable. Text that does not look like a finished
+   sentence waits `detect.incomplete_grace` longer, because a game pauses
+   mid-reveal and a pause is not the end of a line.
+5. **Translation** runs once per distinct line; repeats are served from cache. Each
+   event carries `total_ms`: the time from the capture to the finished translation,
+   so the panel can show how stale a line is instead of implying it is instant.
+
+#### Always on top — read this first
+
+**On native Wayland no application can raise itself above other windows.**
+Stacking belongs to the compositor, and GTK4 removed the `keep_above` API that
+GTK3 had. tl-kun does what it can, reports when it cannot, and does not pretend
+otherwise.
+
+Two options that work:
+
+**A — launch under XWayland** (no setup, verified working). The standard
+`_NET_WM_STATE_ABOVE` hint still functions there and tl-kun applies it itself:
+
+```bash
+GDK_BACKEND=x11 .venv/bin/python -m tlkun gui
+```
+
+Confirmed on this machine by reading the property back off the window:
+`_NET_WM_STATE contains ABOVE: True`. The status line stops showing the warning
+once it takes effect.
+
+**B — a KWin window rule via System Settings** (native Wayland, permanent):
+
+*System Settings → Window Management → Window Rules → New*
+
+| field | value |
+|---|---|
+| Window title | `Substring match` → `tl-kun` |
+| Keep above other windows | **Force** → **Yes** |
+
+> **Add rules through System Settings, not by editing `kwinrulesrc` directly.**
+> KWin rewrites that file from its own configuration state, so a rule written
+> behind its back is discarded on the next reload. This was tried and does not
+> stick - the file reliably reverted to `rules=`.
+
+> **Worth knowing:** an always-on-top window also takes clicks over its area, so a
+> card lying over the game blocks input there. Keep it clear of anything you need
+> to click.
+
+### Setting the region without the GUI
+
+Regions are stored as **fractions** of the screen, so they survive a resolution
+change.
+
+```bash
+# x,y,w,h as fractions of the screen
+.venv/bin/python -m tlkun region --x 0.175 --y 0.838 --w 0.790 --h 0.082 --fraction
+```
+
+Or open the picker on an existing screenshot, which also works without grabbing
+the live screen:
+
+```bash
+.venv/bin/python -m tlkun gui --pick --from-file shot.png
+```
+
+To let the code find the box itself, call the calibrator on a full screenshot
+(the picker's **Auto-detect** button does this):
+
+```python
+from PIL import Image
+from tlkun.calibrate import calibrate
+print(calibrate(Image.open("shot.png")).describe())
+```
+
+It scores every candidate text block on ink density, edge density, width and
+position; it returns `None` when nothing looks like dialogue. Treat it as a
+suggestion and confirm by looking at the crop.
+
+> **The failure mode to avoid:** a region that crops text too tightly still
+> produces plausible-looking OCR while silently dropping a line. During
+> development a box 20px too short read line 1 correctly and cut line 2 in half.
+> Always eyeball the crop (or the picker's preview) before trusting `run`.
+
+### Switching translation backend
+
+```bash
+# int8 CTranslate2 (default)
+.venv/bin/python -m tlkun run --backend ct2
+
+# transformers fallback
+.venv/bin/python -m tlkun run --backend local
+
+# DeepL / OpenAI need a key in config.json ("translate": {"api_key": "..."})
+.venv/bin/python -m tlkun run --backend deepl
+```
+
+| backend | latency | notes |
+|---|---|---|
+| `ct2` | **~0.2-0.35 s/line** | int8 NLLB via CTranslate2, ~600 MB, offline. **Default.** |
+| `local` | ~0.8-1.7 s/line | same model through transformers; ~4.7 GB, needs torch |
+| `openrouter` | network-bound | **many models, one key**; needs a key + model id |
+| `deepl` | network-bound | best fluency for JA; needs a key |
+| `openai` | network-bound | prompt-tunable, needs a key |
+| `chat` | network-bound | any OpenAI-compatible server (llama.cpp, Ollama, vLLM, Groq, Together); needs `api_base`; key optional |
+| `none` | 0 | pass-through, for testing the pipeline |
+
+The unofficial Google endpoint was removed, so every remote backend is now an
+endpoint with a documented API and terms.
+
+Translated lines are cached **in memory for the run**, keyed by source text, so
+repeated dialogue (battle callouts, menus, the picker's drag preview) is instant
+and free within a session. Nothing is written to disk by default: the on-disk
+cache used to accumulate a plaintext transcript of everything that had ever
+passed through the capture box — which is whatever was on screen, not only the
+game. Persisting it is opt-in: set the top-level
+`"cache_path": "/some/path/cache.json"` in `config.json`, and a config that
+already names a path keeps working. The cache is scoped per backend, model **and
+language pair**, so changing any of the three re-translates rather than serving
+the previous setting's answer.
+
+### Source and target language
+
+Set both in the GUI: **Settings → From / To**. Each is a searchable list of the
+202 languages NLLB was trained on, and the pair applies to every backend — it is
+one setting, not one per backend.
+
+The list is deliberate. The languages are **FLORES-200** codes (`eng_Latn`,
+`jpn_Jpan`), because that is what the local model needs verbatim: the source code
+is prepended to the tokens and the target is the decoder prefix. Anything else is
+scored as `<unk>` — NLLB answers with fluent text in the wrong language and
+nothing raises. A picker is the only shape that cannot produce that.
+
+Every backend is derived from the same pair, and the hint under the pickers says
+what the selected backend is actually sent:
+
+| backend | source/target become | example |
+|---|---|---|
+| `ct2`, `local` | the FLORES code, unchanged | `eng_Latn` → `jpn_Jpan` |
+| `openrouter`, `openai`, `chat` | the name, in the prompt | "English" → "Japanese" |
+| `deepl` | DeepL's code (34 languages) | `EN` → `JA` |
+| `none` | unused | — |
+
+Two consequences are shown rather than implied:
+
+* A target DeepL cannot translate (Cebuano, Serbian, …) is flagged in the dialog
+  and refused at startup with a message naming the setting, instead of an HTTP
+  400 that names only the parameter.
+* The source language needs a matching **OCR** language, which is a separate
+  setting. Reading Japanese with `eng.traineddata` gives confident nonsense, so
+  when `ocr.langs` cannot read the source the dialog offers a one-click
+  `Use eng+jpn` — additive, never a silent overwrite. A name that is not
+  lowercase letters, digits and underscore is refused too — it would otherwise
+  become a filename under the tessdata directory — and the Settings dialog says
+  so instead of saving it.
+
+From a terminal the pair is reachable as flags, and `tlkun check` validates it:
+
+```bash
+.venv/bin/python -m tlkun run --source-lang jpn_Jpan --target-lang eng_Latn
+.venv/bin/python -m tlkun check        # flags a code NLLB cannot score
+```
+
+### Glossary
+
+Machine translation gets titles, names and invented jargon wrong predictably.
+Edit `translate.glossary` in `config.json`:
+
+```json
+"glossary": { "管理者": "マネージャー" }
+```
+
+A plain `"key": "value"` entry rewrites the **output**. That is the common case:
+NLLB renders the title "Manager" as the job word 管理者, and patching the known
+wrong output is cheap and deterministic.
+
+For explicit control use the structured form:
+
+```json
+"glossary": {
+  "pre":  { "Manager": "Executive Manager" },
+  "post": { "管理者": "マネージャー" },
+  "case_sensitive": false
+}
+```
+
+`pre` rewrites the source before translation, for disambiguation. **Measure it
+before relying on it** - on this project's own sample lines, rewriting "Manager"
+to "Executive Manager" made the output worse, not better:
+
+| source | NLLB output |
+|---|---|
+| `Manager, the results are in.` | `管理者結果が出ました` |
+| `Executive Manager, the results are in.` | `経営責任者成果が届きました` ("CEO") |
+
+That is why the built-in Limbus glossary is post-only. Set
+`use_builtin_glossary: false` to drop the built-ins, which are layered *under*
+your entries so your terms always win.
+
+Matching is case-insensitive, longest-key-wins, and boundaries are ASCII-only so
+that an entry like `管理者` still matches inside `管理者異常` - a `\b`-anchored
+pattern silently fails there, because Python counts CJK as word characters.
+
+Glossary edits take effect immediately, including for lines already in the cache:
+the cache stores the raw model output and terms are applied on the way out.
+
+### Remote models (OpenRouter)
+
+The local model is fast but literal. When you want better prose, point tl-kun at
+a hosted model. OpenRouter gives you many models behind one key and speaks the
+OpenAI chat-completions protocol, which is also what this backend uses for any
+compatible endpoint.
+
+```bash
+# 1. key - simplest is the GUI (panel or picker -> Settings -> API key).
+#    The environment is also honoured, and takes second place to a saved key.
+export OPENROUTER_API_KEY=sk-or-...
+
+# 2. see what your key can reach
+.venv-gi/bin/python -m tlkun models --backend openrouter --filter gemini
+.venv-gi/bin/python -m tlkun models --backend openrouter --free     # free tier only
+
+# 3. point the config at one
+.venv-gi/bin/python -m tlkun check --backend openrouter --model google/gemini-2.0-flash-001
+```
+
+To make it permanent, set it in `config.json`:
+
+```json
+"translate": {
+  "backend": "openrouter",
+  "model": "google/gemini-2.0-flash-001",
+  "api_key": null,
+  "temperature": 0.0,
+  "glossary_hint": "Faust keeps her name in Latin script. Manager is a title."
+}
+```
+
+* **`model` is required** and has no default. Model ids change often, and a stale
+  default would fail confusingly rather than obviously.
+* **`api_key: null` means "read the environment"**, checked in this order:
+  `OPENROUTER_API_KEY`, then `TLKUN_API_KEY`. A key saved through the GUI wins
+  over the environment, and the Settings dialog says which one is in use.
+  `tlkun check` masks the key when reporting it.
+* An error body a provider returns is collapsed to a single line, capped at 200
+  characters, and has anything credential-shaped — including the configured key —
+  replaced with `***` before the card shows it, because that text ends up in bug
+  reports.
+* A key saved from the GUI is written to `config.json` **in plain text**. That is
+  a deliberate trade: a GUI that requires an environment variable is not a GUI.
+  What is not a trade is who can read it: the file is written 0600 in your own
+  config directory (`~/.config/tl-kun/`), not beside the source.
+  Use **Clear** to remove it, or leave the field empty to rely on the environment.
+* **`glossary_hint`** appends free-form instructions to the translation prompt.
+  This is how you steer a large model on names and tone - use it instead of
+  `glossary.pre`, which is for the local model.
+* **`api_base`** overrides the provider URL, which is also how you reach any
+  OpenAI-compatible server (llama.cpp, Ollama, vLLM, Groq, Together) with
+  `"backend": "chat"` — see below.
+
+#### Comparing models
+
+The picker has a **Translate** button and a **Translate while dragging** toggle,
+so you can frame a region and immediately see how the configured backend renders
+it - without running the full panel. Set the backend in `config.json`, reopen the
+picker, and compare.
+
+Translations are cached per **backend and model**, so switching models always
+re-runs the new one. Without that, a switched model would appear to produce
+identical output because it was being served the previous model's cached result.
+
+### Pointing tl-kun at your own endpoint
+
+The `chat` backend speaks the OpenAI `/chat/completions` protocol, so it works
+with llama.cpp, Ollama (`http://localhost:11434/v1`), vLLM, Groq, Together, or
+any gateway in front of them. `translate.api_base` is the base URL **without**
+`/chat/completions`, and it is editable in Settings → **Base URL** — no
+`config.json` editing needed.
+
+With no base URL the backend refuses to start rather than silently defaulting to
+OpenAI's endpoint: the endpoint *is* this backend, so there is no sensible
+default to guess at.
+
+No API key is required. A local server that ignores auth is sent no
+`Authorization` header at all; a hosted gateway uses the same key field in
+Settings, or `TLKUN_API_KEY`.
+
+The base URL must be `https://`. Plain `http://` is allowed only for loopback
+(`localhost`, `127.x.x.x`, `::1`); for a server elsewhere on your LAN set
+`translate.allow_insecure_http: true`, and the app says why it is asking — the
+key rides in a header and the text being translated rides in the body.
+
+One line in `config.json` is enough:
+
+```json
+"translate": { "backend": "chat", "model": "qwen2.5-7b-instruct", "api_base": "http://localhost:11434/v1" }
+```
+
+`tlkun check` reports the endpoint and where the key came from:
+
+```
+translate backend: chat (English->Japanese)
+  model: qwen2.5-7b-instruct
+  api base: http://localhost:11434/v1
+  api key: none (fine for a local server that ignores auth)
+```
+
+---
+
+## Design notes
+
+**Poll rate and work rate are decoupled.** `fps` controls how often the screen is
+sampled. OCR runs only when pixels change, and translation only when the OCR text
+has settled. A static dialogue box costs almost nothing.
+
+**Change detection counts changed samples, not the average difference.** A mean
+metric misses the typewriter reveal: appending one word to a long line barely
+moves the average. `changed_fraction` counts samples above a noise threshold, and
+the trigger is `max(1, 0.0005 * n)` samples - the absolute floor keeps a small
+region as sensitive as a large one.
+
+**Settling is the subtlest logic here, and it took three attempts.** The rule is:
+translate when the OCR text has stopped changing, where "stopped changing" means
+*near-identical* reads, not exactly identical ones. Each earlier version failed
+against a live screen in a different way:
+
+1. *Require N identical consecutive reads.* Never fires on a still image, because
+   OCR only runs when pixels change - one read, no confirmation.
+2. *Release on a timer since the text was first held.* A live game is rarely
+   pixel-stable (blinking advance cursor, animated portrait, drifting particles,
+   or the mouse moving over the region), so the text is re-read constantly and a
+   jittering read resets the timer forever. Nothing is ever translated.
+3. *Release on a timer since the text last changed.* Still never fires when the
+   read oscillates between two values, because it changes on every single poll.
+
+The working rule accepts **either** test: reads within 2 characters count as the
+same line, *and* so do reads that are >= 85% similar on a line long enough (24+
+chars) for a ratio to mean anything. The ratio half is load-bearing, not a
+nicety: jitter on a long line is **not** "a character or two". Measured on a live
+70-character line, tesseract returned the same text with 2-10 character edits
+between polls (an unstable run of leading em-dashes, a trailing cursor glyph).
+Judging those by edit distance alone resets the settle timer on every read, and
+the line is never translated at all.
+
+A genuine line change stays far below the ratio floor (measured: 0.31 between two
+consecutive game lines, against 0.90+ for noise on one line), and a typewriter
+reveal grows by more than 2 characters, so both are still held until the text is
+final. Short lines are decided by edit distance alone, because a ratio is
+meaningless there (`Yes.` vs `No.` scores 0.67 - it would drop a real change).
+
+**A pause mid-reveal is not the end of a line - and "stable for N seconds" cannot
+tell the difference.** This shipped as a real bug: the panel showed truncated
+dialogue (`...the proverbial poster child of Work`) because the game held the
+reveal for longer than `settle_window` and the fragment was released as final.
+
+Two mechanisms fix it, and both are needed:
+
+* `detect.incomplete_grace` (default 4.5 s) - text that does not end in sentence
+  punctuation waits this much longer before release. Deliberately asymmetric:
+  holding a finished line too long costs a short delay, while releasing a
+  fragment shows the user a truncated translation.
+* **Reveal detection** in the settler - when a new read *extends* the held text
+  (the held text is a prefix of it, allowing a few characters of noise at the
+  junction), that is the same line still being typed, not a new line. Judging it
+  by edit distance alone failed this: `...child of Work` -> `...child of
+  Workshop-sponsored Fixers.` is a 20-character difference, so the finished
+  sentence looked like a brand-new line and the fragment had already been sent.
+
+`detect.settle_max_wait` (default 8 s) is a hard ceiling so a line the game never
+punctuates still surfaces. It must stay **above** `settle_window +
+incomplete_grace`; a saved config with a lower value silently disables the grace.
+
+**The blinking caret is not part of the line.** OCR reads the advance cursor as a
+lone trailing character, measured live as ` l`, ` +`, ` O`, ` é`, ` 4`, ` |`. It
+is stripped in `OcrResult.text` (`strip_trailing_cursor`), because it otherwise
+reaches the translator and makes consecutive reads look like different lines.
+
+**Low-confidence OCR lines are dropped.** HUD chrome and background texture
+leaking into the region used to be translated along with the dialogue, which both
+wasted seconds per line and corrupted the output.
+
+---
+
+## Layout
+
+```
+tlkun/
+  paths.py       XDG directories, private writes, migration out of the source tree
+  config.py      config model, JSON load/save, unknown-key warnings
+  portal.py      xdg-desktop-portal D-Bus clients (Screenshot, ScreenCast)
+  capture.py     full-screen grab -> crop to region
+  detect.py      change detector, text settler, empty guard
+  geometry.py    region arithmetic + prompt templates (pure, tested)
+  languages.py   the 202 FLORES-200 codes + each backend's code for them (data)
+  settings.py    GTK settings dialog (backend, model, language pair, prompt, both areas)
+  ocr.py         tesseract wrapper + tessdata bootstrap + preprocessing
+  translate.py   NLLB (ct2, local) / DeepL / OpenRouter / OpenAI / custom endpoint + cache
+  glossary.py    term overrides, pre- and post-translation
+  convert.py     HuggingFace -> CTranslate2 int8 conversion
+  calibrate.py   automatic dialogue-box detection
+  selection.py   picker coordinate mapping and drag geometry (pure, tested)
+  occlusion.py   which tl-kun windows are on screen (the capture gate)
+  selftext.py    text that is not the game's: our own UI, and confident nonsense
+  control.py     the `tlkun reread` control socket (one line in, one line out)
+  hotkey.py      global shortcut via the compositor's GlobalShortcuts portal
+  picker.py      GTK4 region picker window
+  panel.py       GTK4 always-on-top translation panel + worker thread
+  gui.py         GTK application entry point
+  pipeline.py    the capture -> OCR -> translate loop
+  cli.py         check / grab / read / run / region / gui / convert / models
+tests/           389 tests: core, geometry, pipeline, glossary, backends, languages,
+                 OCR languages, paths/migration
+probe/           spike scripts, raw measurements, per-phase results
+PLAN.md          feasibility study with the full benchmark tables
+```
+
+## Roadmap
+
+- **Phase 4 - Packaging.** AUR package, autostart, multi-monitor and HDR handling,
+  RapidOCR fallback for non-Latin source languages.
+- **GPU acceleration.** The RX 9070 and `hip-runtime-amd` are present; CTranslate2
+  on ROCm should cut the 0.2-0.35 s/line further. Untested here because the
+  sandbox has no GPU device access.
+- **GUI follow-ups.** System tray icon, per-game region profiles, a glossary
+  editor, and true overlay placement if `gtk4-layer-shell` becomes available.
+
+## Known limitations
+
+- Verified against the reference screenshot and live static screen content, not
+  yet against a long live play session. Expect to tune the region per game.
+- Tested with English source text. Japanese/Korean source OCR is untested, though
+  `--langs eng+jpn` and the RapidOCR path are wired up.
+- The PipeWire `ScreenCast` backend is implemented in `portal.py` but the frame
+  consumer is not wired to the pipeline yet; `portal-screenshot` is the default
+  and is fast enough at 2 fps.
+- GPU inference is untested: this environment has no GPU device access, so the
+  `ct2` backend runs on CPU threads. ROCm acceleration is expected to work but is
+  unverified.
+- The panel cannot position itself under the dialogue box on native Wayland (see
+  the positioning caveat above); drag it into place or use XWayland.
+- Only KDE Plasma 6 / Wayland has been run. X11/XWayland, GNOME and other
+  compositors are analysed in "Compatibility" but not exercised: the risks are
+  the hotkey (portal missing outside KDE) and stacking.
+- The GUI was rendered and its layout verified offscreen, and both windows were
+  smoke-tested for clean startup. The picker's drag interactions are driven
+  through their real handlers with synthetic gesture events -
+  `probe/region_resize_check.py` resizes from all eight edges and corners in both
+  directions - but no automated check moves a real mouse.
+- While the picker is on screen, reading is paused on purpose. Self-capture is
+  prevented by *not capturing*, because Wayland gives no way to test whether one
+  of our windows overlaps the box; a picker parked permanently over the game
+  therefore costs translation time until it is minimised.
+- Screen reading only: no memory reading, no injection, no game file patching.
+
+## Tests
+
+```bash
+.venv/bin/python -m pytest tests/ -v
+```
+
+* `tests/test_core.py` - change detection, settling, config, cache, CJK spacing
+* `tests/test_selection.py` - picker coordinate mapping and drag geometry, with
+  every edge and corner resizing in both directions
+* `tests/test_pipeline.py` - the full loop with capture and OCR stubbed out,
+  including the capture-timing rules (pause while our own window is up, re-point
+  the area live, never translate our own UI)
+* `tests/test_occlusion.py` - the two self-capture guards, and that real dialogue
+  is never mistaken for tl-kun's own text
+* `tests/test_picker_wiring.py` - what the picker tells the pipeline, and when,
+  plus the drag handlers' half of a resize
+* `tests/test_control.py` - the control socket: round trip, no GUI, two GUIs
+* `tests/test_hotkey.py` - what the user is told when a hotkey cannot be bound
+* `tests/test_glossary.py` - term matching, cache interaction, line handling
+* `tests/test_remote_backends.py` - request shaping, key resolution, failures
+* `tests/test_geometry.py` - region arithmetic, prompt templating
+* `tests/test_calibrate.py` - dialogue detection, including the `near` anchoring
+* `tests/test_languages.py` - the language table, per-backend codes, and the
+  check that every code in it is one the real NLLB tokenizer can score
+* `tests/test_paths.py` - the XDG locations, the 0600-at-creation write (including
+  that no part of a failed save survives), and the migration: the copy, the
+  repointed state paths, and that the original file is never deleted
+* `tests/test_ocr.py` - OCR language-name validation (a name becomes a filename,
+  so traversal is refused) and the pinned, checksum-verified tessdata download
+* `tests/test_settings_ui.py` - the backend-dependent rows, and the language
+  pickers: only real codes are offered, an unknown one in the config is shown and
+  warned about rather than replaced, and the OCR button is additive
+
+The pipeline tests stub capture and OCR on purpose: a live screen is not a
+reproducible input. Verification runs during development saw 24 "changes" in 26
+polls purely because a chat window was animating, which makes live screen state
+useless as a test signal.

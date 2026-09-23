@@ -1,0 +1,317 @@
+"""Configuration model with JSON persistence.
+
+Regions can be stored either as absolute pixels or as normalised fractions of
+the screen. Normalised is the default because Limbus Company runs at a different
+resolution on different setups, and the dialogue box scales with it.
+
+Where the file lives, and why it is 0600, is `tlkun.paths`.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
+from typing import Any
+
+from . import paths
+from .paths import APP_DIR, DEFAULT_CONFIG_PATH, DATA_DIR  # noqa: F401 - re-exported
+
+
+@dataclass
+class Region:
+    """A rectangle, in pixels or as normalised fractions."""
+
+    x: float
+    y: float
+    w: float
+    h: float
+    mode: str = "pixels"  # "pixels" | "fraction"
+
+    def to_pixels(self, screen_w: int, screen_h: int) -> tuple[int, int, int, int]:
+        if self.mode == "fraction":
+            x = round(self.x * screen_w)
+            y = round(self.y * screen_h)
+            w = round(self.w * screen_w)
+            h = round(self.h * screen_h)
+        else:
+            x, y, w, h = round(self.x), round(self.y), round(self.w), round(self.h)
+        # Clamp into the screen so a bad config can't produce an empty/negative box.
+        x = max(0, min(x, screen_w - 1))
+        y = max(0, min(y, screen_h - 1))
+        w = max(1, min(w, screen_w - x))
+        h = max(1, min(h, screen_h - y))
+        return x, y, w, h
+
+
+@dataclass
+class CaptureConfig:
+    backend: str = "portal-screenshot"  # "portal-screenshot" | "portal-screencast"
+    fps: float = 2.0
+    # dialogue box in the reference 1501x852 screenshot, as fractions
+    region: Region = field(
+        default_factory=lambda: Region(0.185, 0.793, 0.775, 0.105, "fraction")
+    )
+
+
+@dataclass
+class OcrConfig:
+    engine: str = "tesseract"  # "tesseract" | "rapidocr"
+    langs: str = "eng"
+    psm: int = 6
+    upscale: float = 3.0
+    autocontrast: bool = True
+    # extra user patterns, e.g. "/usr/share/tessdata"
+    tessdata_dir: str | None = None
+    min_confidence: float = 40.0
+    # Language data is fetched on first use, but only for languages with a pinned
+    # checksum (see `tlkun.ocr.TESSDATA_SHA256`). Set this to also download a
+    # language that has none, accepting it unverified.
+    allow_unverified_tessdata: bool = False
+
+
+@dataclass
+class TranslateConfig:
+    backend: str = "ct2"  # "ct2" | "local" | "deepl" | "openrouter" | "openai" | "chat" | "none"
+    # Where the int8-converted CTranslate2 model lives (ct2 backend). The user
+    # data dir, unless an older install left the weights in the source tree.
+    ct2_model_dir: str = field(default_factory=lambda: str(paths.default_ct2_dir()))
+    source_lang: str = "eng_Latn"
+    target_lang: str = "jpn_Jpan"
+    model: str = "facebook/nllb-200-distilled-600M"
+    device: str = "cpu"
+    threads: int = 8
+    max_new_tokens: int = 192
+    # Term overrides. Accepts {"Term": "訳"} (applied to the output) or
+    # {"pre": {...}, "post": {...}} for explicit control.
+    glossary: dict = field(default_factory=dict)
+    # Built-in Limbus Company terms, layered *under* the user's entries.
+    use_builtin_glossary: bool = True
+
+    # --- remote backends (openrouter / openai / chat) ---
+    # Prefer the environment over this field: config.json is a file people share,
+    # commit and screenshot, and a key in it leaks easily.
+    #   OPENROUTER_API_KEY / OPENAI_API_KEY / TLKUN_API_KEY
+    api_key: str | None = None
+    # Override the provider's base URL. Empty means the backend's default, and
+    # also lets any OpenAI-compatible endpoint be used via backend "chat".
+    api_base: str | None = None
+    # A base URL must be https, because the key travels in an Authorization
+    # header and the text being translated travels in the body. http is allowed
+    # for loopback (a local llama.cpp / Ollama server) and nowhere else unless
+    # this is set, which is the escape hatch for a server on the LAN.
+    allow_insecure_http: bool = False
+    temperature: float = 0.0
+    max_tokens: int = 1024
+    # Free-form instruction prepended to every remote translation request. This
+    # is where you tell the model what game it is translating, which is the single
+    # biggest lever on quality. `{source}` and `{target}` are substituted with the
+    # language names. Empty means use the built-in default.
+    prompt: str = ""
+    # Extra instruction appended after `prompt`, for short additions.
+    glossary_hint: str = ""
+    # Recently used chat models, most recent first. Purely a UI convenience, but
+    # kept in the config so switching back to a model that worked is one click
+    # instead of retyping an id like "tencent/hy-mt2-1.8b".
+    recent_models: list = field(default_factory=list)
+
+
+@dataclass
+class GuiConfig:
+    """GUI behaviour."""
+
+    # Start translating as soon as a window opens. Off would mean opening the
+    # panel and seeing nothing happen, which reads as broken.
+    autostart: bool = True
+
+
+@dataclass
+class DisplayConfig:
+    """How the translation card looks."""
+
+    width: int = 560
+    # Scaled by font_scale for the translation line; the source line is smaller.
+    base_font_size: int = 17
+    font_scale: float = 1.0
+    show_source: bool = True
+    # How many lines each text area reserves, always - the card's height budget.
+    # The card is a *fixed* size on purpose. It floats over the game, so a card
+    # that grew with its text creeps further over the dialogue box it is
+    # reporting on, and GTK never shrinks a resizable window back: measured, one
+    # four-line reply took the card from 172 px to 312 px and it stayed there
+    # even after the next line was two characters long. Text longer than the
+    # budget scrolls inside its area instead.
+    target_lines: int = 3
+    source_lines: int = 2
+    # Height the card was dragged to, in pixels, or 0 to size it from the line
+    # budgets above. The budget stays a floor either way, so the card can never
+    # be dragged smaller than the text areas it has to show.
+    height: int = 0
+    # Try to keep the card above other windows. Only achievable under XWayland
+    # (via _NET_WM_STATE_ABOVE) or through a compositor window rule; native
+    # Wayland gives clients no way to raise themselves.
+    keep_above: bool = True
+
+
+@dataclass
+class DetectConfig:
+    """Change detection tuning."""
+
+    min_changed_fraction: float = 0.0005
+    settle_frames: int = 2
+    # Hard ceiling on how long one line may be held before it is translated
+    # regardless. Must stay above `settle_window + incomplete_grace`, or it
+    # becomes the effective release time and unfinished text gets through.
+    settle_max_wait: float = 8.0
+    # How long the OCR text must stop changing before it counts as final. Measured
+    # from the last change, so an oscillating read still settles.
+    settle_window: float = 1.2
+    # Extra wait before releasing text that does not look like a finished
+    # sentence. Games pause mid-reveal (observed ~3 s) and "stable for N seconds"
+    # cannot tell a pause from the end of a line, so an unfinished read would be
+    # translated as a fragment and then again when the rest arrived. Must stay
+    # under `settle_max_wait`.
+    incomplete_grace: float = 4.5
+    empty_streak_limit: int = 6
+    # Re-read the last frame on this interval even if the pixels never settle.
+    #
+    # Necessary because a live game is rarely pixel-stable: a blinking advance
+    # cursor, an animated portrait, drifting particles or simply the mouse moving
+    # over the region all keep the frame changing. Without a forced re-read, the
+    # settler can never confirm a line and nothing is ever translated. This
+    # bounds the wait to one interval instead of depending on the screen going
+    # still. 0 disables it (pixel-change driven only).
+    refresh_interval: float = 0.9
+    # Minimum gap between OCR runs when the screen keeps changing. A blinking
+    # advance cursor changes pixels every poll without changing the text, so
+    # without this OCR would run continuously. Kept well under settle_window so
+    # it cannot delay translation meaningfully.
+    ocr_min_interval: float = 0.25
+    # A read shorter than a dozen characters has no context to be judged by, so it
+    # must be at least this confident before a model is asked about it. This is the
+    # rail against *confident nonsense*: background art reads as one or two glyphs,
+    # measured at 62.5% - above `ocr.min_confidence`, and it was translated until
+    # this existed. Raise it to be stricter about short lines, lower it if a game
+    # shows very short lines in a poor font.
+    short_text_confidence: float = 75.0
+
+
+@dataclass
+class Config:
+    capture: CaptureConfig = field(default_factory=CaptureConfig)
+    ocr: OcrConfig = field(default_factory=OcrConfig)
+    translate: TranslateConfig = field(default_factory=TranslateConfig)
+    detect: DetectConfig = field(default_factory=DetectConfig)
+    display: DisplayConfig = field(default_factory=DisplayConfig)
+    gui: GuiConfig = field(default_factory=GuiConfig)
+    # Where translated lines are remembered across restarts, keyed by source
+    # text. Empty means "this run only": the cache still collapses repeats within
+    # a session, but nothing is written to disk.
+    #
+    # It used to write `data/cache.json` by default, which quietly accumulates a
+    # plaintext transcript of everything that has ever passed through the capture
+    # box - which is whatever was on screen, not just the game. Persisting it is
+    # now an explicit choice.
+    cache_path: str = ""
+    # Populated by `load` when the file contains keys this version doesn't know.
+    warnings: list[str] = field(default_factory=list, compare=False)
+    # Where this instance was loaded from, so a plain `save()` writes back to the
+    # same file. Without it, `Config.load("/tmp/x.json").save()` silently rewrites
+    # the real config.json, which is a destructive surprise for tests and tools.
+    path: Path | None = field(default=None, compare=False, repr=False)
+
+    # -- persistence ------------------------------------------------------- #
+    @classmethod
+    def load(cls, path: Path | str | None = None) -> "Config":
+        migration = None
+        if path is None:
+            # First run after the move out of the source tree: copy the old file
+            # into place before reading it, so what gets used is the copy with
+            # the repointed paths and the private mode.
+            migration = paths.migrate_legacy_config()
+            p = paths.DEFAULT_CONFIG_PATH if migration else paths.config_search_path()
+        else:
+            p = Path(path)
+
+        if not p.exists():
+            cfg = cls()
+            cfg.path = p
+        else:
+            raw = json.loads(p.read_text())
+            cfg = cls.from_dict(raw)
+            cfg.path = p
+            # Reporting unknown keys prevents a silently ignored setting: a typo
+            # or a renamed field would otherwise look as if it had been applied.
+            unknown = _unknown_keys(raw)
+            if unknown:
+                cfg.warnings.append(
+                    "ignoring unknown config key(s): " + ", ".join(sorted(unknown))
+                )
+
+        if migration:
+            cfg.warnings.append(paths.migration_warning(migration))
+        # A config written before this module existed is 0644 and holds a key.
+        # Tightening on read is what reaches those files; the next save would
+        # only fix the ones that get saved.
+        elif path is None and p == paths.DEFAULT_CONFIG_PATH and p.exists():
+            if paths.tighten(p):
+                cfg.warnings.append(f"config permissions tightened to 0600 ({p})")
+        return cfg
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "Config":
+        cfg = cls()
+        for section in (f.name for f in fields(cls)):
+            if section not in raw:
+                continue
+            value = raw[section]
+            current = getattr(cfg, section)
+            if hasattr(current, "__dataclass_fields__") and isinstance(value, dict):
+                setattr(cfg, section, _build(current, value))
+            else:
+                setattr(cfg, section, value)
+        return cfg
+
+    def save(self, path: Path | str | None = None) -> Path:
+        # Prefer an explicit path, then wherever this was loaded from, then the
+        # user's config dir.
+        p = Path(path) if path else (self.path or paths.DEFAULT_CONFIG_PATH)
+        data = asdict(self)
+        data.pop("warnings", None)  # transient, never persisted
+        data.pop("path", None)  # where it came from, not a setting
+        # 0600: this file can hold an API key in plain text, and it used to be
+        # written with the process umask - 0644 on a normal desktop.
+        paths.write_private(p, json.dumps(data, indent=2) + "\n")
+        return p
+
+
+def _unknown_keys(raw: dict[str, Any], cls: type = Config) -> set[str]:
+    """Keys present in a config file that this version does not define."""
+    unknown: set[str] = set()
+    for f in fields(cls):
+        if f.name not in raw:
+            continue
+        current = getattr(cls(), f.name)
+        value = raw[f.name]
+        if hasattr(current, "__dataclass_fields__") and isinstance(value, dict):
+            nested = {nf.name for nf in fields(current)}
+            unknown |= {f"{f.name}.{k}" for k in value if k not in nested}
+        elif f.name not in ("warnings", "path"):
+            # `warnings` and `path` are runtime bookkeeping, not settings a user
+            # would ever write into the file.
+            continue
+    unknown |= {k for k in raw if k not in {f.name for f in fields(cls)}}
+    return unknown
+
+
+def _build(obj: Any, values: dict[str, Any]) -> Any:
+    """Rebuild a nested dataclass from a dict, honouring nested regions."""
+    kwargs: dict[str, Any] = {}
+    for f in fields(obj):
+        if f.name not in values:
+            continue
+        v = values[f.name]
+        if f.name == "region" and isinstance(v, dict):
+            kwargs[f.name] = Region(**v)
+        else:
+            kwargs[f.name] = v
+    return type(obj)(**kwargs)
