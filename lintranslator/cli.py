@@ -10,7 +10,7 @@
     lintranslator reread                  re-read the box now (bind this to a hotkey)
     lintranslator status                  what the running GUI is doing
     lintranslator shortcut                how to bind a global Re-read hotkey
-    lintranslator convert                 build the int8 model (600 MB, ~5x faster)
+    lintranslator convert                 build the int8 model (629 MB out, ~2.5 GB down)
     lintranslator models                  list OpenRouter models for your key
     lintranslator languages [filter]      list the language codes NLLB can translate
 """

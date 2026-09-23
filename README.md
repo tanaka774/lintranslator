@@ -163,20 +163,60 @@ uv venv --python 3.12 --system-site-packages .venv
 uv pip install --python .venv/bin/python -e .
 uv pip install --python .venv/bin/python -e '.[ct2]'
 
-# 3. convert the model to int8 - one time, ~600 MB, takes seconds
-#    (it lands in ~/.local/share/lintranslator/ct2/ - see "Where it keeps things")
+# 3. convert the model to int8 - one time, and it is a download, not a build:
+#    ~2.5 GB of fp32 checkpoint into the HuggingFace cache, then ~630 MB of
+#    int8 weights into ~/.local/share/lintranslator/ct2/. Both numbers are on
+#    disk at once - see "What the conversion actually costs".
 .venv/bin/python -m lintranslator convert
 ```
 
-`.[ct2]` is the fast path. `.[local]` is the older transformers route, which
-pulls in torch and needs ~4.7 GB of weights; it exists for models that cannot be
-converted and is no longer the default.
+`.[ct2]` is the fast path. `.[local]` is the older transformers route: the same
+2.5 GB checkpoint, loaded through torch instead of CTranslate2, which is slower
+and needs torch installed as well. It exists for models that cannot be converted
+and is no longer the default.
 
 The other extras are for things the app does not need to translate a line:
 `.[calibrate]` adds numpy for the region auto-detection helper, `.[x11]` adds
 python-xlib for keeping the panel above other windows under XWayland (without it
 the panel runs and says why it cannot stay on top), `.[rapidocr]` swaps in
 PP-OCR as the OCR engine, and `.[test]` is what the suite needs.
+
+### What the conversion actually costs
+
+`lintranslator convert` is the only step that downloads a *model* — the first OCR
+run separately fetches the language data described below, and a remote backend
+needs the network while it translates — and it moves more data than the "~600 MB"
+this README used to claim. Measured against the current `main` of the model repo:
+
+| | size | where it goes |
+|---|---|---|
+| fp32 checkpoint | **2.46 GB** — one `pytorch_model.bin` | `~/.cache/huggingface/hub/` (or `$HF_HOME`) |
+| tokenizer | 17 MB `tokenizer.json` + 4.9 MB `sentencepiece.bpe.model` | same cache |
+| **int8 weights** | **629 MB** — `model.bin` 623 MB + `shared_vocabulary.json` 5.9 MB | `~/.local/share/lintranslator/ct2/` |
+
+So budget **~3 GB** for the default backend, and **~630 MB** if you clean up
+afterwards.
+
+**Nothing deletes the checkpoint.** After the conversion only the tokenizer is
+still read — the `ct2` backend loads it once per run — so the 2.5 GB of fp32
+weights are dead weight, and re-converting a second model adds another 2.5 GB
+next to them:
+
+```bash
+rm -rf ~/.cache/huggingface/hub/models--facebook--nllb-200-distilled-600M
+```
+
+That is safe once `lintranslator convert` has finished (`huggingface-cli
+delete-cache` does the same thing with a menu). It costs a 22 MB re-download of
+the tokenizer the next time the model is loaded, which is the whole of what the
+`ct2` path fetches.
+
+If you ever find a HuggingFace cache twice the size of one checkpoint, it is two
+*revisions* of the same model rather than two formats: this one changed its
+weights file from `model.safetensors` to `pytorch_model.bin`, and both revisions
+got cached. A fresh install downloads one. The `.no_exist/` directory in the
+cache is what records the lookup that decides it — transformers asks for
+safetensors, is told 404 for the current revision, and falls back to the `.bin`.
 
 `eng.traineddata` / `jpn.traineddata` are downloaded on first use, so no root is
 needed. The fetch is pinned to a `tessdata_fast`
@@ -186,15 +226,10 @@ chi_sim, chi_tra, rus, deu, fra, spa, por, ita, pol, tur, vie, tha, ara; a
 language without a pinned checksum is not downloaded automatically — install it
 from the distro, or set `ocr.allow_unverified_tessdata: true` to fetch it anyway.
 
-The default `ct2` backend needs only the ~600 MB converted model. The `.hf/`
-HuggingFace cache is used by the converters and by the
-`local` fallback backend; to share it with your other projects, export
-`HF_HOME=~/.cache/huggingface` before running. The `ct2` tokenizer is small and
-is all that path fetches.
-
-Only `local` needs the full ~4.7 GB of weights: NLLB ships both safetensors and
-`.bin`, and this transformers/torch combination loads the `.bin`, so both end up
-on disk (forcing `use_safetensors=True` trips a torch 2.14 meta-device bug).
+The HuggingFace cache is used by the converter and by the `local` fallback
+backend. To share it with your other projects, export
+`HF_HOME=~/.cache/huggingface` before running; the `ct2` path only ever reads
+the tokenizer out of it.
 
 ### Where it keeps things
 
@@ -630,8 +665,8 @@ suggestion and confirm by looking at the crop.
 
 | backend | latency | notes |
 |---|---|---|
-| `ct2` | **~0.2-0.35 s/line** | int8 NLLB via CTranslate2, ~600 MB, offline. **Default.** |
-| `local` | ~0.8-1.7 s/line | same model through transformers; ~4.7 GB, needs torch |
+| `ct2` | **~0.2-0.35 s/line** | int8 NLLB via CTranslate2, ~630 MB, offline. **Default.** |
+| `local` | ~0.8-1.7 s/line | the same 2.5 GB checkpoint through transformers; needs torch |
 | `openrouter` | network-bound | **many models, one key**; needs a key + model id |
 | `deepl` | network-bound | best fluency for JA; needs a key |
 | `openai` | network-bound | prompt-tunable, needs a key |

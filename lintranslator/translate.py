@@ -264,8 +264,9 @@ class NllbTranslator(Translator):
 class CTranslate2Translator(Translator):
     """Local NLLB via CTranslate2, typically with int8 weights.
 
-    Compared with the transformers path this is the difference between a 4.7 GB
-    cache and a ~600 MB one, and several times the throughput on CPU. The
+    Compared with the transformers path this is the difference between holding a
+    2.5 GB fp32 checkpoint in memory and reading a 629 MB directory, and several
+    times the throughput on CPU. The
     tokenizer still comes from the original HuggingFace repo; only the weights
     are converted.
     """
