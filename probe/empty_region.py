@@ -13,16 +13,16 @@ Run:  .venv-gi/bin/python probe/empty_region.py
 import random
 import sys
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 from PIL import Image, ImageDraw  # noqa: E402
 
-from tlkun.capture import Frame  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.ocr import TesseractOcr  # noqa: E402
-from tlkun.pipeline import Pipeline  # noqa: E402
+from lintranslator.capture import Frame  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.ocr import TesseractOcr  # noqa: E402
+from lintranslator.pipeline import Pipeline  # noqa: E402
 
-CONFIG = "/home/chiba/workspace/tl-kun/config.json"
+CONFIG = "/home/chiba/workspace/lintranslator/config.json"
 WIDTH, HEIGHT = 900, 120
 
 
@@ -97,7 +97,7 @@ class Translator:
         self.last_was_cached = False
 
     def translate(self, text: str, force: bool = False):
-        from tlkun.translate import Translation
+        from lintranslator.translate import Translation
 
         self.asked.append(text)
         return Translation(target=f"（訳）{text}", source=text, backend="stub", elapsed=0.4)

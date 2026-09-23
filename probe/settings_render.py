@@ -9,7 +9,7 @@ loop settles. Not part of the package.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import cairo  # noqa: E402
 import gi  # noqa: E402
@@ -17,11 +17,11 @@ import gi  # noqa: E402
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from tlkun import theme  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.settings import BACKENDS, SettingsDialog  # noqa: E402
+from lintranslator import theme  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.settings import BACKENDS, SettingsDialog  # noqa: E402
 
-OUT = Path("/home/chiba/workspace/tl-kun/.cache")
+OUT = Path("/home/chiba/workspace/lintranslator/.cache")
 RENDER = ["ct2", "local", "openrouter", "deepl", "none"]
 TIMEOUT_MS = 30_000  # hard stop so a stuck render can never hang the shell
 
@@ -49,7 +49,7 @@ def shoot(widget: Gtk.Widget, name: str) -> None:
 
 def main() -> int:
     loop = GLib.MainLoop()
-    cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
+    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
     # The real app installs this in gui.on_activate, before any window.
     theme.install_for(cfg)
     dlg = SettingsDialog(None, cfg)

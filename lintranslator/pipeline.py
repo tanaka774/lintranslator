@@ -6,9 +6,9 @@ Design notes:
   sample the screen; OCR only runs when the pixels actually changed, and
   translation only runs when the OCR text has settled. At 2 fps this loop is
   near-idle while dialogue is static.
-* The loop refuses to read the screen while one of tl-kun's own windows is on it
+* The loop refuses to read the screen while one of lintranslator's own windows is on it
   (`gate`). Capturing then translates our own UI and loses the line underneath it;
-  see `tlkun.occlusion` for the measurement.
+  see `lintranslator.occlusion` for the measurement.
 * The area being read can be changed while the loop runs (`request_region`), and
   the change is applied on the worker thread so the region, the change detector
   and the settler can never disagree about which area they are looking at.
@@ -91,7 +91,7 @@ class Stats:
     throttled: int = 0
     # Polls skipped because one of our own windows was on screen.
     paused_polls: int = 0
-    # Reads dropped because they were tl-kun's own UI (or its own translation).
+    # Reads dropped because they were lintranslator's own UI (or its own translation).
     self_reads: int = 0
     # Reads dropped as not-dialogue (too little text, or short and unsure).
     junk_reads: int = 0
@@ -142,7 +142,7 @@ class Pipeline:
         # knows which of its own windows are on screen.
         self.gate = gate
         self.on_gate = on_gate
-        # Called when a read is dropped for being tl-kun's own text, so the UI can
+        # Called when a read is dropped for being lintranslator's own text, so the UI can
         # say so instead of silently showing nothing.
         self.on_self_read = on_self_read
         # Called with a short message the user asked to be told about (a re-read
@@ -466,7 +466,7 @@ class Pipeline:
             self._decision = "skip:self-ui" if dropped_own else "skip:no-text"
             if force:
                 self._note(
-                    "only tl-kun's own window is in the box"
+                    "only lintranslator's own window is in the box"
                     if dropped_own
                     else "nothing readable in the box — check the region"
                 )

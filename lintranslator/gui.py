@@ -1,9 +1,9 @@
-"""GTK4 application entry point for the tl-kun GUI.
+"""GTK4 application entry point for the lintranslator GUI.
 
 Two windows, one process:
 
-    tlkun gui --pick     region picker (capture, drag a box, preview OCR)
-    tlkun gui            translation panel (always-on-top, runs the pipeline)
+    lintranslator gui --pick     region picker (capture, drag a box, preview OCR)
+    lintranslator gui            translation panel (always-on-top, runs the pipeline)
 
 The panel is a normal keep-above window rather than a layer-shell surface: the
 `gtk4-layer-shell` binding is not installable here, and Wayland forbids clients
@@ -18,7 +18,7 @@ MODE_PANEL = "panel"
 MODE_PICK = "pick"
 
 
-class TlkApp:
+class LinTranslatorApp:
     """Builds and runs the right window for the requested mode."""
 
     def __init__(
@@ -56,7 +56,7 @@ class TlkApp:
         # NOT using Gtk.Application's own uniqueness: the picker and the panel
         # must be able to run side by side.
         app = Gtk.Application(
-            application_id="dev.tlkun.translator",
+            application_id="dev.lintranslator.translator",
             flags=Gio.ApplicationFlags.NON_UNIQUE,
         )
 
@@ -189,7 +189,7 @@ def run_gui(
     initial_capture: bool = True,
     from_file: str | None = None,
 ) -> int:
-    return TlkApp(
+    return LinTranslatorApp(
         config,
         mode,
         position=position,

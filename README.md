@@ -1,4 +1,4 @@
-# tl-kun
+# LinTranslator
 
 Screen-region OCR + auto-translation for game dialogue. Point it at the dialogue
 box once, and it watches that rectangle, reads the text, and translates it.
@@ -10,12 +10,33 @@ layers are generic.
 Current state: **Phase 3 complete** (pipeline + GUI + int8 backend + glossary).
 Verified end-to-end against the reference screenshot and live screen content.
 
+### How this differs from LunaTranslator
+
+The name is a nod to [LunaTranslator](https://github.com/HIllya51/LunaTranslator),
+which solves the same problem on Windows and is the reason this exists: on Linux
+it runs under Wine/Proton, and its main mechanism — hooking the game's text calls
+— is exactly what is awkward to make work there.
+
+LinTranslator is built the other way round:
+
+|  | LunaTranslator | LinTranslator |
+|---|---|---|
+| how it gets the text | hooks the process (OCR is the fallback) | **only** reads a screen region with OCR - the game is never touched |
+| how it runs on Linux | Wine/Proton, with community workarounds | native: xdg-desktop-portal over D-Bus, GTK4 |
+| what it needs from the game | that it be hookable | nothing but pixels in a rectangle |
+
+The trade is real, and worth stating plainly: no hooks means no menu text, no
+inventory, nothing off-screen or behind a fade — only what is drawn in the region
+you selected. What it buys is that it works on any game, including ones that
+cannot be hooked at all, and that it needs no injection, no Wine prefix and no
+per-game setup.
+
 ---
 
 ## Quick start
 
 ```bash
-.venv/bin/python -m tlkun gui     # picks a region, then starts translating
+.venv/bin/python -m lintranslator gui     # picks a region, then starts translating
 ```
 
 Everything after that is inside the GUI: **Capture** the screen, drag a box over
@@ -103,12 +124,12 @@ them has a fallback:
   so outside KDE expect to bind the shortcut by hand. Where the portal is absent
   the app still runs - the hotkey is best-effort by design, every failure goes to
   the status line, and the fallback is a desktop custom shortcut running
-  `tlkun reread` over the control socket.
+  `lintranslator reread` over the control socket.
 * **The control socket** lives in `$XDG_RUNTIME_DIR` (`control.py`), and the
   launcher that grants the app the *application id* the portal demands is a
   `.desktop` file (`packaging/`).
 
-There are no `sys.platform` checks anywhere in `tlkun/` - not as a guard, and not
+There are no `sys.platform` checks anywhere in `lintranslator/` - not as a guard, and not
 as a portability shim. Nothing was written with another OS in mind.
 
 The GUI itself is plain GTK4, so it is not a KDE application: it runs on any
@@ -140,8 +161,8 @@ uv pip install --python .venv/bin/python -e .
 uv pip install --python .venv/bin/python -e '.[ct2]'
 
 # 3. convert the model to int8 - one time, ~600 MB, takes seconds
-#    (it lands in ~/.local/share/tl-kun/ct2/ - see "Where it keeps things")
-.venv/bin/python -m tlkun convert
+#    (it lands in ~/.local/share/lintranslator/ct2/ - see "Where it keeps things")
+.venv/bin/python -m lintranslator convert
 ```
 
 `.[ct2]` is the fast path. `.[local]` is the older transformers route, which
@@ -172,12 +193,13 @@ State lives in the XDG directories, not next to the source:
 
 | what | where | mode |
 |---|---|---|
-| `config.json` | `~/.config/tl-kun/config.json` (`$XDG_CONFIG_HOME`) | **0600** |
-| converted weights, tessdata | `~/.local/share/tl-kun/` (`$XDG_DATA_HOME`) | — |
-| the optional translation cache, the control socket | `~/.cache/tl-kun/` (`$XDG_CACHE_HOME`) | — |
+| `config.json` | `~/.config/lintranslator/config.json` (`$XDG_CONFIG_HOME`) | **0600** |
+| converted weights, tessdata | `~/.local/share/lintranslator/` (`$XDG_DATA_HOME`) | — |
+| the optional translation cache, the control socket | `~/.cache/lintranslator/` (`$XDG_CACHE_HOME`) | — |
 
-`TLKUN_HOME` puts all three under one directory instead, which is what a
-portable install (or a test run) wants.
+`LINTRANSLATOR_HOME` puts all three under one directory instead, which is what a
+portable install (or a test run) wants. The pre-rename `TLKUN_HOME` is still read
+when it is set and the new one is not.
 
 Two consequences worth knowing. The config is written **0600 at creation**, not
 chmodded afterwards, because it can hold an API key in plain text; a config left
@@ -188,15 +210,37 @@ its `ct2_model_dir` and `cache_path` — and says so in the panel. The old file 
 never deleted, so if the message says one is still in your checkout, it is right,
 and it is the copy that still holds your key.
 
+### Upgrading from tl-kun
+
+LinTranslator was called **tl-kun** until the rename. Nothing is lost, and nothing
+is moved twice:
+
+* A config in `~/.config/tl-kun/config.json` is copied to
+  `~/.config/lintranslator/config.json` on the first run, with its API key and
+  settings intact, and the panel says so. The old file is left alone — it is yours
+  to delete once the new one is working, and it still holds your key until you do.
+* The converted weights in `~/.local/share/tl-kun/ct2/` are **used where they
+  are**, not copied: moving 600 MB to rename a directory is a lot of I/O for no
+  benefit, and a move that fails part way loses the one artefact here that is
+  expensive to rebuild. They are re-converted only if you ask.
+* `TLKUN_API_KEY` and `TLKUN_HOME` are still honoured, so a shell profile written
+  before the rename keeps working. `LINTRANSLATOR_API_KEY` /
+  `LINTRANSLATOR_HOME` win when both are set.
+* The application id and the window title both changed with the rename
+  (`dev.tlkun.translator` → `dev.lintranslator.translator`, and the title
+  `tl-kun` → `LinTranslator`). That has two one-time effects: the compositor asks
+  to grant screen capture again, and a KWin window rule written against the old
+  title needs updating — see "Always on top".
+
 Verify everything:
 
 ```bash
-.venv/bin/python -m tlkun check
+.venv/bin/python -m lintranslator check
 ```
 
 ```
 tesseract binary : tesseract 5.5.3
-tessdata dir     : /home/you/.local/share/tl-kun/tessdata
+tessdata dir     : /home/you/.local/share/lintranslator/tessdata
   eng           : ok
 portal ScreenCast: v5
 portal Screenshot: v2
@@ -208,8 +252,8 @@ RESULT: ready
 ### Model licences
 
 The default local model, `facebook/nllb-200-distilled-600M`, is **CC-BY-NC-4.0**,
-which permits non-commercial use only. tl-kun does not bundle or redistribute the
-weights — `tlkun convert` downloads them from HuggingFace on your machine — but
+which permits non-commercial use only. LinTranslator does not bundle or redistribute the
+weights — `lintranslator convert` downloads them from HuggingFace on your machine — but
 anyone shipping this app with pre-converted weights, or using the local backend
 commercially, is bound by that licence. Settings states the licence next to the
 Local backends, and `NOTICE` in the repository root lists the third-party terms
@@ -224,30 +268,30 @@ have no local model licence at all.
 
 ```bash
 # --- GUI ---
-.venv/bin/python -m tlkun gui                 # pick a region, then watch (default)
-.venv/bin/python -m tlkun gui --panel         # skip the picker, straight to the panel
-.venv/bin/python -m tlkun gui --pick          # region picker only, then exit
-.venv/bin/python -m tlkun gui --demo          # panel with a sample line (no model)
+.venv/bin/python -m lintranslator gui                 # pick a region, then watch (default)
+.venv/bin/python -m lintranslator gui --panel         # skip the picker, straight to the panel
+.venv/bin/python -m lintranslator gui --pick          # region picker only, then exit
+.venv/bin/python -m lintranslator gui --demo          # panel with a sample line (no model)
 
 # --- while it is running ---
-.venv/bin/python -m tlkun reread              # read the box again, now (bind a hotkey to this)
-.venv/bin/python -m tlkun status              # what the running GUI is doing
-.venv/bin/python -m tlkun shortcut            # how to set up a global hotkey
+.venv/bin/python -m lintranslator reread              # read the box again, now (bind a hotkey to this)
+.venv/bin/python -m lintranslator status              # what the running GUI is doing
+.venv/bin/python -m lintranslator shortcut            # how to set up a global hotkey
 
 # --- headless ---
 # capture the region once, to check you framed the dialogue box
-.venv/bin/python -m tlkun grab -o /tmp/frame.png
+.venv/bin/python -m lintranslator grab -o /tmp/frame.png
 
 # OCR only - no translation, no waiting. Use this to tune the region.
-.venv/bin/python -m tlkun read --repeat 5
+.venv/bin/python -m lintranslator read --repeat 5
 
 # the real thing
-.venv/bin/python -m tlkun run
+.venv/bin/python -m lintranslator run
 ```
 
 ### The GUI
 
-**Region picker** (the first window of `tlkun gui`) shows a frozen screenshot and
+**Region picker** (the first window of `lintranslator gui`) shows a frozen screenshot and
 lets you drag a rectangle over the dialogue text. The box can be resized from any
 edge or corner: grips sit at every corner and at the middle of every edge, the
 pointer changes shape over them, and the edge you grabbed travels with the pointer
@@ -394,12 +438,12 @@ selecting the text.
 
 #### One stylesheet for all three windows
 
-`tlkun/theme.py` is the single source of visual truth, and `tlkun gui` installs it
+`lintranslator/theme.py` is the single source of visual truth, and `lintranslator gui` installs it
 before building any window. The panel used to be the only window with any CSS at
 all, which left the picker and the settings dialog as stock widgets beside a custom
 dark card.
 
-Nothing is styled by bare element name — every rule is scoped to a `.tlkun-*` class
+Nothing is styled by bare element name — every rule is scoped to a `.lintranslator-*` class
 or to a window class — so the picker's hand-drawn cairo area, and any widget nobody
 has classified, keep the toolkit's own look. Where the app does paint a control it
 paints it explicitly rather than inheriting: this machine runs **Breeze light**, so
@@ -410,10 +454,10 @@ they were. The app also asks for the dark variant of the desktop theme, but does
 not rely on getting it — Breeze loads no dark variant here, so the window
 background went dark while its labels, scales and buttons stayed light.
 
-Widgets inside `window.tlkun-app` (the picker and the settings dialog) are
+Widgets inside `window.lintranslator-app` (the picker and the settings dialog) are
 therefore painted explicitly too. That needs two pieces of care, both of which are
-commented where they live: a `window.tlkun-app label` rule outranks a bare
-`.tlkun-hint`, and `window.tlkun-app button` outranks `button.tlkun-primary`, so
+commented where they live: a `window.lintranslator-app label` rule outranks a bare
+`.lintranslator-hint`, and `window.lintranslator-app button` outranks `button.lintranslator-primary`, so
 the semantic classes are re-stated scoped rather than left to source order.
 
 
@@ -453,25 +497,25 @@ Three ways to trigger it, in order of how well they survive the game having focu
 
 | how | where it works | setup |
 |---|---|---|
-| a **global hotkey** | any window, game included | none if tl-kun was started from the application menu (it asks the compositor itself); otherwise bind `tlkun reread` as a desktop shortcut — `tlkun shortcut` prints the exact command |
-| `tlkun reread` | any window, game included | run it from a terminal or a script; it talks to the running window over its control socket |
+| a **global hotkey** | any window, game included | none if LinTranslator was started from the application menu (it asks the compositor itself); otherwise bind `lintranslator reread` as a desktop shortcut — `lintranslator shortcut` prints the exact command |
+| `lintranslator reread` | any window, game included | run it from a terminal or a script; it talks to the running window over its control socket |
 | **Ctrl+R** / **F5** | while the translation panel has focus | none |
 
 Wayland gives an application no way to read global keys, so a shortcut that works
-while the game is focused has to come from the desktop. tl-kun asks for one through
+while the game is focused has to come from the desktop. LinTranslator asks for one through
 `org.freedesktop.portal.GlobalShortcuts`, which KDE implements: the compositor
 shows its own binding dialog once and then sends the keypress. That portal refuses
 callers without an *application id*, which a plain terminal launch does not have
 (KDE answers `An app id is required`) — hence the two fallbacks, and hence
-`packaging/tl-kun.desktop`:
+`packaging/lintranslator.desktop`:
 
 ```bash
-cp packaging/tl-kun.desktop ~/.local/share/applications/
-cp packaging/tlk-gui ~/.local/bin/          # then launch tl-kun from the menu
+cp packaging/lintranslator.desktop ~/.local/share/applications/
+cp packaging/lintranslator-gui ~/.local/bin/          # then launch LinTranslator from the menu
 ```
 
 The panel always says which of these is in force: `global hotkey for Re-read:
-Ctrl+Alt+R`, or `no global hotkey — … Run 'tlkun shortcut' for the setup`.
+Ctrl+Alt+R`, or `no global hotkey — … Run 'lintranslator shortcut' for the setup`.
 
 #### Live translation
 
@@ -481,12 +525,12 @@ follow the game, and it is what the panel uses.
 
 How it decides a line is ready:
 
-0. **Never while tl-kun's own window is on screen.** The picker and the settings
-   window report when they are mapped (`tlkun/occlusion.py`), and the loop does not
+0. **Never while LinTranslator's own window is on screen.** The picker and the settings
+   window report when they are mapped (`lintranslator/occlusion.py`), and the loop does not
    capture at all until they are gone — a paused poll, not a fixed delay, so
    reading starts the moment the window actually unmaps. The panel is the one
    window that cannot be gated (it is the output), so its text is caught instead by
-   `tlkun/selftext.py`, **line by line**: the lines that are ours are dropped and
+   `lintranslator/selftext.py`, **line by line**: the lines that are ours are dropped and
    the game's are kept, because dropping the whole read loses the dialogue under a
    panel that clips the edge of the box. A read that echoes the translation we just
    produced is dropped too. Both are *said* to be dropped in the status line rather
@@ -520,16 +564,16 @@ How it decides a line is ready:
 
 **On native Wayland no application can raise itself above other windows.**
 Stacking belongs to the compositor, and GTK4 removed the `keep_above` API that
-GTK3 had. tl-kun does what it can, reports when it cannot, and does not pretend
+GTK3 had. LinTranslator does what it can, reports when it cannot, and does not pretend
 otherwise.
 
 Two options that work:
 
 **A — launch under XWayland** (no setup, verified working). The standard
-`_NET_WM_STATE_ABOVE` hint still functions there and tl-kun applies it itself:
+`_NET_WM_STATE_ABOVE` hint still functions there and LinTranslator applies it itself:
 
 ```bash
-GDK_BACKEND=x11 .venv/bin/python -m tlkun gui
+GDK_BACKEND=x11 .venv/bin/python -m lintranslator gui
 ```
 
 Confirmed on this machine by reading the property back off the window:
@@ -542,7 +586,7 @@ once it takes effect.
 
 | field | value |
 |---|---|
-| Window title | `Substring match` → `tl-kun` |
+| Window title | `Substring match` → `LinTranslator` |
 | Keep above other windows | **Force** → **Yes** |
 
 > **Add rules through System Settings, not by editing `kwinrulesrc` directly.**
@@ -561,14 +605,14 @@ change.
 
 ```bash
 # x,y,w,h as fractions of the screen
-.venv/bin/python -m tlkun region --x 0.175 --y 0.838 --w 0.790 --h 0.082 --fraction
+.venv/bin/python -m lintranslator region --x 0.175 --y 0.838 --w 0.790 --h 0.082 --fraction
 ```
 
 Or open the picker on an existing screenshot, which also works without grabbing
 the live screen:
 
 ```bash
-.venv/bin/python -m tlkun gui --pick --from-file shot.png
+.venv/bin/python -m lintranslator gui --pick --from-file shot.png
 ```
 
 To let the code find the box itself, call the calibrator on a full screenshot
@@ -576,7 +620,7 @@ To let the code find the box itself, call the calibrator on a full screenshot
 
 ```python
 from PIL import Image
-from tlkun.calibrate import calibrate
+from lintranslator.calibrate import calibrate
 print(calibrate(Image.open("shot.png")).describe())
 ```
 
@@ -593,13 +637,13 @@ suggestion and confirm by looking at the crop.
 
 ```bash
 # int8 CTranslate2 (default)
-.venv/bin/python -m tlkun run --backend ct2
+.venv/bin/python -m lintranslator run --backend ct2
 
 # transformers fallback
-.venv/bin/python -m tlkun run --backend local
+.venv/bin/python -m lintranslator run --backend local
 
 # DeepL / OpenAI need a key in config.json ("translate": {"api_key": "..."})
-.venv/bin/python -m tlkun run --backend deepl
+.venv/bin/python -m lintranslator run --backend deepl
 ```
 
 | backend | latency | notes |
@@ -661,11 +705,11 @@ Two consequences are shown rather than implied:
   become a filename under the tessdata directory — and the Settings dialog says
   so instead of saving it.
 
-From a terminal the pair is reachable as flags, and `tlkun check` validates it:
+From a terminal the pair is reachable as flags, and `lintranslator check` validates it:
 
 ```bash
-.venv/bin/python -m tlkun run --source-lang jpn_Jpan --target-lang eng_Latn
-.venv/bin/python -m tlkun check        # flags a code NLLB cannot score
+.venv/bin/python -m lintranslator run --source-lang jpn_Jpan --target-lang eng_Latn
+.venv/bin/python -m lintranslator check        # flags a code NLLB cannot score
 ```
 
 ### Glossary
@@ -713,7 +757,7 @@ the cache stores the raw model output and terms are applied on the way out.
 
 ### Remote models (OpenRouter)
 
-The local model is fast but literal. When you want better prose, point tl-kun at
+The local model is fast but literal. When you want better prose, point LinTranslator at
 a hosted model. OpenRouter gives you many models behind one key and speaks the
 OpenAI chat-completions protocol, which is also what this backend uses for any
 compatible endpoint.
@@ -724,11 +768,11 @@ compatible endpoint.
 export OPENROUTER_API_KEY=sk-or-...
 
 # 2. see what your key can reach
-.venv-gi/bin/python -m tlkun models --backend openrouter --filter gemini
-.venv-gi/bin/python -m tlkun models --backend openrouter --free     # free tier only
+.venv-gi/bin/python -m lintranslator models --backend openrouter --filter gemini
+.venv-gi/bin/python -m lintranslator models --backend openrouter --free     # free tier only
 
 # 3. point the config at one
-.venv-gi/bin/python -m tlkun check --backend openrouter --model google/gemini-2.0-flash-001
+.venv-gi/bin/python -m lintranslator check --backend openrouter --model google/gemini-2.0-flash-001
 ```
 
 To make it permanent, set it in `config.json`:
@@ -746,9 +790,10 @@ To make it permanent, set it in `config.json`:
 * **`model` is required** and has no default. Model ids change often, and a stale
   default would fail confusingly rather than obviously.
 * **`api_key: null` means "read the environment"**, checked in this order:
-  `OPENROUTER_API_KEY`, then `TLKUN_API_KEY`. A key saved through the GUI wins
+  `OPENROUTER_API_KEY`, then `LINTRANSLATOR_API_KEY` (or its pre-rename spelling,
+  `TLKUN_API_KEY`). A key saved through the GUI wins
   over the environment, and the Settings dialog says which one is in use.
-  `tlkun check` masks the key when reporting it.
+  `lintranslator check` masks the key when reporting it.
 * An error body a provider returns is collapsed to a single line, capped at 200
   characters, and has anything credential-shaped — including the configured key —
   replaced with `***` before the card shows it, because that text ends up in bug
@@ -756,7 +801,7 @@ To make it permanent, set it in `config.json`:
 * A key saved from the GUI is written to `config.json` **in plain text**. That is
   a deliberate trade: a GUI that requires an environment variable is not a GUI.
   What is not a trade is who can read it: the file is written 0600 in your own
-  config directory (`~/.config/tl-kun/`), not beside the source.
+  config directory (`~/.config/lintranslator/`), not beside the source.
   Use **Clear** to remove it, or leave the field empty to rely on the environment.
 * **`glossary_hint`** appends free-form instructions to the translation prompt.
   This is how you steer a large model on names and tone - use it instead of
@@ -776,7 +821,7 @@ Translations are cached per **backend and model**, so switching models always
 re-runs the new one. Without that, a switched model would appear to produce
 identical output because it was being served the previous model's cached result.
 
-### Pointing tl-kun at your own endpoint
+### Pointing LinTranslator at your own endpoint
 
 The `chat` backend speaks the OpenAI `/chat/completions` protocol, so it works
 with llama.cpp, Ollama (`http://localhost:11434/v1`), vLLM, Groq, Together, or
@@ -790,7 +835,7 @@ default to guess at.
 
 No API key is required. A local server that ignores auth is sent no
 `Authorization` header at all; a hosted gateway uses the same key field in
-Settings, or `TLKUN_API_KEY`.
+Settings, or `LINTRANSLATOR_API_KEY`.
 
 The base URL must be `https://`. Plain `http://` is allowed only for loopback
 (`localhost`, `127.x.x.x`, `::1`); for a server elsewhere on your LAN set
@@ -803,7 +848,7 @@ One line in `config.json` is enough:
 "translate": { "backend": "chat", "model": "qwen2.5-7b-instruct", "api_base": "http://localhost:11434/v1" }
 ```
 
-`tlkun check` reports the endpoint and where the key came from:
+`lintranslator check` reports the endpoint and where the key came from:
 
 ```
 translate backend: chat (English->Japanese)
@@ -891,7 +936,7 @@ wasted seconds per line and corrupted the output.
 ## Layout
 
 ```
-tlkun/
+lintranslator/
   paths.py       XDG directories, private writes, migration out of the source tree
   config.py      config model, JSON load/save, unknown-key warnings
   portal.py      xdg-desktop-portal D-Bus clients (Screenshot, ScreenCast)
@@ -906,9 +951,9 @@ tlkun/
   convert.py     HuggingFace -> CTranslate2 int8 conversion
   calibrate.py   automatic dialogue-box detection
   selection.py   picker coordinate mapping and drag geometry (pure, tested)
-  occlusion.py   which tl-kun windows are on screen (the capture gate)
+  occlusion.py   which LinTranslator windows are on screen (the capture gate)
   selftext.py    text that is not the game's: our own UI, and confident nonsense
-  control.py     the `tlkun reread` control socket (one line in, one line out)
+  control.py     the `lintranslator reread` control socket (one line in, one line out)
   hotkey.py      global shortcut via the compositor's GlobalShortcuts portal
   picker.py      GTK4 region picker window
   panel.py       GTK4 always-on-top translation panel + worker thread
@@ -972,7 +1017,7 @@ PLAN.md          feasibility study with the full benchmark tables
   including the capture-timing rules (pause while our own window is up, re-point
   the area live, never translate our own UI)
 * `tests/test_occlusion.py` - the two self-capture guards, and that real dialogue
-  is never mistaken for tl-kun's own text
+  is never mistaken for LinTranslator's own text
 * `tests/test_picker_wiring.py` - what the picker tells the pipeline, and when,
   plus the drag handlers' half of a resize
 * `tests/test_control.py` - the control socket: round trip, no GUI, two GUIs

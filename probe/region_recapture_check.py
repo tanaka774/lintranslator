@@ -25,17 +25,17 @@ import threading
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, Gtk  # noqa: E402
 
-from tlkun import capture as capture_mod  # noqa: E402
-from tlkun import panel as panel_mod  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.portal import ScreenshotPortal  # noqa: E402
+from lintranslator import capture as capture_mod  # noqa: E402
+from lintranslator import panel as panel_mod  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.portal import ScreenshotPortal  # noqa: E402
 
 GRABS = []
 FAILURES = []
@@ -117,8 +117,8 @@ def main() -> int:
     panel_mod.PipelineThread = RecordingPipelineThread
     panel_mod.TranslatorPanel = QuietPanel
 
-    cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
-    cfg.path = Path("/tmp/tlkun_recapture_probe.json")  # never the real config
+    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg.path = Path("/tmp/lintranslator_recapture_probe.json")  # never the real config
 
     portal = ScreenshotPortal()
     png, size, elapsed = portal.grab()
@@ -134,12 +134,12 @@ def main() -> int:
     capture_mod.ScreenGrabber = CountingGrabber
 
     app = Gtk.Application(
-        application_id="dev.tlkun.recapturecheck", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.recapturecheck", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
     outcome = {}
 
     def on_activate(_app):
-        from tlkun.picker import RegionPicker
+        from lintranslator.picker import RegionPicker
 
         picker = RegionPicker(app, cfg, screenshot_png=png)
         picker.present = lambda: None  # nothing lands on the real screen

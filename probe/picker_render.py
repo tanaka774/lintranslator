@@ -8,7 +8,7 @@ list, filter as you type, and hand the picked id back to the entry.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import cairo  # noqa: E402
 import gi  # noqa: E402
@@ -16,9 +16,9 @@ import gi  # noqa: E402
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from tlkun.settings import MODEL_SUGGESTIONS, ModelPicker  # noqa: E402
+from lintranslator.settings import MODEL_SUGGESTIONS, ModelPicker  # noqa: E402
 
-OUT = Path("/home/chiba/workspace/tl-kun/.cache")
+OUT = Path("/home/chiba/workspace/lintranslator/.cache")
 
 # A slice of the real 445-model list, in the order OpenRouter returns it.
 FAKE_FETCH = MODEL_SUGGESTIONS["openrouter"] + [

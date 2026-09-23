@@ -25,7 +25,7 @@ import sys
 from io import BytesIO
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import gi  # noqa: E402
 
@@ -34,10 +34,10 @@ from gi.repository import Gio, Gtk  # noqa: E402
 
 from PIL import Image  # noqa: E402
 
-from tlkun import panel as panel_mod  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.picker import RegionPicker  # noqa: E402
-from tlkun.selection import SelectionMath  # noqa: E402
+from lintranslator import panel as panel_mod  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.picker import RegionPicker  # noqa: E402
+from lintranslator.selection import SelectionMath  # noqa: E402
 
 SCREEN = (2560, 1440)
 # The box every case starts from: a wide dialogue box, so every edge is long
@@ -182,11 +182,11 @@ def main() -> int:
         print("no display: this probe drives the picker's own drag handlers")
         return 2
 
-    cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
-    cfg.path = Path("/tmp/tlkun_resize_probe.json")  # never the real config
+    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg.path = Path("/tmp/lintranslator_resize_probe.json")  # never the real config
 
     app = Gtk.Application(
-        application_id="dev.tlkun.resizecheck", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.resizecheck", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
     results: list[tuple[str, bool]] = []
 

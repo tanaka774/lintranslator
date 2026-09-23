@@ -55,7 +55,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         screenshot_png: bytes | None = None,
         from_file: str | None = None,
     ):
-        super().__init__(application=app, title="tl-kun — select the dialogue box")
+        super().__init__(application=app, title="LinTranslator — select the dialogue box")
         # Size to the screen so the canvas is never the cramped minimum: the
         # screenshot is letterboxed into whatever the canvas gets, and a small
         # window makes precise selection needlessly hard.
@@ -69,11 +69,11 @@ class RegionPicker(Gtk.ApplicationWindow):
         else:
             self.set_default_size(1320, 820)
 
-        # Everything visual comes from tlkun/theme.py. Without this the picker
+        # Everything visual comes from lintranslator/theme.py. Without this the picker
         # was stock Adwaita/Breeze next to an already-styled panel - two visual
         # languages in one app - and on this desktop that means Breeze *light*,
         # so any widget nobody classified came out white.
-        self.add_css_class("tlkun-app")
+        self.add_css_class("lintranslator-app")
 
         self.config = config
         self.screen_image: Image.Image | None = None
@@ -227,11 +227,11 @@ class RegionPicker(Gtk.ApplicationWindow):
         """A 1px rule whose colour and spacing come from the theme.
 
         A Gtk.Separator would be the same line in a colour this app does not
-        own; the theme paints `.tlkun-rule`, and stood on end in the toolbar the
+        own; the theme paints `.lintranslator-rule`, and stood on end in the toolbar the
         same class is what separates the groups of buttons.
         """
         rule = Gtk.Box()
-        rule.add_css_class("tlkun-rule")
+        rule.add_css_class("lintranslator-rule")
         return rule
 
     def _build_toolbar(self) -> Gtk.Widget:
@@ -245,7 +245,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         the button that starts one.
         """
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        bar.add_css_class("tlkun-toolbar")
+        bar.add_css_class("lintranslator-toolbar")
 
         # The status line lives here rather than at the bottom of the sidebar:
         # it is one line of state ("captured 2560x1440 - drag over the dialogue
@@ -253,7 +253,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         # has room here. Ellipsised rather than wrapped, because this row is a
         # fixed height and a two-line status would make the whole window jump.
         self.status_label = Gtk.Label(label="", xalign=0)
-        self.status_label.add_css_class("tlkun-hint")
+        self.status_label.add_css_class("lintranslator-hint")
         self.status_label.set_ellipsize(Pango.EllipsizeMode.END)
         self.status_label.set_hexpand(True)
         bar.append(self.status_label)
@@ -294,15 +294,15 @@ class RegionPicker(Gtk.ApplicationWindow):
 
         # One class for the row, so the buttons are one size and one weight...
         for button in (self.capture_btn, save, settings, close, self.watch_btn):
-            button.add_css_class("tlkun-btn")
-            button.add_css_class("tlkun-tool")
+            button.add_css_class("lintranslator-btn")
+            button.add_css_class("lintranslator-tool")
         # ...and one exception, which is the whole point of the row.
-        self.watch_btn.add_css_class("tlkun-primary")
+        self.watch_btn.add_css_class("lintranslator-primary")
         return bar
 
     def _build_sidebar(self) -> Gtk.Widget:
         side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        side.add_css_class("tlkun-side")
+        side.add_css_class("lintranslator-side")
         # A request, not a floor. It was set from the widest control in the
         # column - the "Re-translate when I adjust the box" checkbox, which
         # measured 309px - plus the theme's 14px padding on each side. That
@@ -320,7 +320,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         side.set_valign(Gtk.Align.FILL)
 
         title = Gtk.Label(label="Drag over the dialogue text", xalign=0)
-        title.add_css_class("tlkun-title")
+        title.add_css_class("lintranslator-title")
         title.set_tooltip_text(
             "Drag a box, or press Find box to snap it to the nearest text"
         )
@@ -335,14 +335,14 @@ class RegionPicker(Gtk.ApplicationWindow):
             xalign=0,
             wrap=True,
         )
-        hint.add_css_class("tlkun-hint")
+        hint.add_css_class("lintranslator-hint")
         side.append(hint)
 
         # The box, in a sunken readout: it changes on every drag, and a number
         # that moves belongs in a fixed frame rather than in a line of prose.
         self.coords_label = Gtk.Label(label="no selection", xalign=0, wrap=True)
-        self.coords_label.add_css_class("tlkun-readout")
-        self.coords_label.add_css_class("tlkun-dim")
+        self.coords_label.add_css_class("lintranslator-readout")
+        self.coords_label.add_css_class("lintranslator-dim")
         side.append(self.coords_label)
 
         # Which image the preview shows is one choice with three answers, so it
@@ -397,7 +397,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         preview_clip.set_propagate_natural_height(False)
         preview_clip.set_child(self.preview)
         preview_frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        preview_frame.add_css_class("tlkun-frame")
+        preview_frame.add_css_class("lintranslator-frame")
         preview_frame.append(preview_clip)
         side.append(preview_frame)
 
@@ -410,31 +410,31 @@ class RegionPicker(Gtk.ApplicationWindow):
         self.ocr_label.set_selectable(True)
         self.ocr_label.set_yalign(0)
         self.ocr_label.set_vexpand(True)
-        self.ocr_label.add_css_class("tlkun-readout")
-        self.ocr_label.add_css_class("tlkun-body")
+        self.ocr_label.add_css_class("lintranslator-readout")
+        self.ocr_label.add_css_class("lintranslator-body")
         side.append(self.ocr_label)
 
         self.conf_label = Gtk.Label(label="", xalign=0)
-        self.conf_label.add_css_class("tlkun-caption")
+        self.conf_label.add_css_class("lintranslator-caption")
         side.append(self.conf_label)
 
         side.append(self._rule())
 
         trans_head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         head = Gtk.Label(label="Translation", xalign=0)
-        head.add_css_class("tlkun-section")
+        head.add_css_class("lintranslator-section")
         trans_head.append(head)
         # A caption rather than <small> markup: the type scale is the theme's,
-        # and "preview only" is exactly what `.tlkun-caption` is for.
+        # and "preview only" is exactly what `.lintranslator-caption` is for.
         note = Gtk.Label(label="preview only", xalign=0)
-        note.add_css_class("tlkun-caption")
+        note.add_css_class("lintranslator-caption")
         # Not hexpand. It used to push Translate to the far right, but it also
         # propagated "expands" up to the sidebar's scroller and cost the canvas
         # half the window's spare width (see the picture above). The button sits
         # beside the caption instead, next to the thing it acts on.
         trans_head.append(note)
         self.translate_btn = Gtk.Button(label="Translate")
-        self.translate_btn.add_css_class("tlkun-btn")
+        self.translate_btn.add_css_class("lintranslator-btn")
         self.translate_btn.set_tooltip_text(
             "Translate this region now, using the configured backend"
         )
@@ -448,7 +448,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         # checkbox that used to live here only added a way to be surprised by a
         # stale translation (see `_refresh_preview` and `_on_settings_applied`).
         self.backend_label = Gtk.Label(label="", xalign=0, wrap=True)
-        self.backend_label.add_css_class("tlkun-caption")
+        self.backend_label.add_css_class("lintranslator-caption")
         self.backend_label.set_max_width_chars(34)
         side.append(self.backend_label)
         self._refresh_backend_label()
@@ -456,7 +456,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         # A visible explanation, because a still screenshot that never updates
         # looks exactly like a broken live translator.
         self.watch_status = Gtk.Label(label="", xalign=0, wrap=True)
-        self.watch_status.add_css_class("tlkun-hint")
+        self.watch_status.add_css_class("lintranslator-hint")
         self.watch_status.set_max_width_chars(34)
         side.append(self.watch_status)
 
@@ -468,15 +468,15 @@ class RegionPicker(Gtk.ApplicationWindow):
             xalign=0,
             wrap=True,
         )
-        self.snapshot_note.add_css_class("tlkun-caption")
+        self.snapshot_note.add_css_class("lintranslator-caption")
         self.snapshot_note.set_max_width_chars(34)
         side.append(self.snapshot_note)
 
         self.trans_label = Gtk.Label(label="", xalign=0, wrap=True)
         self.trans_label.set_selectable(True)
         self.trans_label.set_max_width_chars(34)
-        self.trans_label.add_css_class("tlkun-readout")
-        self.trans_label.add_css_class("tlkun-body")
+        self.trans_label.add_css_class("lintranslator-readout")
+        self.trans_label.add_css_class("lintranslator-body")
         side.append(self.trans_label)
 
         # Second line of defence: a wrapping label's natural width is its
@@ -802,7 +802,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         """Save the region, start (or re-point) the panel, and get out of the way.
 
         Deliberately in-process: the panel is another window of the same
-        application rather than a second `tlkun gui` run. That keeps the
+        application rather than a second `lintranslator gui` run. That keeps the
         picker-to-watching flow inside the GUI, with no command to type.
 
         The order matters and used to be wrong. Reading started instantly, while

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from PIL import Image, ImageDraw
 
-from tlkun.calibrate import calibrate
+from lintranslator.calibrate import calibrate
 
 SCREEN = (1200, 800)
 

@@ -19,15 +19,15 @@ import sys
 import time
 from io import BytesIO
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 from PIL import Image
 
-from tlkun.capture import ScreenGrabber
-from tlkun.config import Config
-from tlkun.portal import ScreenshotPortal
+from lintranslator.capture import ScreenGrabber
+from lintranslator.config import Config
+from lintranslator.portal import ScreenshotPortal
 
-cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
+cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
 region = cfg.capture.region
 
 print("== portal screenshot path ==")
@@ -90,7 +90,7 @@ if not nested:
 print("\n== start-of-capture latency (what the panel worker does) ==")
 # Exactly the sequence PipelineThread._run performs: construct, warmup, start,
 # then step. Warmup here is portal + tesseract only (no model load).
-from tlkun.pipeline import Pipeline
+from lintranslator.pipeline import Pipeline
 
 cfg.translate.backend = "none"
 pipe = Pipeline(cfg)

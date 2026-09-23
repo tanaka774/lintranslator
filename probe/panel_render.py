@@ -2,7 +2,7 @@
 
 Run:  .venv-gi/bin/python probe/panel_render.py
 
-Renders the picker and the panel it owns exactly as `tlkun gui` builds them, and
+Renders the picker and the panel it owns exactly as `lintranslator gui` builds them, and
 exits. Used to confirm that the panel gained a reachable **Region** button (the
 way back to a picker that now minimises itself) without the control row
 overflowing, and that the picker's own chrome - sidebar and toolbar - reads
@@ -18,7 +18,7 @@ cached node is invalidated and the compositor has not drawn the replacement.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import cairo  # noqa: E402
 import gi  # noqa: E402
@@ -26,13 +26,13 @@ import gi  # noqa: E402
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from tlkun import panel as panel_mod  # noqa: E402
-from tlkun import picker as picker_mod  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.portal import ScreenshotPortal  # noqa: E402
+from lintranslator import panel as panel_mod  # noqa: E402
+from lintranslator import picker as picker_mod  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.portal import ScreenshotPortal  # noqa: E402
 
-OUT = Path("/home/chiba/workspace/tl-kun/data")
-CONFIG = Path("/tmp/tlkun_probe_config.json")  # never write the real config
+OUT = Path("/home/chiba/workspace/lintranslator/data")
+CONFIG = Path("/tmp/lintranslator_probe_config.json")  # never write the real config
 failures: list[str] = []
 
 
@@ -55,7 +55,7 @@ def shoot(widget, name: str) -> None:
 
 
 def main() -> int:
-    cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
+    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
     cfg.path = CONFIG
     cfg.translate.backend = "none"  # no network calls in a render probe
 
@@ -66,7 +66,7 @@ def main() -> int:
     print(f"  {size} in {elapsed * 1000:.0f} ms", flush=True)
 
     app = Gtk.Application(
-        application_id="dev.tlkun.render", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.render", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
 
     def on_activate(_app):

@@ -1,6 +1,6 @@
-"""Which of tl-kun's own windows are on screen right now.
+"""Which of lintranslator's own windows are on screen right now.
 
-The pipeline reads pixels off the screen, so any tl-kun window over the selected
+The pipeline reads pixels off the screen, so any lintranslator window over the selected
 area is captured along with the game. That is not hypothetical: measured on a live
 screen, the frame captured 10 ms after "Watch live" was pressed contained the
 picker's own status line -
@@ -24,7 +24,7 @@ over the game - which is exactly when capturing it would be wrong.
 
 The panel is deliberately *not* registered: it is the output, and it has to stay
 on screen while watching. A panel over the box is caught by the self-text guard
-instead (`tlkun.selftext`).
+instead (`lintranslator.selftext`).
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class OcclusionGuard:
-    """Tracks tl-kun windows that must not appear in a capture.
+    """Tracks lintranslator windows that must not appear in a capture.
 
     Deliberately free of GTK: windows report their own map/unmap state, the
     pipeline only asks for a reason to wait. That keeps the pipeline testable

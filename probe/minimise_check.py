@@ -19,13 +19,13 @@ from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 SECONDS = 2.0
 app = Gtk.Application(
-    application_id="dev.tlkun.minimisecheck", flags=Gio.ApplicationFlags.NON_UNIQUE
+    application_id="dev.lintranslator.minimisecheck", flags=Gio.ApplicationFlags.NON_UNIQUE
 )
 state = {"t0": None, "samples": []}
 
 
 def on_activate(application):
-    win = Gtk.ApplicationWindow(application=application, title="tl-kun minimise probe")
+    win = Gtk.ApplicationWindow(application=application, title="lintranslator minimise probe")
     win.set_default_size(400, 200)
     win.present()
 

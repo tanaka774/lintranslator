@@ -14,16 +14,16 @@ Run:  .venv-gi/bin/python probe/region_swap_check.py
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, Gtk  # noqa: E402
 
-from tlkun import panel as panel_mod  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.portal import ScreenshotPortal  # noqa: E402
+from lintranslator import panel as panel_mod  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.portal import ScreenshotPortal  # noqa: E402
 
 CONSTRUCTED = []
 
@@ -64,8 +64,8 @@ def main() -> int:
     panel_mod.PipelineThread = RecordingPipelineThread
     panel_mod.TranslatorPanel = QuietPanel
 
-    cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
-    cfg.path = Path("/tmp/tlkun_probe_config.json")  # never write the real config
+    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg.path = Path("/tmp/lintranslator_probe_config.json")  # never write the real config
 
     portal = ScreenshotPortal()
     png, size, elapsed = portal.grab()
@@ -73,12 +73,12 @@ def main() -> int:
     print(f"screen {size} (portal {elapsed * 1000:.0f} ms)")
 
     app = Gtk.Application(
-        application_id="dev.tlkun.swapcheck", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.swapcheck", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
     outcome = {}
 
     def on_activate(_app):
-        from tlkun.picker import RegionPicker
+        from lintranslator.picker import RegionPicker
 
         picker = RegionPicker(app, cfg, screenshot_png=png)
         w, h = picker.screen_size

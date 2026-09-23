@@ -14,16 +14,16 @@ Run:  .venv-gi/bin/python probe/trigger_timing.py
 """
 import sys
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 from PIL import Image, ImageDraw  # noqa: E402
 
-from tlkun.capture import Frame  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.ocr import OcrLine, OcrResult  # noqa: E402
-from tlkun.pipeline import Pipeline  # noqa: E402
+from lintranslator.capture import Frame  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.ocr import OcrLine, OcrResult  # noqa: E402
+from lintranslator.pipeline import Pipeline  # noqa: E402
 
-CONFIG = "/home/chiba/workspace/tl-kun/config.json"
+CONFIG = "/home/chiba/workspace/lintranslator/config.json"
 
 FRAGMENT = "Herr Gregor is the proverbial poster child of Work"
 FULL = "Herr Gregor is the proverbial poster child of Workshop-sponsored Fixers."
@@ -97,7 +97,7 @@ class Translator:
         self.cache = _Cache()
 
     def translate(self, text: str, force: bool = False):
-        from tlkun.translate import Translation
+        from lintranslator.translate import Translation
 
         return Translation(target=f"（訳）{text[:12]}…", source=text, backend="stub", elapsed=self.call_seconds)
 

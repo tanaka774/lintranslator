@@ -4,7 +4,7 @@ Regions can be stored either as absolute pixels or as normalised fractions of
 the screen. Normalised is the default because Limbus Company runs at a different
 resolution on different setups, and the dialogue box scales with it.
 
-Where the file lives, and why it is 0600, is `tlkun.paths`.
+Where the file lives, and why it is 0600, is `lintranslator.paths`.
 """
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ class OcrConfig:
     tessdata_dir: str | None = None
     min_confidence: float = 40.0
     # Language data is fetched on first use, but only for languages with a pinned
-    # checksum (see `tlkun.ocr.TESSDATA_SHA256`). Set this to also download a
+    # checksum (see `lintranslator.ocr.TESSDATA_SHA256`). Set this to also download a
     # language that has none, accepting it unverified.
     allow_unverified_tessdata: bool = False
 
@@ -90,7 +90,7 @@ class TranslateConfig:
     # --- remote backends (openrouter / openai / chat) ---
     # Prefer the environment over this field: config.json is a file people share,
     # commit and screenshot, and a key in it leaks easily.
-    #   OPENROUTER_API_KEY / OPENAI_API_KEY / TLKUN_API_KEY
+    #   OPENROUTER_API_KEY / OPENAI_API_KEY / LINTRANSLATOR_API_KEY
     api_key: str | None = None
     # Override the provider's base URL. Empty means the backend's default, and
     # also lets any OpenAI-compatible endpoint be used via backend "chat".
@@ -226,9 +226,14 @@ class Config:
         if path is None:
             # First run after the move out of the source tree: copy the old file
             # into place before reading it, so what gets used is the copy with
-            # the repointed paths and the private mode.
+            # the repointed paths and the private mode. When the copy cannot be
+            # written the old file is still perfectly readable, so fall back to
+            # it rather than refusing to start - `config_search_path` finds it.
             migration = paths.migrate_legacy_config()
-            p = paths.DEFAULT_CONFIG_PATH if migration else paths.config_search_path()
+            if migration and migration.succeeded:
+                p = paths.DEFAULT_CONFIG_PATH
+            else:
+                p = paths.config_search_path()
         else:
             p = Path(path)
 

@@ -6,7 +6,7 @@ when binding does not work.
 """
 from __future__ import annotations
 
-from tlkun.hotkey import (
+from lintranslator.hotkey import (
     REREAD_DESCRIPTION,
     REREAD_ID,
     REREAD_TRIGGER,

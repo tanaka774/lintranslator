@@ -1,4 +1,4 @@
-"""The two guards that keep tl-kun from translating itself.
+"""The two guards that keep lintranslator from translating itself.
 
 Both exist because of a measured failure: the frame captured 10 ms after "Watch
 live" was pressed contained the picker's own status line, and the dialogue line
@@ -15,8 +15,8 @@ the other direction.
 """
 from __future__ import annotations
 
-from tlkun.occlusion import OcclusionGuard
-from tlkun.selftext import looks_like_own_ui, noise_reason
+from lintranslator.occlusion import OcclusionGuard
+from lintranslator.selftext import looks_like_own_ui, noise_reason
 
 
 # --------------------------------------------------------------------------- #

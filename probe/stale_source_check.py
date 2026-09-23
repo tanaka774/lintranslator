@@ -23,11 +23,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image, ImageDraw  # noqa: E402
 
-from tlkun.capture import Frame  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.ocr import OcrLine, OcrResult  # noqa: E402
-from tlkun.pipeline import Pipeline  # noqa: E402
-from tlkun.translate import Translation  # noqa: E402
+from lintranslator.capture import Frame  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.ocr import OcrLine, OcrResult  # noqa: E402
+from lintranslator.pipeline import Pipeline  # noqa: E402
+from lintranslator.translate import Translation  # noqa: E402
 
 # Limbus-shaped lines, each wrapped by the game across two rows. `rows` is what
 # the OCR recovers: `display_text` keeps the break, `text` does not.

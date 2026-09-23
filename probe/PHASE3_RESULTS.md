@@ -20,11 +20,11 @@ Output is equivalent. One quality nuance: the polite form is sometimes dropped
 (`計算しました` -> `計算した`). That is a decoding difference, not a bug, and the
 glossary or `beam_size` can address it.
 
-Conversion took 5 seconds (`python -m tlkun convert`).
+Conversion took 5 seconds (`python -m lintranslator convert`).
 
 ## Glossary
 
-Implemented as `tlkun/glossary.py` with pre- and post-translation maps.
+Implemented as `lintranslator/glossary.py` with pre- and post-translation maps.
 
 **Post is the default and the useful one.** A plain `{"Term": "訳"}` entry patches
 the output, which is reliable and cheap:
@@ -93,12 +93,12 @@ cache keys, and the text/display_text split.
 
 `translate.backend` now defaults to `"ct2"`. Existing `config.json` files that
 pin `"local"` keep working - they just stay on the slow path until changed, and
-`tlkun check` now reports which model is in use and whether it is present.
+`lintranslator check` now reports which model is in use and whether it is present.
 
 ## Reproduce
 
 ```bash
-.venv-gi/bin/python -m tlkun convert          # ~5 s, 600 MB
-.venv-gi/bin/python -m tlkun check            # reports model size + backend
+.venv-gi/bin/python -m lintranslator convert          # ~5 s, 600 MB
+.venv-gi/bin/python -m lintranslator check            # reports model size + backend
 .venv-gi/bin/python -m pytest tests/ -q       # 60 tests
 ```

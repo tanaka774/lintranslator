@@ -1,4 +1,4 @@
-"""Allow `python -m tlkun`."""
+"""Allow `python -m lintranslator`."""
 from .cli import main
 
 if __name__ == "__main__":

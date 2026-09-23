@@ -19,24 +19,24 @@ Run:  .venv-gi/bin/python probe/handoff_timing.py
 import sys
 import time
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from tlkun import panel as panel_mod  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.occlusion import GUARD  # noqa: E402
-from tlkun.pipeline import Pipeline  # noqa: E402
-from tlkun.portal import ScreenshotPortal  # noqa: E402
+from lintranslator import panel as panel_mod  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.occlusion import GUARD  # noqa: E402
+from lintranslator.pipeline import Pipeline  # noqa: E402
+from lintranslator.portal import ScreenshotPortal  # noqa: E402
 
 RUN_SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 9.0
 WATCH_AT = 1.5
 HIDE_PICKER_AT = WATCH_AT + 4.0
 HIDE_PANEL_AT = WATCH_AT + 6.5
-DATA = "/home/chiba/workspace/tl-kun/data"
+DATA = "/home/chiba/workspace/lintranslator/data"
 
 STATE = {
     "t0": None,
@@ -92,7 +92,7 @@ panel_mod.Pipeline = TracingPipeline
 
 class Probe:
     def __init__(self, app, config, screenshot_png):
-        from tlkun.picker import RegionPicker
+        from lintranslator.picker import RegionPicker
 
         self.config = config
         self.app = app
@@ -163,7 +163,7 @@ class Probe:
 
     # -- report ------------------------------------------------------------ #
     def _report(self):
-        from tlkun.ocr import TesseractOcr
+        from lintranslator.ocr import TesseractOcr
 
         t0 = STATE["t0"] or 0.0
         cfg = self.config
@@ -214,7 +214,7 @@ class Probe:
 
         # Quantitative: how much of the region changed once our windows went away?
         if len(crops) > 2:
-            from tlkun.detect import changed_fraction
+            from lintranslator.detect import changed_fraction
 
             print("\nregion pixels that differ from the LAST grab (windows hidden):")
             last = crops[-1][1]
@@ -242,13 +242,13 @@ class Probe:
 
 
 def main():
-    cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
+    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
     cfg.translate.backend = "none"  # no network calls in a timing probe
     cfg.capture.fps = 2.0
     # `_on_start` calls config.save(); never let a probe write the user's config.
     from pathlib import Path
 
-    cfg.path = Path("/tmp/tlkun_probe_config.json")
+    cfg.path = Path("/tmp/lintranslator_probe_config.json")
 
     print("grabbing one real screenshot for the picker to display...", flush=True)
     portal = ScreenshotPortal()
@@ -257,7 +257,7 @@ def main():
     print(f"  {size} in {elapsed * 1000:.0f} ms", flush=True)
 
     app = Gtk.Application(
-        application_id="dev.tlkun.probe", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.probe", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
 
     def on_activate(_app):

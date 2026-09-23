@@ -23,21 +23,21 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from tlkun import theme  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.panel import TranslatorPanel  # noqa: E402
+from lintranslator import theme  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.panel import TranslatorPanel  # noqa: E402
 
 # Never the real config: this probe *saves* the size it drags to, and pointing
 # it at config.json overwrote the developer's card width once already.
-CONFIG = Path("/home/chiba/workspace/tl-kun/config.json")
-SCRATCH = Path("/tmp/tlkun_resize_probe_config.json")
+CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
+SCRATCH = Path("/tmp/lintranslator_resize_probe_config.json")
 failures: list[str] = []
 
 
@@ -70,7 +70,7 @@ def main() -> int:
     cfg.display.height = 0  # start from the budget, not from a pinned height
 
     app = Gtk.Application(
-        application_id="dev.tlkun.resizecheck", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.resizecheck", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
 
     def on_activate(_app: Gtk.Application) -> None:
@@ -99,7 +99,7 @@ def main() -> int:
             # the ordinary get_first_child walk does not see them.
             model = overlay.observe_children()
             widgets = [model.get_item(i) for i in range(model.get_n_items())]
-            grip_widgets = [w for w in widgets if w.has_css_class("tlkun-grip-area")]
+            grip_widgets = [w for w in widgets if w.has_css_class("lintranslator-grip-area")]
             check(
                 len(grip_widgets) == 3,
                 f"three resize grips exist (found {len(grip_widgets)})",
@@ -115,7 +115,7 @@ def main() -> int:
             }
             for label, (x, y) in points.items():
                 picked = panel.pick(x, y, Gtk.PickFlags.DEFAULT)
-                hit = picked is not None and picked.has_css_class("tlkun-grip-area")
+                hit = picked is not None and picked.has_css_class("lintranslator-grip-area")
                 expects_grip = "no grip" not in label
                 check(
                     hit == expects_grip,
@@ -179,7 +179,7 @@ def main() -> int:
             panel._on_resize_end(None, 0.0, 0.0, "se")
 
             print("\n-- content still must not move a resized card --")
-            from tlkun.pipeline import Event
+            from lintranslator.pipeline import Event
 
             def translation(target):
                 return Event(

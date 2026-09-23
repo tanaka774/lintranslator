@@ -17,7 +17,7 @@ data/ct2/
 data/*.bin
 data/*.safetensors
 
-# Runtime state. The app keeps this in the XDG directories now (tlkun/paths.py);
+# Runtime state. The app keeps this in the XDG directories now (lintranslator/paths.py);
 # these paths are what an older checkout left behind.
 data/cache.json
 data/tessdata/
@@ -30,3 +30,6 @@ probe/wheels*/
 probe/*.png
 probe/tessdata/
 probe/*.out
+
+# Tool scratch that lands in the working directory, not part of the project.
+:memory:.ses

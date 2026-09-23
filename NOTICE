@@ -1,8 +1,8 @@
-tl-kun — third-party notices and model licences
+LinTranslator — third-party notices and model licences
 ===============================================
 
-tl-kun itself has no licence file yet. Choose one (MIT / Apache-2.0 / GPL-3.0)
-before publishing; this file covers everything tl-kun uses, downloads or is
+LinTranslator itself has no licence file yet. Choose one (MIT / Apache-2.0 / GPL-3.0)
+before publishing; this file covers everything LinTranslator uses, downloads or is
 built around.
 
 The short version, because it is the one that can bite a user:
@@ -10,10 +10,10 @@ The short version, because it is the one that can bite a user:
   The default local translation model, facebook/nllb-200-distilled-600M, is
   licensed CC-BY-NC-4.0 — NON-COMMERCIAL USE ONLY.
 
-  tl-kun does not bundle or redistribute those weights. `tlkun convert`
+  LinTranslator does not bundle or redistribute those weights. `lintranslator convert`
   downloads them from HuggingFace onto the user's own machine, and the local
   backends load them from there. So the licence binds whoever runs the local
-  backend, not whoever distributes tl-kun's source.
+  backend, not whoever distributes LinTranslator's source.
 
   It does bind a distributor who ships pre-converted weights, and it binds
   anyone using the local backend for paid or commercial work.
@@ -26,7 +26,7 @@ facebook/nllb-200-distilled-600M  (and any other NLLB checkpoint)
     Licence: CC-BY-NC-4.0
     https://huggingface.co/facebook/nllb-200-distilled-600M
     Used by the `ct2` (default) and `local` backends. Non-commercial only.
-    This includes derived artefacts: the int8 directory `tlkun convert`
+    This includes derived artefacts: the int8 directory `lintranslator convert`
     produces is a derivative of the weights and carries the same terms, so
     publishing converted weights is redistributing an NC-licensed model.
 
@@ -36,7 +36,7 @@ spa, por, ita, pol, tur, vie, tha, ara)
     https://github.com/tesseract-ocr/tessdata_fast
     Downloaded on first use, pinned to revision
     87416418657359cb625c412a48b6e1d6d41c29bd and verified against a SHA-256
-    before it is installed. See tlkun/ocr.py:TESSDATA_SHA256.
+    before it is installed. See lintranslator/ocr.py:TESSDATA_SHA256.
 
 Anything else the user points `ct2_model_dir` / `translate.model` at is the
 user's own choice, under that model's own licence.
@@ -54,7 +54,7 @@ code change — the `local` backend loads any HuggingFace seq2seq model and
 
 Two caveats, both real:
 
-  * A different model family expects its own language codes. tl-kun's language
+  * A different model family expects its own language codes. LinTranslator's language
     picker offers FLORES-200 codes (`eng_Latn`, `jpn_Jpan`) because that is what
     NLLB was trained on; m2m100 wants `en` / `ja`. Until the language table
     carries per-model codes, swapping the model means also handling that.

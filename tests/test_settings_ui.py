@@ -20,9 +20,9 @@ try:
 except (ImportError, ValueError):  # pragma: no cover - no GTK typelib
     pytest.skip("GTK 4 typelib unavailable", allow_module_level=True)
 
-from tlkun.config import Config  # noqa: E402
-from tlkun.languages import LANGUAGES  # noqa: E402
-from tlkun.settings import (  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.languages import LANGUAGES  # noqa: E402
+from lintranslator.settings import (  # noqa: E402
     BACKENDS,
     DEFAULT_CT2_DIR,
     MODEL_LABELS,
@@ -30,7 +30,7 @@ from tlkun.settings import (  # noqa: E402
     REASONING_CAUTION,
     SettingsDialog,
 )
-from tlkun.translate import DEFAULT_NLLB_MODEL  # noqa: E402
+from lintranslator.translate import DEFAULT_NLLB_MODEL  # noqa: E402
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -48,7 +48,7 @@ def never_write_the_real_config(tmp_path, monkeypatch):
     including wiping their API key - which is exactly what happened once. Any
     test here that saves must not be able to touch the repository file.
     """
-    from tlkun import config as config_mod
+    from lintranslator import config as config_mod
 
     monkeypatch.setattr(config_mod, "DEFAULT_CONFIG_PATH", tmp_path / "config.json")
 
@@ -217,14 +217,14 @@ def test_backends_without_keys_say_so(dialog):
 
 
 def test_the_custom_endpoint_offers_a_key_without_demanding_one(dialog, monkeypatch):
-    monkeypatch.delenv("TLKUN_API_KEY", raising=False)
+    monkeypatch.delenv("LINTRANSLATOR_API_KEY", raising=False)
     dialog.key_entry.set_text("")
     select(dialog, "chat")
     # The row has to be there: a hosted gateway needs a key.
     assert dialog.key_row.get_visible()
     text = dialog.key_label.get_text()
     assert "No key needed" not in text
-    assert "TLKUN_API_KEY" in text
+    assert "LINTRANSLATOR_API_KEY" in text
 
 
 # -- picker ---------------------------------------------------------------- #

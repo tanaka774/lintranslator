@@ -1,12 +1,12 @@
 """A one-line control channel into the running GUI.
 
-There are things you want to tell tl-kun while the game has the keyboard: re-read
+There are things you want to tell lintranslator while the game has the keyboard: re-read
 the box, and (later) pause or resume. On Wayland an application cannot read global
 keys, so the path is: something outside the app - a KDE global shortcut, a
 keyboard macro, a Stream Deck, a shell - runs a command, and that command talks to
 the running window over this socket.
 
-    tlkun reread          # what a KDE custom shortcut should be bound to
+    lintranslator reread          # what a KDE custom shortcut should be bound to
 
 The socket lives in `$XDG_RUNTIME_DIR` (per-user, cleaned up on logout), or in a
 per-user cache directory when the runtime dir is not writable. Both are
@@ -27,7 +27,7 @@ from pathlib import Path
 from . import paths
 from typing import Callable
 
-SOCKET_NAME = "tl-kun.sock"
+SOCKET_NAME = "lintranslator.sock"
 # Long enough for a compositor to have started the GUI, short enough that a
 # mistyped command does not appear to hang.
 CLIENT_TIMEOUT = 5.0
@@ -42,8 +42,8 @@ def candidate_paths() -> list[Path]:
     It is not always writable (a sandboxed or unusual session), so a per-user
     cache directory is the one fallback. There is deliberately no `/tmp`
     candidate any more: `/tmp` is world-writable, so another user can create
-    `tl-kun-<uid>.sock` first and whoever holds that path receives the commands.
-    The choice has to be deterministic - the GUI and `tlkun reread` are different
+    `lintranslator-<uid>.sock` first and whoever holds that path receives the commands.
+    The choice has to be deterministic - the GUI and `lintranslator reread` are different
     processes and must agree without talking first - so the fallback is a
     directory only this user can write to.
     """
@@ -51,8 +51,8 @@ def candidate_paths() -> list[Path]:
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime:
         socket_paths.append(Path(runtime) / SOCKET_NAME)
-    # `tlkun.paths` owns the XDG rules, so the socket lands in the same tree
-    # as the rest of the app's state (and `TLKUN_HOME` moves it with them).
+    # `lintranslator.paths` owns the XDG rules, so the socket lands in the same tree
+    # as the rest of the app's state (and `LINTRANSLATOR_HOME` moves it with them).
     socket_paths.append(paths.CACHE_DIR / SOCKET_NAME)
     return socket_paths
 
@@ -83,8 +83,8 @@ def send(command: str, timeout: float = CLIENT_TIMEOUT) -> str:
     path = socket_path()
     if not path.exists():
         raise ConnectionError(
-            f"no running tl-kun GUI (no control socket at {path}); "
-            "start one with `tlkun gui --panel` or `tlkun gui`"
+            f"no running lintranslator GUI (no control socket at {path}); "
+            "start one with `lintranslator gui --panel` or `lintranslator gui`"
         )
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(timeout)
@@ -92,7 +92,7 @@ def send(command: str, timeout: float = CLIENT_TIMEOUT) -> str:
             client.connect(str(path))
         except OSError as exc:
             raise ConnectionError(
-                f"could not reach the tl-kun GUI at {path}: {exc}"
+                f"could not reach the lintranslator GUI at {path}: {exc}"
             ) from exc
         client.sendall(command.strip().encode() + b"\n")
         data = b""
@@ -104,7 +104,7 @@ def send(command: str, timeout: float = CLIENT_TIMEOUT) -> str:
                 data += chunk
         except TimeoutError as exc:
             raise ConnectionError(
-                f"the tl-kun GUI did not answer within {timeout:.1f}s "
+                f"the lintranslator GUI did not answer within {timeout:.1f}s "
                 "(it may be busy translating)"
             ) from exc
     return data.decode(errors="replace").strip()
@@ -148,7 +148,7 @@ class ControlServer:
             if self.path.exists():
                 if _someone_is_listening(self.path):
                     # Never steal the socket from a GUI that is actually running.
-                    self.error = "another tl-kun GUI owns the control socket"
+                    self.error = "another lintranslator GUI owns the control socket"
                     return
                 self.path.unlink()  # stale, left by a crash
             server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

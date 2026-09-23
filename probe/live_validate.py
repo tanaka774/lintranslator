@@ -9,15 +9,15 @@ screen (the quantity the settle/dedupe rules have to tolerate).
 import sys
 import time
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
-from tlkun.config import Config
-from tlkun.detect import _edit_distance, is_same_reading
-from tlkun.pipeline import Pipeline
+from lintranslator.config import Config
+from lintranslator.detect import _edit_distance, is_same_reading
+from lintranslator.pipeline import Pipeline
 
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 75.0
 
-cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
+cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
 # Force the local model by default: the configured backend may be a remote API,
 # and a validation run should not spend credits or depend on the network.
 if "--here" not in sys.argv:

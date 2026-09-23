@@ -62,7 +62,7 @@ that keeps the frame changing) now emits exactly one translation.
 
 ### Why the user saw nothing at all
 
-Separately, the reported command was `tlkun gui --pick`, which opens *only* the
+Separately, the reported command was `lintranslator gui --pick`, which opens *only* the
 region picker - it never started a pipeline, so no translation could appear. That
 was a usability failure, not a code bug, and is fixed by making the default flow
 pick-then-watch.
@@ -96,7 +96,7 @@ containing JSON braces cannot raise.
 
 ### Default flow
 
-`tlkun gui` now shows the picker and then continues into the panel. `--panel`
+`lintranslator gui` now shows the picker and then continues into the panel. `--panel`
 skips straight to the panel; `--pick` still stops after the picker.
 
 ## Also fixed
@@ -105,8 +105,8 @@ skips straight to the panel; `--pick` still stops after the picker.
   scoped per backend *and model*, so switching models cannot serve the previous
   model's cached output - which would have looked exactly like the new model
   being no better.
-* **`tlkun models`** lists OpenRouter models, with `--filter` and `--free`.
-* **`tlkun check`** reports remote backends: model, API base, and whether a key was
+* **`lintranslator models`** lists OpenRouter models, with `--filter` and `--free`.
+* **`lintranslator check`** reports remote backends: model, API base, and whether a key was
   found (masked).
 
 ## Tests
@@ -220,7 +220,7 @@ Result after both fixes: exactly one translation per distinct line.
 The user asked for it to be removed, and they were right to. A one-shot region
 finder that guesses at screen content caused more confusion than it saved —
 including being mistaken for the continuous detection they actually wanted. The
-button and its debug view are gone from the picker. `tlkun/calibrate.py` is kept
+button and its debug view are gone from the picker. `lintranslator/calibrate.py` is kept
 as a tested library helper (documented as unused by the GUI) since it is useful
 from a script.
 
@@ -263,7 +263,7 @@ window, leaving the translation panel alive:
 --- closing the PICKER window (as the window manager X would) ---
 app still running: True
 windows still open: 1
-   TranslatorPanel visible=True title='tl-kun'
+   TranslatorPanel visible=True title='LinTranslator'
 picker._panel still set: True
    panel pipeline worker running: True
 ```
@@ -293,7 +293,7 @@ app.run() returned: 0 -> process exits cleanly
 ```
 before close -> worker alive: True
 after  close -> worker alive: False
-tlkun threads left: []
+lintranslator threads left: []
 ```
 
 No orphaned window, no leaked pipeline thread. To observe the thread exit at all
@@ -354,7 +354,7 @@ capture path.
 
 ## How to diagnose a real run
 
-`tlkun run --verbose` prints the per-poll decision, so a failure can be located
+`lintranslator run --verbose` prints the per-poll decision, so a failure can be located
 rather than guessed at:
 
 | output | meaning |
@@ -435,7 +435,7 @@ panel, and then a new panel appeared.
 
 ## Cause: the default flow ran two separate GTK applications
 
-`tlkun gui` (no flags) did this:
+`lintranslator gui` (no flags) did this:
 
 ```python
 if not skip_pick:
@@ -564,12 +564,12 @@ status line claimed "Adjusting it restarts watching with the new area."
 
 | # | Fix | Where |
 |---|---|---|
-| 1 | The picker **minimises itself** on Watch live, and the pipeline **does not capture at all** while a tl-kun window is mapped | `picker.py`, `occlusion.py`, `pipeline.py` |
+| 1 | The picker **minimises itself** on Watch live, and the pipeline **does not capture at all** while a LinTranslator window is mapped | `picker.py`, `occlusion.py`, `pipeline.py` |
 | 2 | The pause is a **condition, not a delay**: reading resumes the moment the window actually unmaps | `occlusion.py`, `panel.py` |
 | 3 | Pausing **forgets held text** and resets the change detector, so a resume cannot release a stale line or a paused reveal's fragment | `pipeline.py` |
 | 4 | The panel gets a **Region** button to bring the picker back; while it is up the panel says why reading is paused | `panel.py`, `picker.py` |
 | 5 | The area can be **re-pointed while the loop runs** (`request_region`), applied on the worker thread - no model reload, no card jump, and the box on screen is never a lie | `pipeline.py`, `panel.py`, `picker.py` |
-| 6 | **Self-text guard**: reads matching tl-kun's own chrome - or echoing the translation just produced - are dropped and reported, never translated | `selftext.py`, `pipeline.py` |
+| 6 | **Self-text guard**: reads matching LinTranslator's own chrome - or echoing the translation just produced - are dropped and reported, never translated | `selftext.py`, `pipeline.py` |
 | 7 | `Event.total_elapsed` is now measured (capture -> translation) instead of hardcoded `0.0`, and `capture_ms` exists; `Frame.elapsed` covers the whole grab and reports the portal's share separately | `pipeline.py`, `capture.py` |
 | 8 | Re-capturing the screen keeps the box just dragged instead of resetting it to the saved one | `picker.py` |
 
@@ -750,7 +750,7 @@ soon as reading resumes. A re-read that finds nothing says so
 | how | works while the game has focus | verified |
 |---|---|---|
 | global hotkey (compositor-granted) | yes | portal accepts the request; **refused from a terminal launch** (see below) |
-| `tlkun reread` over the control socket | yes | end to end, separate process |
+| `lintranslator reread` over the control socket | yes | end to end, separate process |
 | Ctrl+R / F5 in the panel | no (needs the panel focused) | yes |
 
 The control socket is one line in, one line out, in `$XDG_RUNTIME_DIR` (falling
@@ -761,18 +761,18 @@ second instance can never cut off the one the user is looking at.
 `probe/reread_check.py` drives the real picker and panel and checks all three:
 
 ```
-[ok ] control socket listening — /…/tl-kun.sock
+[ok ] control socket listening — /…/LinTranslator.sock
 [ok ] button sets the status — re-reading the box…
 [ok ] control socket answers — ['re-reading']
-[ok ] `tlkun reread` from another process — rc=0 out='re-reading'
-[ok ] `tlkun status` reports state — watching, reading, backend none, hotkey not bound
+[ok ] `lintranslator reread` from another process — rc=0 out='re-reading'
+[ok ] `lintranslator status` reports state — watching, reading, backend none, hotkey not bound
 [ok ] a translation arrived (the re-read translated it)
 ```
 
 ## The global hotkey, and why it needs an application id
 
-`org.freedesktop.portal.GlobalShortcuts` is present on this machine, so tl-kun asks
-the compositor for a shortcut itself (`tlkun/hotkey.py`, Gio.DBus, async, with a
+`org.freedesktop.portal.GlobalShortcuts` is present on this machine, so LinTranslator asks
+the compositor for a shortcut itself (`lintranslator/hotkey.py`, Gio.DBus, async, with a
 timeout so an unanswered dialog cannot hang anything). Launched from a terminal the
 portal refuses outright:
 
@@ -786,10 +786,10 @@ the caller's systemd scope (`app-*.scope`), which a KDE menu launch creates and 
 terminal launch does not. So the shortcut is attempted, the refusal is reported in
 words that name the fix, and two fallbacks always work:
 
-* `packaging/tl-kun.desktop` + `packaging/tlk-gui` — launch from the menu and the
+* `packaging/LinTranslator.desktop` + `packaging/tlk-gui` — launch from the menu and the
   portal path works with no setup at all;
-* bind `tlkun reread` as a KDE custom shortcut — works from any launch, and
-  `tlkun shortcut` prints the exact command with absolute paths.
+* bind `lintranslator reread` as a KDE custom shortcut — works from any launch, and
+  `lintranslator shortcut` prints the exact command with absolute paths.
 
 The panel says which is in force, so this is never a silent absence.
 

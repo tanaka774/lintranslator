@@ -12,14 +12,14 @@ Run:  .venv-gi/bin/python probe/hotkey_check.py [seconds]
 """
 import sys
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from tlkun.hotkey import REREAD_DESCRIPTION, REREAD_TRIGGER, GlobalHotkey  # noqa: E402
+from lintranslator.hotkey import REREAD_DESCRIPTION, REREAD_TRIGGER, GlobalHotkey  # noqa: E402
 
 WAIT = float(sys.argv[1]) if len(sys.argv) > 1 else 30.0
 state = {"status": None, "activated": 0}
@@ -37,12 +37,12 @@ def on_activated(shortcut_id: str) -> None:
 
 def main() -> int:
     app = Gtk.Application(
-        application_id="dev.tlkun.hotkeycheck", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.hotkeycheck", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
     hotkey = GlobalHotkey(on_activated=on_activated, on_status=on_status)
 
     def on_activate(_app):
-        window = Gtk.ApplicationWindow(application=_app, title="tl-kun hotkey probe")
+        window = Gtk.ApplicationWindow(application=_app, title="lintranslator hotkey probe")
         window.set_default_size(360, 90)
         window.set_child(
             Gtk.Label(

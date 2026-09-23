@@ -16,10 +16,10 @@ from dataclasses import dataclass
 
 from PIL import Image, ImageDraw
 
-from tlkun.config import Config
-from tlkun.ocr import OcrLine, OcrResult, strip_trailing_cursor
-from tlkun.pipeline import Pipeline
-from tlkun.translate import NullTranslator, NllbTranslator
+from lintranslator.config import Config
+from lintranslator.ocr import OcrLine, OcrResult, strip_trailing_cursor
+from lintranslator.pipeline import Pipeline
+from lintranslator.translate import NullTranslator, NllbTranslator
 
 
 class StubOcr:
@@ -60,7 +60,7 @@ class StubGrabber:
         self.failures = 0
 
     def grab(self):
-        from tlkun.capture import Frame
+        from lintranslator.capture import Frame
 
         image = self.frames[min(self.grabs, len(self.frames) - 1)]
         self.grabs += 1
@@ -103,7 +103,7 @@ class _StubTranslator:
         self.last_was_cached = False
 
     def translate(self, text: str, force: bool = False):
-        from tlkun.translate import Translation
+        from lintranslator.translate import Translation
 
         self.seen.append(text)
         return Translation(target=f"[ja] {text}", source=text, backend="stub", elapsed=0.001)
@@ -212,7 +212,7 @@ class _ScriptedScreen:
     def grab(self):
         from PIL import Image, ImageDraw
 
-        from tlkun.capture import Frame
+        from lintranslator.capture import Frame
 
         self.i = min(self.i + 1, len(self.readings) - 1)
         img = Image.new("RGB", (200, 40), (40, 40, 40))
@@ -248,7 +248,7 @@ class _ScriptedOcr:
         return None
 
     def read(self, image):
-        from tlkun.ocr import OcrLine, OcrResult
+        from lintranslator.ocr import OcrLine, OcrResult
 
         self.calls += 1
         text = self.screen.readings[max(0, self.screen.i)]
@@ -309,7 +309,7 @@ def test_each_new_line_is_translated_exactly_once():
 def test_jittering_reads_do_not_duplicate_a_translation():
     """Regression: OCR reading the same line as 'x' then 'x l' (a cursor
     artefact) must not count as a new line. Exact-match dedupe failed this."""
-    from tlkun.detect import is_same_reading
+    from lintranslator.detect import is_same_reading
 
     assert is_same_reading(
         "record pertaining to today's request.", "record pertaining to today's request. l"
@@ -476,7 +476,7 @@ def test_our_own_window_on_screen_stops_capture_entirely():
     the dialogue line the picker covered fell to 54.7% and was dropped by
     `ocr.min_confidence`. A real line, lost to our own window.
 
-    So while a tl-kun window is on screen, nothing is captured at all.
+    So while a lintranslator window is on screen, nothing is captured at all.
     """
     pipe, screen, events = _pipeline_for(["AAAA a line."] * 6)
     reasons = []
@@ -558,7 +558,7 @@ def test_the_region_can_be_changed_while_the_loop_runs():
     the pipeline reading the OLD area while the picker showed the new one as
     live - only Save applied it, and that restarted (and re-positioned) the panel.
     """
-    from tlkun.config import Region
+    from lintranslator.config import Region
 
     pipe, screen, events = _pipeline_for(["AAAA a line."] * 6)
     new = Region(0.5, 0.5, 0.25, 0.1, "fraction")
@@ -579,7 +579,7 @@ def test_a_new_area_is_read_as_a_new_context():
     Otherwise re-pointing the loop at another part of the screen would silently
     skip whatever is already there, because it looks like the line just done.
     """
-    from tlkun.config import Region
+    from lintranslator.config import Region
 
     pipe, screen, events = _pipeline_for(["AAAA a line."] * 24)
     now = _drive(pipe, screen, events, ticks=16)
@@ -594,7 +594,7 @@ def test_a_new_area_is_read_as_a_new_context():
 
 
 # --------------------------------------------------------------------------- #
-# Self-reads: tl-kun's own UI must never reach the translator
+# Self-reads: lintranslator's own UI must never reach the translator
 # --------------------------------------------------------------------------- #
 def test_our_own_ui_read_is_never_translated():
     """The exact string the live capture produced, gate and all."""
@@ -613,7 +613,7 @@ def test_our_own_ui_read_is_never_translated():
         pipe.step(now)
         decisions.append(pipe.last_decision)
 
-    assert events == [], "tl-kun's own window was translated"
+    assert events == [], "lintranslator's own window was translated"
     assert pipe.translator.seen == []
     assert pipe.stats.self_reads >= 1
     assert "skip:self-ui" in decisions, decisions
@@ -643,11 +643,11 @@ def test_the_panel_showing_its_own_translation_is_not_translated_again():
 # Timing that tells the truth
 # --------------------------------------------------------------------------- #
 def test_event_timing_is_measured_not_stubbed():
-    """`total_elapsed` used to be hardcoded 0.0, so `tlkun run --json` reported
+    """`total_elapsed` used to be hardcoded 0.0, so `lintranslator run --json` reported
     "total_ms": 0 for every line, and `capture_ms` did not exist at all."""
     import time as _time
 
-    from tlkun.capture import Frame
+    from lintranslator.capture import Frame
 
     class _AgedScreen:
         """One frame, captured two seconds ago, costing 250 ms to grab."""
@@ -708,7 +708,7 @@ def test_a_mixed_read_keeps_the_game_line():
     the panel's own status line kept changing, every read was discarded, and the
     dialogue line underneath never settled.
     """
-    from tlkun.ocr import OcrLine, OcrResult
+    from lintranslator.ocr import OcrLine, OcrResult
 
     class MixedOcr:
         """Two lines: one of ours, one from the game."""
@@ -738,7 +738,7 @@ def test_a_mixed_read_keeps_the_game_line():
             self.grabs = 0
 
         def grab(self):
-            from tlkun.capture import Frame
+            from lintranslator.capture import Frame
 
             self.grabs += 1
             image = _frame(f"frame {self.grabs}")

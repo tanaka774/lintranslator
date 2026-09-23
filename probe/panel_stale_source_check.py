@@ -34,11 +34,11 @@ from stale_source_check import (  # noqa: E402
     own_display,
 )
 
-from tlkun.config import Config  # noqa: E402
-from tlkun.panel import TranslatorPanel  # noqa: E402
-from tlkun.pipeline import Pipeline  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.panel import TranslatorPanel  # noqa: E402
+from lintranslator.pipeline import Pipeline  # noqa: E402
 
-CONFIG = Path("/home/chiba/workspace/tl-kun/config.json")
+CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
 rows: list[tuple[float, str, str, str, str, str]] = []
 failures: list[str] = []
 
@@ -53,7 +53,7 @@ def main() -> int:
     now = 0.0
 
     app = Gtk.Application(
-        application_id="dev.tlkun.probe.stalesource", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.probe.stalesource", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
 
     def on_activate(_app) -> None:

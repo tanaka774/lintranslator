@@ -20,7 +20,7 @@ reporting on - and GTK never shrinks a resizable window back, so a single long
 reply would raise the card's floor for the rest of the session. Each text area
 reserves a configured number of lines and scrolls beyond them.
 
-All styling comes from `tlkun/theme.py`, shared with the picker and the settings
+All styling comes from `lintranslator/theme.py`, shared with the picker and the settings
 dialog, which used to be stock Adwaita next to a custom card.
 """
 from __future__ import annotations
@@ -108,7 +108,7 @@ class PipelineThread:
         if self._thread is not None:
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, name="tlkun-pipeline", daemon=True)
+        self._thread = threading.Thread(target=self._run, name="lintranslator-pipeline", daemon=True)
         self._thread.start()
 
     def request_region(self, region) -> None:
@@ -225,7 +225,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         position: tuple[int, int] | None,
         demo_event: Event | None = None,
     ):
-        super().__init__(application=app, title="tl-kun")
+        super().__init__(application=app, title="LinTranslator")
         self.config = config
         self.outbox: queue.Queue[UiMessage] = queue.Queue()
         self.worker: PipelineThread | None = None
@@ -233,14 +233,14 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self._translation_started = 0.0
         # Why capturing must wait right now, or None. Read on the worker thread -
         # it is a plain callable into a lock-protected registry, never a GTK call.
-        # Defaults to the process-wide guard so a standalone panel (`tlkun gui
+        # Defaults to the process-wide guard so a standalone panel (`lintranslator gui
         # --panel`) also stops reading while its settings window is on screen.
         self.gate = GUARD.reason
         # Set by the region picker: brings the picker back so the box can be
         # adjusted. The Region button is hidden when there is no picker.
         self.on_region_request = None
         self._gated = False
-        # `tlkun reread` and friends; started here so the socket exists for the
+        # `lintranslator reread` and friends; started here so the socket exists for the
         # whole life of the window.
         self.control = None
         # The compositor-granted global hotkey, bound on first start.
@@ -259,7 +259,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.set_decorated(False)
         self.set_resizable(True)
         self._restore_size()
-        self.add_css_class("tlkun-panel")
+        self.add_css_class("lintranslator-panel")
         self.card = self._build_body()
         self.set_child(self._with_resize_grips(self.card))
         # Both need the widget tree, so they run after `_build_body`, not with
@@ -279,7 +279,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
 
         if demo_event is not None:
             # Lets the layout be verified (and screenshotted) without running a
-            # model: `tlkun gui --demo`.
+            # model: `lintranslator gui --demo`.
             self._show_event(demo_event)
 
         self._refresh_backend_label()
@@ -396,21 +396,21 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         card and Region, Copy, Settings and Quit move one click away.
         """
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        box.add_css_class("tlkun-card")
+        box.add_css_class("lintranslator-card")
 
         # -- header: the drag handle, and what is being read ---------------
         # Doubles as the drag hint, since there is no title bar to signal it.
         # Names the region too, so the picker can be minimised without losing
         # track of what is being captured.
         self.backend_label = Gtk.Label(label="", xalign=0)
-        self.backend_label.add_css_class("tlkun-status")
+        self.backend_label.add_css_class("lintranslator-status")
         self.backend_label.set_ellipsize(Pango.EllipsizeMode.END)
         self.backend_label.set_tooltip_text(
             "Drag this strip to move the card.\n"
             "Names the backend, the model, the language pair and the box being read."
         )
         grip = Gtk.Label(label="⠿", xalign=0)
-        grip.add_css_class("tlkun-grip")
+        grip.add_css_class("lintranslator-grip")
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         header.append(grip)
         header.append(self.backend_label)
@@ -421,13 +421,13 @@ class TranslatorPanel(Gtk.ApplicationWindow):
 
         # -- the translation, with the original text below it ---------------
         self.target_label = Gtk.Label(label="Waiting for dialogue…", xalign=0)
-        self.target_scroll = self._text_area(self.target_label, "tlkun-target")
+        self.target_scroll = self._text_area(self.target_label, "lintranslator-target")
         box.append(self.target_scroll)
 
         self.source_label = Gtk.Label(label="", xalign=0)
         self.source_label.set_visible(False)
-        self.source_scroll = self._text_area(self.source_label, "tlkun-source")
-        self.source_scroll.add_css_class("tlkun-source-area")
+        self.source_scroll = self._text_area(self.source_label, "lintranslator-source")
+        self.source_scroll.add_css_class("lintranslator-source-area")
         self.source_scroll.set_visible(False)
         box.append(self.source_scroll)
 
@@ -443,7 +443,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.button_row = row
 
         self.status_label = Gtk.Label(label="starting…", xalign=0)
-        self.status_label.add_css_class("tlkun-status")
+        self.status_label.add_css_class("lintranslator-status")
         # Ellipsised rather than wrapped: this row is a fixed height, and a
         # wrapped status was what made warnings add two lines to the card.
         self.status_label.set_ellipsize(Pango.EllipsizeMode.END)
@@ -453,7 +453,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         # An error takes the status line's place rather than adding a line, so
         # the card's height does not depend on whether something went wrong.
         self.error_label = Gtk.Label(label="", xalign=0)
-        self.error_label.add_css_class("tlkun-error")
+        self.error_label.add_css_class("lintranslator-error")
         self.error_label.set_ellipsize(Pango.EllipsizeMode.END)
         self.error_label.set_hexpand(True)
         self.error_label.set_visible(False)
@@ -462,12 +462,12 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self._build_actions()
         self.menu = self._build_menu()
         # A plain button, not a Gtk.MenuButton: MenuButton's CSS node is
-        # `menubutton`, so `button.tlkun-btn` does not match it and it kept the
+        # `menubutton`, so `button.lintranslator-btn` does not match it and it kept the
         # desktop theme's light background - a white square in the control row.
         self.menu_btn = Gtk.Button(label="⋮")
         self.menu_btn.set_tooltip_text("Everything that did not fit on the card")
-        self.menu_btn.add_css_class("tlkun-btn")
-        self.menu_btn.add_css_class("tlkun-icon")
+        self.menu_btn.add_css_class("lintranslator-btn")
+        self.menu_btn.add_css_class("lintranslator-icon")
         # Hidden until something actually overflows: an empty menu is a lie.
         self.menu_btn.set_visible(False)
         self.menu_btn.connect("clicked", self._on_menu)
@@ -479,7 +479,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         box.append(row)
 
         # In-window shortcuts. These work while this window has focus; the global
-        # one (any window) comes from the compositor via `tlkun/hotkey.py`.
+        # one (any window) comes from the compositor via `lintranslator/hotkey.py`.
         shortcuts = Gtk.ShortcutController()
         shortcuts.set_scope(Gtk.ShortcutScope.GLOBAL)
         for accel in ("<Control>r", "F5"):
@@ -500,10 +500,10 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         action is never in two places, and never missing from both.
         """
         self.menu_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.menu_rule = self._rule(soft_class="tlkun-rule-tight")
+        self.menu_rule = self._rule(soft_class="lintranslator-rule-tight")
 
         popover = Gtk.Popover()
-        popover.add_css_class("tlkun-menu")
+        popover.add_css_class("lintranslator-menu")
         popover.set_has_arrow(False)
         popover.set_child(self.menu_box)
         return popover
@@ -551,7 +551,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.settings_btn = LabelButton("Settings…")
         self.settings_btn.set_tooltip_text("Backend, model, prompt and card size")
         self.quit_btn = LabelButton("Quit")
-        self.quit_btn.set_tooltip_text("Shut tl-kun down")
+        self.quit_btn.set_tooltip_text("Shut lintranslator down")
 
         for button, handler in (
             (self.region_btn, self._on_region),
@@ -672,16 +672,16 @@ class TranslatorPanel(Gtk.ApplicationWindow):
 
     @staticmethod
     def _style_as_row_button(button: "LabelButton") -> None:
-        button.remove_css_class("tlkun-menu-item")
-        button.add_css_class("tlkun-btn")
+        button.remove_css_class("lintranslator-menu-item")
+        button.add_css_class("lintranslator-btn")
         button.set_halign(Gtk.Align.FILL)
         button.set_hexpand(False)
         button.set_label_align(0.5)
 
     @staticmethod
     def _style_as_menu_item(button: "LabelButton") -> None:
-        button.remove_css_class("tlkun-btn")
-        button.add_css_class("tlkun-menu-item")
+        button.remove_css_class("lintranslator-btn")
+        button.add_css_class("lintranslator-menu-item")
         button.set_halign(Gtk.Align.FILL)
         button.set_hexpand(True)
         button.set_label_align(0.0)
@@ -703,7 +703,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.menu.popup()
 
     @staticmethod
-    def _rule(soft_class: str = "tlkun-rule") -> Gtk.Widget:
+    def _rule(soft_class: str = "lintranslator-rule") -> Gtk.Widget:
         """A 1 px separator whose colour comes from the theme."""
         rule = Gtk.Box()
         rule.add_css_class(soft_class)
@@ -723,7 +723,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         label.set_yalign(0)
         label.set_selectable(True)
         scroll = Gtk.ScrolledWindow()
-        scroll.add_css_class("tlkun-textarea")
+        scroll.add_css_class("lintranslator-textarea")
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroll.set_propagate_natural_width(False)
         scroll.set_propagate_natural_height(False)
@@ -752,7 +752,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
     def request_reread(self) -> str:
         """Read the box again now, from whichever button, key or command asked.
 
-        Returns the one-line reply the control socket hands back to `tlkun reread`,
+        Returns the one-line reply the control socket hands back to `lintranslator reread`,
         so a script gets something meaningful instead of silence.
         """
         if self.worker is None:
@@ -761,13 +761,13 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             self.toggle_btn.set_label("Pause")
         self.worker.request_reread()
         if not self._gated:
-            self.status_label.remove_css_class("tlkun-warn")
+            self.status_label.remove_css_class("lintranslator-warn")
             self.status_label.set_text("re-reading the box…")
         return "re-reading"
 
     # -- control socket and global hotkey ---------------------------------- #
     def _start_control(self) -> None:
-        """Listen for `tlkun reread` (and any other one-line command)."""
+        """Listen for `lintranslator reread` (and any other one-line command)."""
         from .control import ControlServer
 
         if self.control is not None:
@@ -819,7 +819,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             self._note_idle(f"global hotkey for Re-read: {detail}")
         else:
             self._show_notice(
-                f"No global hotkey — {detail}. Run `tlkun shortcut` for the setup, "
+                f"No global hotkey — {detail}. Run `lintranslator shortcut` for the setup, "
                 "or press Ctrl+R while the card has focus."
             )
 
@@ -926,7 +926,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         # A window rule is the fix, and saying so is the whole point: an
         # unexplained card that sinks behind the game reads as broken.
         self._show_notice(
-            "Not always-on-top. On Wayland add a KWin window rule for 'tl-kun', "
+            "Not always-on-top. On Wayland add a KWin window rule for 'LinTranslator', "
             "or launch with GDK_BACKEND=x11 (see README)."
             + (f" [{detail}]" if detail else "")
         )
@@ -984,7 +984,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         overlay.set_child(card)
         for name, halign, valign, cursor_name, request in self.RESIZE_EDGES:
             grip = Gtk.Box()
-            grip.add_css_class("tlkun-grip-area")
+            grip.add_css_class("lintranslator-grip-area")
             grip.set_halign(halign)
             grip.set_valign(valign)
             grip.set_size_request(*request)
@@ -1226,22 +1226,22 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         """
         self._gated = bool(reason)
         if reason:
-            self.status_label.add_css_class("tlkun-warn")
+            self.status_label.add_css_class("lintranslator-warn")
             self.status_label.set_text(f"paused — {reason}")
         else:
-            self.status_label.remove_css_class("tlkun-warn")
+            self.status_label.remove_css_class("lintranslator-warn")
             self.status_label.set_text("reading the box again")
 
     def _show_self_read(self, text: str) -> None:
         snippet = " ".join(text.split())[:32]
         self.status_label.set_text(
-            f"skipped {snippet!r} — tl-kun's own window is in the box"
+            f"skipped {snippet!r} — lintranslator's own window is in the box"
         )
 
     def _show_event(self, event: Event) -> None:
         self.last_event = event
-        self.target_label.remove_css_class("tlkun-notice")
-        self.target_label.remove_css_class("tlkun-notice-error")
+        self.target_label.remove_css_class("lintranslator-notice")
+        self.target_label.remove_css_class("lintranslator-notice-error")
         self.target_label.set_text(event.target)
         # `display_source` keeps the original line breaks so the panel does not
         # show one long wrapped run where the game showed two lines.
@@ -1275,8 +1275,8 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             # short form in the status row rather than overwriting the text.
             self.status_label.set_text(text.split(" — ")[0])
             return
-        level = "tlkun-notice-error" if error else "tlkun-notice"
-        other = "tlkun-notice" if error else "tlkun-notice-error"
+        level = "lintranslator-notice-error" if error else "lintranslator-notice"
+        other = "lintranslator-notice" if error else "lintranslator-notice-error"
         self.target_label.remove_css_class(other)
         self.target_label.add_css_class(level)
         self.target_label.set_text(text)

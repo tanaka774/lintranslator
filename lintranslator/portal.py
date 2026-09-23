@@ -163,7 +163,7 @@ class ScreenshotPortal:
     def grab(self, timeout: float = 30.0) -> tuple[bytes, tuple[int, int], float]:
         """Capture the whole screen. Returns (png_bytes, (w, h), elapsed_seconds)."""
         self._counter += 1
-        token = f"tlkun_ss_{os.getpid()}_{self._counter}"
+        token = f"lintranslator_ss_{os.getpid()}_{self._counter}"
         t0 = time.monotonic()
         code, results, _ = self.bus.portal_request(
             "org.freedesktop.portal.Screenshot",
@@ -251,7 +251,7 @@ def create_screencast(
     `types` is a bitmask: 1 = monitor, 2 = window. SelectSources triggers the
     compositor's picker dialog, so `timeout` must allow for human interaction.
     """
-    token = f"tlkun_sc_{os.getpid()}"
+    token = f"lintranslator_sc_{os.getpid()}"
 
     code, results, _ = bus.portal_request(
         "org.freedesktop.portal.ScreenCast",

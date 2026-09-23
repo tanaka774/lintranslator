@@ -16,7 +16,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import cairo  # noqa: E402
 import gi  # noqa: E402
@@ -24,13 +24,13 @@ import gi  # noqa: E402
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from tlkun import theme  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.panel import TranslatorPanel  # noqa: E402
-from tlkun.pipeline import Event  # noqa: E402
+from lintranslator import theme  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.panel import TranslatorPanel  # noqa: E402
+from lintranslator.pipeline import Event  # noqa: E402
 
-CONFIG = Path("/home/chiba/workspace/tl-kun/config.json")
-OUT = Path("/home/chiba/workspace/tl-kun/data")
+CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
+OUT = Path("/home/chiba/workspace/lintranslator/data")
 
 TWO_LINE_SOURCE = (
     "[It has been determined that this case merits preservation as a record. "
@@ -101,7 +101,7 @@ def main() -> int:
     )
 
     app = Gtk.Application(
-        application_id="dev.tlkun.contactsheet", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.contactsheet", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
     states: list[tuple[str, object]] = []
 

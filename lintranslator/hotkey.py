@@ -7,7 +7,7 @@ compositor shows its own binding dialog once, and from then on it sends
 `Activated` when the key is pressed. Nothing to configure by hand.
 
 Where the portal is missing, or the user declines the dialog, the fallback is the
-control socket: bind `tlkun reread` as a KDE custom shortcut (System Settings ->
+control socket: bind `lintranslator reread` as a KDE custom shortcut (System Settings ->
 Shortcuts -> Custom), which is also what makes the feature scriptable.
 
 Deliberately GUI-only and best-effort: every failure is reported through
@@ -31,7 +31,7 @@ SESSION_IFACE = "org.freedesktop.portal.Session"
 BIND_TIMEOUT_SECONDS = 120.0
 
 REREAD_ID = "reread"
-REREAD_DESCRIPTION = "tl-kun: re-read the box and translate it"
+REREAD_DESCRIPTION = "lintranslator: re-read the box and translate it"
 # XDG shortcut syntax, which is what `preferred_trigger` takes.
 REREAD_TRIGGER = "CTRL+ALT+R"
 
@@ -94,7 +94,7 @@ class GlobalHotkey:
             self._status(False, f"global shortcuts unavailable: {type(exc).__name__}")
             return
 
-        token = f"tlkun_gs_{os.getpid()}"
+        token = f"lintranslator_gs_{os.getpid()}"
         session_token = f"{token}_session"
         create_request = self._request_path(f"{token}_create")
         self._subscribe(create_request, self._on_create_response)
@@ -125,7 +125,7 @@ class GlobalHotkey:
         self._session = session
         # Activated arrives on the session object itself.
         self._subscribe(session, self._on_activated, member="Activated")
-        request = self._request_path(f"tlkun_gs_{os.getpid()}_bind")
+        request = self._request_path(f"lintranslator_gs_{os.getpid()}_bind")
         self._subscribe(request, self._on_bind_response)
         body = (
             session,
@@ -140,7 +140,7 @@ class GlobalHotkey:
                 for shortcut_id, description, trigger in self._shortcuts
             ],
             self._parent_window,
-            {"handle_token": GLib.Variant("s", f"tlkun_gs_{os.getpid()}_bind")},
+            {"handle_token": GLib.Variant("s", f"lintranslator_gs_{os.getpid()}_bind")},
         )
         self._call("BindShortcuts", GLib.Variant("(oa(sa{sv})sa{sv})", body), self._on_call_failed)
 
@@ -188,7 +188,7 @@ class GlobalHotkey:
         # The compositor's own words are exact but unhelpful; the app-id refusal
         # is by far the most common one and has a specific fix.
         if "app id is required" in detail:
-            detail = "this launch has no application id (start tl-kun from the menu)"
+            detail = "this launch has no application id (start lintranslator from the menu)"
         self._status(False, detail)
 
     def _on_create_response(self, _conn, _sender, path, _iface, _signal, params) -> None:

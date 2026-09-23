@@ -312,7 +312,7 @@ class CTranslate2Translator(Translator):
             raise TranslatorError(
                 f"no converted model at {model_path}.\n"
                 "Convert one with:\n"
-                "  python -m tlkun.convert --model facebook/nllb-200-distilled-600M "
+                "  python -m lintranslator.convert --model facebook/nllb-200-distilled-600M "
                 f"--out {model_path}"
             )
 
@@ -549,7 +549,7 @@ class ChatCompletionsTranslator(HttpTranslator):
     @property
     def key_env(self) -> str:
         """Environment variable consulted when no key is configured."""
-        return "TLKUN_API_KEY"
+        return "LINTRANSLATOR_API_KEY"
 
     @property
     def endpoint(self) -> str:
@@ -642,8 +642,8 @@ class OpenRouterTranslator(ChatCompletionsTranslator):
         # OpenRouter attributes traffic via these headers; they are optional but
         # make the app identifiable in the dashboard.
         headers = {
-            "HTTP-Referer": "https://github.com/tl-kun",
-            "X-Title": "tl-kun",
+            "HTTP-Referer": "https://github.com/lintranslator",
+            "X-Title": "lintranslator",
             **dict(kw.pop("extra_headers", None) or {}),
         }
         super().__init__(api_key, model=model, extra_headers=headers, **kw)
@@ -652,11 +652,11 @@ class OpenRouterTranslator(ChatCompletionsTranslator):
                 "the openrouter backend needs a model, e.g.\n"
                 '  "translate": {"backend": "openrouter", '
                 '"model": "google/gemini-2.0-flash-001"}\n'
-                "Run `tlkun models` to list what your key can reach."
+                "Run `lintranslator models` to list what your key can reach."
             )
 
     def available_models(self) -> list[str]:
-        """Model ids visible to this key, for `tlkun models`."""
+        """Model ids visible to this key, for `lintranslator models`."""
         import urllib.request
 
         request = urllib.request.Request(
@@ -671,6 +671,19 @@ class OpenRouterTranslator(ChatCompletionsTranslator):
 # --------------------------------------------------------------------------- #
 # Factory + cached facade
 # --------------------------------------------------------------------------- #
+def _legacy_env_name(name: str) -> str | None:
+    """The same variable under the app's old name, if it had one.
+
+    `LINTRANSLATOR_API_KEY` was `TLKUN_API_KEY` before the rename. A key exported
+    in a shell profile outlives the rename, and silently finding no key turns into
+    a confusing "no API key" error rather than a missing one.
+    """
+    if "LINTRANSLATOR" not in name:
+        return None
+    old = name.replace("LINTRANSLATOR", "TLKUN")
+    return old if old != name else None
+
+
 def resolve_api_key(cfg, *env_names: str) -> str | None:
     """Find an API key: config first, then environment.
 
@@ -680,9 +693,14 @@ def resolve_api_key(cfg, *env_names: str) -> str | None:
     if getattr(cfg, "api_key", None):
         return str(cfg.api_key)
     for name in env_names:
-        value = os.environ.get(name)
-        if value:
-            return value
+        candidates = [name]
+        legacy = _legacy_env_name(name)
+        if legacy and legacy not in env_names:
+            candidates.append(legacy)
+        for candidate in candidates:
+            value = os.environ.get(candidate)
+            if value:
+                return value
     return None
 
 
@@ -691,7 +709,7 @@ def build_translator(cfg) -> Translator:
 
     Language codes are mapped per backend because NLLB wants FLORES-200 codes
     while the HTTP APIs want ISO codes or plain language names. See
-    `tlkun.languages` for the table and for why a code is never guessed.
+    `lintranslator.languages` for the table and for why a code is never guessed.
     """
     backend = (cfg.backend or "none").lower()
     if backend == "none":
@@ -762,16 +780,16 @@ def build_translator(cfg) -> Translator:
         )
         if backend == "openrouter":
             return OpenRouterTranslator(
-                resolve_api_key(cfg, "OPENROUTER_API_KEY", "TLKUN_API_KEY"), **common
+                resolve_api_key(cfg, "OPENROUTER_API_KEY", "LINTRANSLATOR_API_KEY"), **common
             )
         if backend == "openai":
             return OpenAITranslator(
-                resolve_api_key(cfg, "OPENAI_API_KEY", "TLKUN_API_KEY"), **common
+                resolve_api_key(cfg, "OPENAI_API_KEY", "LINTRANSLATOR_API_KEY"), **common
             )
         # Generic: any OpenAI-compatible endpoint, including a local server that
         # wants no key at all.
         return ChatCompletionsTranslator(
-            resolve_api_key(cfg, "TLKUN_API_KEY"), key_required=False, **common
+            resolve_api_key(cfg, "LINTRANSLATOR_API_KEY"), key_required=False, **common
         )
 
     raise TranslatorError(

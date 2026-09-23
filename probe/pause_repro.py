@@ -13,10 +13,10 @@ a prefix of a later emission.
 """
 import sys
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
-from tlkun.config import Config
-from tlkun.pipeline import Pipeline
+from lintranslator.config import Config
+from lintranslator.pipeline import Pipeline
 
 # A realistic reveal: the full sentence arrives in growing chunks, with a pause
 # in the middle (the reported case), measured against the real panel output.
@@ -41,7 +41,7 @@ class _RevealingScreen:
     def grab(self):
         from PIL import Image, ImageDraw
 
-        from tlkun.capture import Frame
+        from lintranslator.capture import Frame
 
         self.i += 1
         # advance through the timeline; each entry lasts its own number of polls
@@ -72,7 +72,7 @@ class _RevealingOcr:
         return None
 
     def read(self, image):
-        from tlkun.ocr import OcrLine, OcrResult
+        from lintranslator.ocr import OcrLine, OcrResult
 
         self.poll += 1
         text, seen = "", 0

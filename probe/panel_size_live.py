@@ -12,18 +12,18 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from tlkun.config import Config  # noqa: E402
-from tlkun.panel import TranslatorPanel  # noqa: E402
-from tlkun.pipeline import Event  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.panel import TranslatorPanel  # noqa: E402
+from lintranslator.pipeline import Event  # noqa: E402
 
-CONFIG = Path("/home/chiba/workspace/tl-kun/config.json")
+CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
 
 LONG_SOURCE = (
     "[It has been determined that this case merits preservation as a record. "
@@ -62,7 +62,7 @@ def main() -> int:
     rows: list[tuple[str, int, int]] = []
 
     app = Gtk.Application(
-        application_id="dev.tlkun.sizeprobe", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.sizeprobe", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
 
     def on_activate(_app: Gtk.Application) -> None:
@@ -90,7 +90,7 @@ def main() -> int:
                 "keep-above warning",
                 lambda: panel.status_label.set_text(
                     "not always-on-top — on Wayland add a KWin window rule for "
-                    "'tl-kun', or launch with GDK_BACKEND=x11 (see README) "
+                    "'lintranslator', or launch with GDK_BACKEND=x11 (see README) "
                     "[native Wayland]"
                 ),
             ),

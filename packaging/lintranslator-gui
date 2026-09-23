@@ -1,0 +1,47 @@
+#!/bin/sh
+# Launcher for the desktop entry.
+#
+# Launched from the application menu, KDE starts this under an `app-*.scope`, which
+# is what gives LinTranslator an *application id*. That matters for exactly one
+# feature: `org.freedesktop.portal.GlobalShortcuts` refuses callers without one
+# ("An app id is required"), so the compositor-granted global hotkey only works
+# when the app was started this way (or as a systemd user unit / from a Flatpak).
+#
+# Everything else - including the Re-read button, Ctrl+R/F5 in the panel, and
+# `lintranslator reread` over the control socket - works from any launch.
+#
+# `python -m lintranslator` rather than the console script, so this keeps working
+# from a source checkout whose entry points have not been reinstalled.
+#
+# The interpreter is resolved, in this order:
+#
+#   1. $LINTRANSLATOR_PYTHON, for an environment this does not anticipate;
+#   2. a virtualenv inside the checkout this script came from, so a source
+#      checkout works before its entry points are installed anywhere;
+#   3. `lintranslator` on PATH, which is what a normal package install gives you;
+#   4. `python3 -m lintranslator`, so a broken PATH still starts something that
+#      can say what is wrong.
+#
+# It used to hardcode one developer's venv path, which meant the shipped desktop
+# entry could only ever work on that machine.
+set -eu
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+if [ -n "${LINTRANSLATOR_PYTHON:-}" ]; then
+    exec "$LINTRANSLATOR_PYTHON" -m lintranslator gui "$@"
+fi
+
+# This script lives in `packaging/` inside the checkout, so the venvs are one
+# level up. `-x` rather than a directory test: a venv without python is not one.
+for candidate in "$here/../.venv/bin/python" "$here/../.venv-gi/bin/python"; do
+    if [ -x "$candidate" ]; then
+        exec "$candidate" -m lintranslator gui "$@"
+    fi
+done
+
+if command -v lintranslator >/dev/null 2>&1; then
+    exec lintranslator gui "$@"
+fi
+
+exec python3 -m lintranslator gui "$@"

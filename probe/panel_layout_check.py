@@ -22,19 +22,19 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
-from tlkun import panel as panel_mod  # noqa: E402
-from tlkun import theme  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.pipeline import Event  # noqa: E402
+from lintranslator import panel as panel_mod  # noqa: E402
+from lintranslator import theme  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.pipeline import Event  # noqa: E402
 
-CONFIG = Path("/home/chiba/workspace/tl-kun/config.json")
+CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
 
 LONG_SOURCE = (
     "[It has been determined that this case merits preservation as a record. "

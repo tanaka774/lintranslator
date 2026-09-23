@@ -1,4 +1,4 @@
-# tl-kun — Game Dialogue Auto-Translator (Limbus Company) — Feasibility & Plan
+# LinTranslator — Game Dialogue Auto-Translator (Limbus Company) — Feasibility & Plan
 
 Target: KDE Plasma 6.7.4 / Wayland / kwin_wayland, AMD RX 9070 (Navi 48), Python 3.12 via uv.
 Goal: select a fixed screen rectangle over the dialogue box → auto-capture → OCR → EN→JA translate → display.

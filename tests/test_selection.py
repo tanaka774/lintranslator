@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from tlkun.selection import HANDLE_WIDGET_MIN, MIN_SIZE, SelectionMath
+from lintranslator.selection import HANDLE_WIDGET_MIN, MIN_SIZE, SelectionMath
 
 SCREEN = (2560, 1440)
 

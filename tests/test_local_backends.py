@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import json
 
-from tlkun.config import Config, TranslateConfig
-from tlkun.translate import (
+from lintranslator.config import Config, TranslateConfig
+from lintranslator.translate import (
     DEFAULT_NLLB_MODEL,
     CTranslate2Translator,
     CachedTranslator,

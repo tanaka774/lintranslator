@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Phase 0 spike: probe the xdg-desktop-portal capture paths on this session.
 
-Answers, in order of preference for tl-kun:
+Answers, in order of preference for lintranslator:
   1. X11 grab on $DISPLAY (XWayland root) - only valid if the game is an X11 window
   2. org.freedesktop.portal.ScreenCast - persistent PipeWire stream (needs handler + pipewire)
   3. org.freedesktop.portal.Screenshot - one-shot PNG per call
@@ -187,7 +187,7 @@ def probe_screencast(bus: Bus) -> dict:
         out["reason"] = f"introspection failed: {exc}"
         return out
 
-    token = f"tlkun{os.getpid()}"
+    token = f"lintranslator{os.getpid()}"
     session_path = f"{PORTAL_PATH}/session/{os.getpid()}/{token}"
 
     # --- CreateSession ---
@@ -273,7 +273,7 @@ def probe_screenshot(bus: Bus) -> dict:
     out: dict = {"available": False}
     try:
         out["version"] = portal_version(bus, "org.freedesktop.portal.Screenshot")
-        token = f"tlkunshot{os.getpid()}"
+        token = f"lintranslatorshot{os.getpid()}"
         t0 = time.time()
         code, results, req = bus.portal_request(
             "org.freedesktop.portal.Screenshot",

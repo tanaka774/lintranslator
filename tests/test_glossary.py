@@ -9,9 +9,9 @@ The glossary has two failure modes that are easy to ship without noticing:
 """
 from __future__ import annotations
 
-from tlkun.glossary import LIMBUS_GLOSSARY, Glossary
-from tlkun.ocr import OcrLine, OcrResult
-from tlkun.translate import CachedTranslator, Translation, TranslationCache
+from lintranslator.glossary import LIMBUS_GLOSSARY, Glossary
+from lintranslator.ocr import OcrLine, OcrResult
+from lintranslator.translate import CachedTranslator, Translation, TranslationCache
 
 
 # --------------------------------------------------------------------------- #

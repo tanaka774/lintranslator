@@ -1,4 +1,4 @@
-"""Regenerate `tlkun/languages.py` from primary sources.
+"""Regenerate `lintranslator/languages.py` from primary sources.
 
 The language table is data, not logic, and getting one code wrong is invisible:
 an unknown FLORES code reaches NLLB as `<unk>` and the model returns garbage with
@@ -33,7 +33,7 @@ import urllib.request
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent.parent
-OUT = APP_DIR / "tlkun" / "languages.py"
+OUT = APP_DIR / "lintranslator" / "languages.py"
 
 FLORES_LIST_URL = (
     "https://huggingface.co/spaces/Geonmo/nllb-translation-demo/"

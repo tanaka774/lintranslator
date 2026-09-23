@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from PIL import Image, ImageDraw
 
-from tlkun.config import Config, Region
-from tlkun.detect import (
+from lintranslator.config import Config, Region
+from lintranslator.detect import (
     ChangeDetector,
     EmptyGuard,
     TextSettler,
@@ -20,8 +20,8 @@ from tlkun.detect import (
     mean_abs_delta,
     signature,
 )
-from tlkun.ocr import preprocess
-from tlkun.translate import TranslationCache, is_cjk, normalize_cjk
+from lintranslator.ocr import preprocess
+from lintranslator.translate import TranslationCache, is_cjk, normalize_cjk
 
 
 def _frame(text: str = "", size=(320, 60)) -> Image.Image:
@@ -77,7 +77,7 @@ def test_changed_fraction_ignores_subthreshold_noise():
     """Tiny sensor/compression noise must not trigger OCR on every poll."""
     a = bytes([100] * 1000)
     b = bytes([100 + 3] * 1000)  # below pixel_delta
-    from tlkun.detect import changed_fraction
+    from lintranslator.detect import changed_fraction
 
     assert changed_fraction(a, b, pixel_delta=12) == 0.0
 
@@ -346,7 +346,7 @@ def test_a_memory_only_cache_writes_nothing():
 
 
 def test_the_default_config_does_not_persist_translations():
-    from tlkun.pipeline import _cache_for
+    from lintranslator.pipeline import _cache_for
 
     cfg = Config()
     assert cfg.cache_path == ""
@@ -355,7 +355,7 @@ def test_the_default_config_does_not_persist_translations():
 
 
 def test_a_configured_cache_path_still_persists(tmp_path):
-    from tlkun.pipeline import _cache_for
+    from lintranslator.pipeline import _cache_for
 
     cfg = Config()
     cfg.cache_path = str(tmp_path / "c.json")
@@ -444,7 +444,7 @@ def test_jitter_of_one_line_is_still_not_a_new_line():
 def test_force_re_translates_instead_of_serving_the_cache(tmp_path):
     """Re-read skips the cache: answering a "do that again" press with the same
     cached string would look like the button did nothing."""
-    from tlkun.translate import CachedTranslator, Translation
+    from lintranslator.translate import CachedTranslator, Translation
 
     calls: list[str] = []
 

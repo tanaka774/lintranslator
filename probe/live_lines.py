@@ -13,18 +13,18 @@ import threading
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from tlkun.config import Config  # noqa: E402
-from tlkun.pipeline import Pipeline  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.pipeline import Pipeline  # noqa: E402
 
 SECONDS_PER_LINE = float(sys.argv[1]) if len(sys.argv) > 1 else 5.0
-# --overlap draws a tl-kun status line inside the box, above the dialogue, which
+# --overlap draws a lintranslator status line inside the box, above the dialogue, which
 # is what a panel clipping the top of the region looks like to OCR.
 OVERLAP = "--overlap" in sys.argv
 
@@ -46,7 +46,7 @@ state = {
 
 class Screen(Gtk.ApplicationWindow):
     def __init__(self, app, config, index_holder):
-        super().__init__(application=app, title="tl-kun latency probe")
+        super().__init__(application=app, title="lintranslator latency probe")
         self.config = config
         self.index_holder = index_holder
         self.area = Gtk.DrawingArea()
@@ -118,11 +118,11 @@ def _on_event(event):
 
 
 def main() -> int:
-    cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
+    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
     cfg.translate.backend = "none"
     cfg.capture.fps = 2.0
 
-    app = Gtk.Application(application_id="dev.tlkun.latency", flags=Gio.ApplicationFlags.NON_UNIQUE)
+    app = Gtk.Application(application_id="dev.lintranslator.latency", flags=Gio.ApplicationFlags.NON_UNIQUE)
     state["index"] = None
 
     def on_activate(_app):

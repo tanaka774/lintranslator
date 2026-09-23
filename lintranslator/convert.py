@@ -5,7 +5,7 @@ Why this exists: the transformers path for NLLB-600M needs ~4.7 GB of weights
 0.8-1.6 s/line on CPU. The int8 CTranslate2 build is ~600 MB and measured 4-5x
 faster on this project's sample lines, with equivalent output.
 
-    python -m tlkun.convert --model facebook/nllb-200-distilled-600M \
+    python -m lintranslator.convert --model facebook/nllb-200-distilled-600M \
         --out data/ct2/nllb-600m-int8
 """
 from __future__ import annotations
@@ -58,7 +58,7 @@ def convert(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m tlkun.convert",
+        prog="python -m lintranslator.convert",
         description="convert a HuggingFace model to CTranslate2 int8 for the ct2 backend",
     )
     parser.add_argument("--model", default=DEFAULT_MODEL, help="HuggingFace model id")

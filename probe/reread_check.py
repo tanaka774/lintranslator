@@ -1,7 +1,7 @@
-"""Does Re-read work end to end: button -> pipeline, and `tlkun reread` -> GUI?
+"""Does Re-read work end to end: button -> pipeline, and `lintranslator reread` -> GUI?
 
 Drives the real picker/panel, starts watching, then asks for a re-read three ways -
-the button, the control socket, and the `tlkun reread` CLI in a separate process -
+the button, the control socket, and the `lintranslator reread` CLI in a separate process -
 and reports what the panel did each time.
 
 The translation backend is forced to `none` so this costs nothing and needs no
@@ -15,25 +15,25 @@ import sys
 import threading
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from tlkun.config import Config  # noqa: E402
-from tlkun.control import send  # noqa: E402
-from tlkun.portal import ScreenshotPortal  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.control import send  # noqa: E402
+from lintranslator.portal import ScreenshotPortal  # noqa: E402
 
-CONFIG = Path("/tmp/tlkun_probe_config.json")  # never write the real config
+CONFIG = Path("/tmp/lintranslator_probe_config.json")  # never write the real config
 # A writable XDG_RUNTIME_DIR for this probe: this sandbox blocks /run/user/1000,
 # which a normal desktop session allows. The CLI subprocess gets the same value,
 # which is what lets two processes agree on the socket path.
-RUNTIME = Path("/home/chiba/workspace/tl-kun/data/probe_runtime")
+RUNTIME = Path("/home/chiba/workspace/lintranslator/data/probe_runtime")
 RUNTIME.mkdir(parents=True, exist_ok=True)
 os.environ["XDG_RUNTIME_DIR"] = str(RUNTIME)
-VENV = Path("/home/chiba/workspace/tl-kun/.venv-gi/bin/tlkun")
+VENV = Path("/home/chiba/workspace/lintranslator/.venv-gi/bin/lintranslator")
 
 results: list[tuple[str, bool, str]] = []
 
@@ -57,7 +57,7 @@ def guard(step):
 
 
 def main() -> int:
-    cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
+    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
     cfg.path = CONFIG
     cfg.translate.backend = "none"
     cfg.capture.fps = 2.0
@@ -68,7 +68,7 @@ def main() -> int:
     print(f"screen {size} in {elapsed * 1000:.0f} ms", flush=True)
 
     app = Gtk.Application(
-        application_id="dev.tlkun.rereadcheck", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.rereadcheck", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
     state: dict = {"panel": None, "picker": None, "before": None}
 
@@ -99,7 +99,7 @@ def main() -> int:
     def step_socket():
         # A thread on purpose: this probe shares a process with the GUI, and the
         # GUI answers the socket on its main loop - a synchronous call from that
-        # same loop would deadlock. `tlkun reread` is a separate process.
+        # same loop would deadlock. `lintranslator reread` is a separate process.
         replies: list[str] = []
 
         def call():
@@ -126,7 +126,7 @@ def main() -> int:
         def call():
             # Both subprocesses in a thread: `subprocess.run` blocks, and this
             # probe's own main loop is what answers the socket. A real user's
-            # `tlkun reread` waits on a loop that is free.
+            # `lintranslator reread` waits on a loop that is free.
             env = dict(os.environ, XDG_RUNTIME_DIR=str(RUNTIME))
             out["reread"] = subprocess.run(
                 [str(VENV), "--config", str(CONFIG), "reread"],
@@ -148,12 +148,12 @@ def main() -> int:
                 return True  # still running
             proc, status = out["reread"], out["status"]
             check(
-                "`tlkun reread` from another process",
+                "`lintranslator reread` from another process",
                 proc.returncode == 0 and "re-reading" in proc.stdout,
                 f"rc={proc.returncode} out={proc.stdout.strip()!r} err={proc.stderr.strip()!r}",
             )
             check(
-                "`tlkun status` reports state",
+                "`lintranslator status` reports state",
                 "watching" in status.stdout,
                 status.stdout.strip(),
             )
@@ -179,7 +179,7 @@ def main() -> int:
         return False
 
     def on_activate(_app):
-        from tlkun.picker import RegionPicker
+        from lintranslator.picker import RegionPicker
 
         picker = RegionPicker(app, cfg, screenshot_png=png)
         picker._panel.hotkey_enabled = False  # no compositor dialog in a probe

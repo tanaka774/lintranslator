@@ -1,7 +1,7 @@
 [project]
-name = "tl-kun"
+name = "lintranslator"
 version = "0.1.0"
-description = "Screen-region OCR + auto-translation for game dialogue (Wayland/KDE first)"
+description = "Screen translator for Linux: watches a screen region, reads it with OCR and translates it (Wayland/KDE first)"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "pillow>=10.0",
@@ -31,11 +31,11 @@ rapidocr = [
 ]
 
 [project.scripts]
-tlkun = "tlkun.cli:main"
+lintranslator = "lintranslator.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["tlkun"]
+packages = ["lintranslator"]

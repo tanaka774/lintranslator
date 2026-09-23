@@ -106,9 +106,9 @@ to 0.090 and rejects real text.
 ## Reproduce
 
 ```bash
-.venv-gi/bin/python -m tlkun check
-.venv-gi/bin/python -m tlkun grab -o /tmp/frame.png      # eyeball the region
-.venv-gi/bin/python -m tlkun read --repeat 3             # OCR only
+.venv-gi/bin/python -m lintranslator check
+.venv-gi/bin/python -m lintranslator grab -o /tmp/frame.png      # eyeball the region
+.venv-gi/bin/python -m lintranslator read --repeat 3             # OCR only
 .venv-gi/bin/python -m pytest tests/ -q                  # 21 tests
-.venv-gi/bin/python -m tlkun run --duration 20
+.venv-gi/bin/python -m lintranslator run --duration 20
 ```

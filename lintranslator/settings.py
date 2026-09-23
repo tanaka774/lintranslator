@@ -44,7 +44,7 @@ from .ocr import bad_langs, split_langs  # noqa: E402
 from .translate import DEFAULT_NLLB_MODEL  # noqa: E402
 
 # Where the converted weights are expected: the user data dir, or an
-# older in-tree install that has not been moved yet (tlkun.paths).
+# older in-tree install that has not been moved yet (lintranslator.paths).
 DEFAULT_CT2_DIR = str(paths.default_ct2_dir())
 
 BACKENDS = [
@@ -181,7 +181,7 @@ class ModelPicker(Gtk.MenuButton):
         box.append(self.scroll)
 
         self.count_label = Gtk.Label(label="", xalign=0)
-        self.count_label.add_css_class("tlkun-hint")
+        self.count_label.add_css_class("lintranslator-hint")
         box.append(self.count_label)
 
         self.content = box
@@ -243,7 +243,7 @@ class ModelPicker(Gtk.MenuButton):
                 ),
                 justify=Gtk.Justification.CENTER,
             )
-            empty.add_css_class("tlkun-hint")
+            empty.add_css_class("lintranslator-hint")
             empty.set_margin_top(18)
             empty.set_margin_bottom(18)
             self.listbox.append(empty)
@@ -259,7 +259,7 @@ class ModelPicker(Gtk.MenuButton):
 
     def _section_header(self, text: str) -> Gtk.ListBoxRow:
         label = Gtk.Label(label=text.upper(), xalign=0)
-        label.add_css_class("tlkun-hint")
+        label.add_css_class("lintranslator-hint")
         label.set_margin_top(8)
         label.set_margin_start(6)
         row = Gtk.ListBoxRow()
@@ -276,11 +276,11 @@ class ModelPicker(Gtk.MenuButton):
         box.append(label)
         if model.endswith(":free"):
             tag = Gtk.Label(label="free")
-            tag.add_css_class("tlkun-hint")
+            tag.add_css_class("lintranslator-hint")
             box.append(tag)
         elif model in REASONING_CAUTION:
             tag = Gtk.Label(label="reasoning ⚠")
-            tag.add_css_class("tlkun-hint")
+            tag.add_css_class("lintranslator-hint")
             tag.set_tooltip_text(
                 "This model can spend the whole token budget thinking and return "
                 "an empty translation. Raise max_tokens if you use it."
@@ -383,7 +383,7 @@ class LanguagePicker(Gtk.MenuButton):
         box.append(self.scroll)
 
         self.count_label = Gtk.Label(label="", xalign=0)
-        self.count_label.add_css_class("tlkun-hint")
+        self.count_label.add_css_class("lintranslator-hint")
         box.append(self.count_label)
 
         self.popover.set_child(box)
@@ -428,7 +428,7 @@ class LanguagePicker(Gtk.MenuButton):
                 ),
                 justify=Gtk.Justification.CENTER,
             )
-            empty.add_css_class("tlkun-hint")
+            empty.add_css_class("lintranslator-hint")
             empty.set_margin_top(18)
             empty.set_margin_bottom(18)
             self.listbox.append(empty)
@@ -454,13 +454,13 @@ class LanguagePicker(Gtk.MenuButton):
         box.append(label)
 
         code = Gtk.Label(label=language.code)
-        code.add_css_class("tlkun-hint")
+        code.add_css_class("lintranslator-hint")
         box.append(code)
 
         tag_text = self._backend_tag(language)
         if tag_text:
             tag = Gtk.Label(label=tag_text)
-            tag.add_css_class("tlkun-hint")
+            tag.add_css_class("lintranslator-hint")
             box.append(tag)
 
         row = Gtk.ListBoxRow()
@@ -529,8 +529,8 @@ class SettingsDialog(Gtk.Window):
     """Modal-ish settings window. Writes to config on close."""
 
     def __init__(self, parent: Gtk.Window, config: Config, on_apply=None) -> None:
-        super().__init__(transient_for=parent, title="tl-kun settings", modal=False)
-        self.add_css_class("tlkun-app")
+        super().__init__(transient_for=parent, title="LinTranslator settings", modal=False)
+        self.add_css_class("lintranslator-app")
         self.config = config
         self.on_apply = on_apply
         # Per-backend memory for the shared Model field, so switching backend
@@ -551,7 +551,7 @@ class SettingsDialog(Gtk.Window):
         # This window is large and lands wherever the compositor likes, so while
         # it is open the pipeline must not read the screen: it would capture the
         # settings UI instead of the game. Same rule as the region picker - see
-        # tlkun.occlusion - and it lifts by itself when the window closes.
+        # lintranslator.occlusion - and it lifts by itself when the window closes.
         self._guard_key = f"settings-{id(self)}"
         self.connect(
             "map",
@@ -583,18 +583,18 @@ class SettingsDialog(Gtk.Window):
         # A toolbar rather than a bare right-aligned pair: the primary action
         # is the one that applies, and it should not look like its neighbour.
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        actions.add_css_class("tlkun-toolbar")
+        actions.add_css_class("lintranslator-toolbar")
         self.status = Gtk.Label(label="", xalign=0, wrap=True)
-        self.status.add_css_class("tlkun-hint")
+        self.status.add_css_class("lintranslator-hint")
         self.status.set_hexpand(True)
         actions.append(self.status)
         save = Gtk.Button(label="Save and apply")
-        save.add_css_class("tlkun-tool")
-        save.add_css_class("tlkun-primary")
+        save.add_css_class("lintranslator-tool")
+        save.add_css_class("lintranslator-primary")
         save.connect("clicked", self._on_save)
         actions.append(save)
         close = Gtk.Button(label="Close")
-        close.add_css_class("tlkun-tool")
+        close.add_css_class("lintranslator-tool")
         close.connect("clicked", lambda *_: self.close())
         actions.append(close)
         box.append(actions)
@@ -645,7 +645,7 @@ class SettingsDialog(Gtk.Window):
     def _build_translation_section(self) -> Gtk.Widget:
         frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         head = Gtk.Label(label="Translation", xalign=0)
-        head.add_css_class("tlkun-section")
+        head.add_css_class("lintranslator-section")
         frame.append(head)
 
         grid = Gtk.Grid(column_spacing=10, row_spacing=8)
@@ -663,7 +663,7 @@ class SettingsDialog(Gtk.Window):
 
         # The language pair. One setting for every backend: NLLB is given the
         # FLORES-200 code verbatim, a chat model is told the name in the prompt,
-        # DeepL and Google get an ISO code - all derived in `tlkun.languages`.
+        # DeepL and Google get an ISO code - all derived in `lintranslator.languages`.
         # It is a picker and not an entry because a typo here is invisible:
         # NLLB scores an unknown code as <unk> and returns fluent nonsense.
         grid.attach(Gtk.Label(label="From", xalign=0), 0, 1, 1, 1)
@@ -690,18 +690,18 @@ class SettingsDialog(Gtk.Window):
         # translation quality rather than like a setting.
         language_notes = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.language_hint = Gtk.Label(label="", xalign=0, wrap=True)
-        self.language_hint.add_css_class("tlkun-hint")
+        self.language_hint.add_css_class("lintranslator-hint")
         self.language_hint.set_max_width_chars(70)
         language_notes.append(self.language_hint)
 
         self.ocr_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.ocr_hint = Gtk.Label(label="", xalign=0, wrap=True)
-        self.ocr_hint.add_css_class("tlkun-hint")
+        self.ocr_hint.add_css_class("lintranslator-hint")
         self.ocr_hint.set_max_width_chars(48)
         self.ocr_hint.set_hexpand(True)
         self.ocr_row.append(self.ocr_hint)
         self.ocr_sync_btn = Gtk.Button(label="")
-        self.ocr_sync_btn.add_css_class("tlkun-tool")
+        self.ocr_sync_btn.add_css_class("lintranslator-tool")
         self.ocr_sync_btn.connect("clicked", lambda *_: self._on_ocr_sync())
         self.ocr_row.append(self.ocr_sync_btn)
         language_notes.append(self.ocr_row)
@@ -740,7 +740,7 @@ class SettingsDialog(Gtk.Window):
         self.ct2_entry.set_placeholder_text(DEFAULT_CT2_DIR)
         self.ct2_entry.set_tooltip_text(
             "Directory holding the CTranslate2 int8 weights. Build it with:\n"
-            f"  python -m tlkun.convert --model {DEFAULT_NLLB_MODEL} "
+            f"  python -m lintranslator.convert --model {DEFAULT_NLLB_MODEL} "
             f"--out {DEFAULT_CT2_DIR}"
         )
         self.ct2_row.append(self.ct2_entry)
@@ -776,7 +776,7 @@ class SettingsDialog(Gtk.Window):
         self.key_row.append(self.clear_btn)
 
         self.key_label = Gtk.Label(label="", xalign=0, wrap=True)
-        self.key_label.add_css_class("tlkun-hint")
+        self.key_label.add_css_class("lintranslator-hint")
         self.key_label.set_max_width_chars(70)
 
         key_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -787,7 +787,7 @@ class SettingsDialog(Gtk.Window):
         # Contextual help under the model row: model meaning, a browse link, and
         # a warning when the chosen model is known to fail this pipeline.
         self.model_hint = Gtk.Label(label="", xalign=0, wrap=True)
-        self.model_hint.add_css_class("tlkun-hint")
+        self.model_hint.add_css_class("lintranslator-hint")
         self.model_hint.set_max_width_chars(70)
         self.model_hint.set_visible(False)
         model_hint_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -818,7 +818,7 @@ class SettingsDialog(Gtk.Window):
         # detail of this app - NLLB is non-commercial - so it is stated where the
         # backend is chosen, not only in the README.
         self.licence_hint = Gtk.Label(label="", xalign=0, wrap=True)
-        self.licence_hint.add_css_class("tlkun-hint")
+        self.licence_hint.add_css_class("lintranslator-hint")
         self.licence_hint.set_max_width_chars(70)
         self.licence_hint.set_visible(False)
         grid.attach(self.licence_hint, 1, 9, 1, 1)
@@ -842,7 +842,7 @@ class SettingsDialog(Gtk.Window):
             wrap=True,
             max_width_chars=70,
         )
-        hint.add_css_class("tlkun-hint")
+        hint.add_css_class("lintranslator-hint")
         frame.append(hint)
 
         self.prompt_view = Gtk.TextView()
@@ -1016,7 +1016,7 @@ class SettingsDialog(Gtk.Window):
 
         The value becomes both tesseract's `-l` argument and a filename under
         the tessdata directory, so a name that is not a plain language name is
-        refused rather than passed on - see `tlkun.ocr.parse_langs`.
+        refused rather than passed on - see `lintranslator.ocr.parse_langs`.
         """
         bad = bad_langs(self._ocr_langs)
         if not bad:
@@ -1106,7 +1106,7 @@ class SettingsDialog(Gtk.Window):
             if not path.exists():
                 parts.append(
                     f"⚠ no converted weights at {path} — build them with "
-                    f"`python -m tlkun.convert --out {DEFAULT_CT2_DIR}`"
+                    f"`python -m lintranslator.convert --out {DEFAULT_CT2_DIR}`"
                 )
         if model in REASONING_CAUTION:
             parts.append(
@@ -1125,7 +1125,12 @@ class SettingsDialog(Gtk.Window):
             # No key is required here, so the label explains both cases instead
             # of claiming one is needed or that none ever is.
             typed = self.key_entry.get_text().strip()
-            env = os.environ.get("TLKUN_API_KEY")
+            # Through `resolve_api_key` rather than `os.environ` directly, so the
+            # pre-rename `TLKUN_API_KEY` is seen here exactly as the translator
+            # sees it - the label must not disagree with what will be used.
+            from .translate import resolve_api_key
+
+            env = resolve_api_key(None, "LINTRANSLATOR_API_KEY")
             if typed:
                 self.key_label.set_text(
                     f"Using the key entered above ({typed[:6]}…{typed[-4:]}). "
@@ -1133,19 +1138,19 @@ class SettingsDialog(Gtk.Window):
                 )
             elif env:
                 self.key_label.set_text(
-                    f"No key entered here, so TLKUN_API_KEY from the environment "
+                    f"No key entered here, so LINTRANSLATOR_API_KEY from the environment "
                     f"is used ({env[:6]}…{env[-4:]})."
                 )
             else:
                 self.key_label.set_text(
                     "No key set. A server on this machine usually needs none; a "
                     "hosted endpoint needs one (paste it above or set "
-                    "TLKUN_API_KEY)."
+                    "LINTRANSLATOR_API_KEY)."
                 )
             return
         envs = {
-            "openrouter": ("OPENROUTER_API_KEY", "TLKUN_API_KEY"),
-            "openai": ("OPENAI_API_KEY", "TLKUN_API_KEY"),
+            "openrouter": ("OPENROUTER_API_KEY", "LINTRANSLATOR_API_KEY"),
+            "openai": ("OPENAI_API_KEY", "LINTRANSLATOR_API_KEY"),
             # DeepL's own variable, as the translator reads it. Without this the
             # row was visible but the label claimed no key was needed.
             "deepl": ("DEEPL_API_KEY",),
@@ -1201,9 +1206,9 @@ class SettingsDialog(Gtk.Window):
 
         backend = BACKENDS[self.backend_dd.get_selected()][0]
         envs = (
-            ("OPENROUTER_API_KEY", "TLKUN_API_KEY")
+            ("OPENROUTER_API_KEY", "LINTRANSLATOR_API_KEY")
             if backend == "openrouter"
-            else ("OPENAI_API_KEY", "TLKUN_API_KEY")
+            else ("OPENAI_API_KEY", "LINTRANSLATOR_API_KEY")
         )
         key = resolve_api_key(self.config.translate, *envs)
         if not key:
@@ -1244,7 +1249,7 @@ class SettingsDialog(Gtk.Window):
     def _build_capture_section(self) -> Gtk.Widget:
         frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         capture_head = Gtk.Label(label="Capture area — what gets read", xalign=0)
-        capture_head.add_css_class("tlkun-section")
+        capture_head.add_css_class("lintranslator-section")
         frame.append(capture_head)
 
         self.capture_label = Gtk.Label(label="", xalign=0)
@@ -1260,7 +1265,7 @@ class SettingsDialog(Gtk.Window):
             wrap=True,
             max_width_chars=70,
         )
-        hint.add_css_class("tlkun-hint")
+        hint.add_css_class("lintranslator-hint")
         frame.append(hint)
 
         for label, factor in (("Smaller", 0.9), ("Larger", 1.1)):
@@ -1320,7 +1325,7 @@ class SettingsDialog(Gtk.Window):
     def _build_display_section(self) -> Gtk.Widget:
         frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         display_head = Gtk.Label(label="Display area — the card", xalign=0)
-        display_head.add_css_class("tlkun-section")
+        display_head.add_css_class("lintranslator-section")
         frame.append(display_head)
 
         grid = Gtk.Grid(column_spacing=10, row_spacing=8)
@@ -1370,7 +1375,7 @@ class SettingsDialog(Gtk.Window):
         frame.append(self.show_source)
 
         self.display_preview = Gtk.Label(label="", xalign=0, wrap=True)
-        self.display_preview.add_css_class("tlkun-hint")
+        self.display_preview.add_css_class("lintranslator-hint")
         frame.append(self.display_preview)
         self._preview_display()
         return frame

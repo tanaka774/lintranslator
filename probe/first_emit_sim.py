@@ -9,13 +9,13 @@ Run:  .venv-gi/bin/python probe/first_emit_sim.py
 """
 import sys
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 from PIL import Image  # noqa: E402
 
-from tlkun.capture import Frame  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.pipeline import Pipeline  # noqa: E402
+from lintranslator.capture import Frame  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.pipeline import Pipeline  # noqa: E402
 
 
 class FrozenScreen:
@@ -43,11 +43,11 @@ class FrozenScreen:
 
 
 def main():
-    cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
+    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
     cfg.translate.backend = "none"
     cfg.capture.fps = 2.0
 
-    path = sys.argv[1] if len(sys.argv) > 1 else "/home/chiba/workspace/tl-kun/data/probe_first_crop.png"
+    path = sys.argv[1] if len(sys.argv) > 1 else "/home/chiba/workspace/lintranslator/data/probe_first_crop.png"
     image = Image.open(path).convert("RGB")
     print(f"frame: {path}")
 

@@ -17,14 +17,14 @@ import json
 import sys
 import time
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
-from tlkun.config import Config
-from tlkun.pipeline import Pipeline
+from lintranslator.config import Config
+from lintranslator.pipeline import Pipeline
 
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 90.0
 
-cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
+cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
 cfg.translate.backend = "none"
 p = Pipeline(cfg)
 p.warmup()
@@ -39,7 +39,7 @@ while time.monotonic() - t0 < SECONDS:
     p.step()
     time.sleep(p.sleep_time())
 
-with open("/home/chiba/workspace/tl-kun/probe/live_reads.json", "w") as fh:
+with open("/home/chiba/workspace/lintranslator/probe/live_reads.json", "w") as fh:
     json.dump(reads, fh, ensure_ascii=False, indent=1)
 
 texts = [r for r in reads if "text" in r]

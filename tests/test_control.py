@@ -1,4 +1,4 @@
-"""The one-line control channel behind `tlkun reread`.
+"""The one-line control channel behind `lintranslator reread`.
 
 Wayland forbids reading global keys, so a shortcut outside the app runs a command
 and that command talks to the running window over this socket. What matters here:
@@ -20,7 +20,7 @@ try:
 except (ImportError, ValueError):  # pragma: no cover - no GLib typelib
     pytest.skip("GLib unavailable", allow_module_level=True)
 
-from tlkun.control import ControlServer, send, socket_path  # noqa: E402
+from lintranslator.control import ControlServer, send, socket_path  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -74,8 +74,8 @@ def test_no_gui_reports_something_actionable():
     with pytest.raises(ConnectionError) as caught:
         send("reread")
     message = str(caught.value)
-    assert "no running tl-kun GUI" in message
-    assert "tlkun gui" in message
+    assert "no running lintranslator GUI" in message
+    assert "lintranslator gui" in message
 
 
 def test_a_second_gui_does_not_steal_the_socket():
@@ -88,7 +88,7 @@ def test_a_second_gui_does_not_steal_the_socket():
     second.start()
 
     assert second.listening is False
-    assert second.error and "another tl-kun GUI" in second.error
+    assert second.error and "another lintranslator GUI" in second.error
     # And the first one still answers.
     replies: list[str] = []
     threading.Thread(target=lambda: replies.append(send("hi")), daemon=True).start()
@@ -131,14 +131,14 @@ def test_a_crashing_handler_still_answers():
 
 # -- who else can reach it -------------------------------------------------- #
 def test_the_socket_is_never_placed_in_a_world_writable_directory():
-    """The old fallback was a flat `/tmp/tl-kun-<uid>.sock`, which another user
+    """The old fallback was a flat `/tmp/lintranslator-<uid>.sock`, which another user
     can create first - and whoever holds the path receives the commands. A
     candidate inside a private subdirectory is fine; a direct child of the
     shared temp root is not."""
     import tempfile
     from pathlib import Path
 
-    from tlkun.control import candidate_paths
+    from lintranslator.control import candidate_paths
 
     temp_root = Path(tempfile.gettempdir()).resolve()
     for path in candidate_paths():

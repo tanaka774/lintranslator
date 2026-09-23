@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import cairo  # noqa: E402
 import gi  # noqa: E402
@@ -28,13 +28,13 @@ import gi  # noqa: E402
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from tlkun import theme  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.panel import TranslatorPanel  # noqa: E402
+from lintranslator import theme  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.panel import TranslatorPanel  # noqa: E402
 
-CONFIG = Path("/home/chiba/workspace/tl-kun/config.json")
-SCRATCH = Path("/tmp/tlkun_overflow_probe_config.json")
-OUT = Path("/home/chiba/workspace/tl-kun/data")
+CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
+SCRATCH = Path("/tmp/lintranslator_overflow_probe_config.json")
+OUT = Path("/home/chiba/workspace/lintranslator/data")
 WIDTHS = [980, 700, 560, 460, 380, 300]
 failures: list[str] = []
 
@@ -80,7 +80,7 @@ def main() -> int:
     cfg.display.height = 0
 
     app = Gtk.Application(
-        application_id="dev.tlkun.overflow", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.overflow", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
 
     def on_activate(_app: Gtk.Application) -> None:

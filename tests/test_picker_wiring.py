@@ -30,13 +30,13 @@ except (ImportError, ValueError):  # pragma: no cover - no GTK typelib
 
 from PIL import Image  # noqa: E402
 
-from tlkun import capture as capture_mod  # noqa: E402
-from tlkun import panel as panel_mod  # noqa: E402
-from tlkun import picker as picker_mod  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.pipeline import Event  # noqa: E402
-from tlkun.occlusion import GUARD  # noqa: E402
-from tlkun.selection import SelectionMath  # noqa: E402
+from lintranslator import capture as capture_mod  # noqa: E402
+from lintranslator import panel as panel_mod  # noqa: E402
+from lintranslator import picker as picker_mod  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.pipeline import Event  # noqa: E402
+from lintranslator.occlusion import GUARD  # noqa: E402
+from lintranslator.selection import SelectionMath  # noqa: E402
 
 SCREEN = (800, 600)
 # A colour the fixture's screenshot does not use, so "the canvas was replaced"
@@ -121,7 +121,7 @@ def picker(tmp_path, monkeypatch):
     cfg = Config()
     cfg.translate.backend = "none"
     cfg.path = tmp_path / "config.json"  # `_on_start` saves
-    app = Gtk.Application(application_id="dev.tlkun.test", flags=0)
+    app = Gtk.Application(application_id="dev.lintranslator.test", flags=0)
     window = picker_mod.RegionPicker(app, cfg, screenshot_png=_png())
     # Never ask the developer's compositor for a real global shortcut from a test.
     window._panel.hotkey_enabled = False
@@ -611,12 +611,12 @@ def test_the_panel_reports_when_the_global_hotkey_is_unavailable(picker):
     # one-line status row, where it would be ellipsised to a few characters.
     text = panel.target_label.get_text()
     assert "No global hotkey" in text
-    assert "tlkun shortcut" in text, "the fix has to be named"
+    assert "lintranslator shortcut" in text, "the fix has to be named"
     assert "Ctrl+R" in text, "the in-window fallback has to be named"
     # A notice must not be mistaken for a translation.
-    assert panel.target_label.has_css_class("tlkun-notice")
+    assert panel.target_label.has_css_class("lintranslator-notice")
     # The full text stays reachable once a translation displaces the notice.
-    assert "tlkun shortcut" in (panel.status_label.get_tooltip_text() or "")
+    assert "lintranslator shortcut" in (panel.status_label.get_tooltip_text() or "")
 
 
 def test_a_notice_never_replaces_a_translation(picker):
@@ -635,7 +635,7 @@ def test_a_notice_never_replaces_a_translation(picker):
     )
     panel._note_keep_above(False, "native Wayland")
     assert panel.target_label.get_text() == "はい。"
-    assert not panel.target_label.has_css_class("tlkun-notice")
+    assert not panel.target_label.has_css_class("lintranslator-notice")
     # The short form still reaches the status row, so it is not swallowed.
     assert "Not always-on-top" in panel.status_label.get_text()
 
@@ -854,8 +854,8 @@ def test_every_action_button_is_unaccented(picker):
     """The row is a row of peers; none of them carries the accent colour."""
     panel = picker._panel
     for name in panel.ACTION_ORDER:
-        assert not getattr(panel, name).has_css_class("tlkun-primary"), name
-    assert not panel.menu_btn.has_css_class("tlkun-primary")
+        assert not getattr(panel, name).has_css_class("lintranslator-primary"), name
+    assert not panel.menu_btn.has_css_class("lintranslator-primary")
 
 
 # --------------------------------------------------------------------------- #
@@ -891,7 +891,7 @@ def test_the_grips_are_on_the_edges_that_wayland_allows(picker):
     grips = [
         model.get_item(i)
         for i in range(model.get_n_items())
-        if model.get_item(i).has_css_class("tlkun-grip-area")
+        if model.get_item(i).has_css_class("lintranslator-grip-area")
     ]
     assert len(grips) == 3, f"expected three grips, found {len(grips)}"
     # Every grip must be hit-testable: GTK4 picks through render nodes, so a grip

@@ -22,7 +22,7 @@ import sys
 from io import BytesIO
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import cairo  # noqa: E402
 import gi  # noqa: E402
@@ -32,11 +32,11 @@ from gi.repository import Gio, Gtk  # noqa: E402
 
 from PIL import Image  # noqa: E402
 
-from tlkun import panel as panel_mod  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.picker import RegionPicker  # noqa: E402
+from lintranslator import panel as panel_mod  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.picker import RegionPicker  # noqa: E402
 
-OUT = Path("/home/chiba/workspace/tl-kun/.cache/region_resize_handles.png")
+OUT = Path("/home/chiba/workspace/lintranslator/.cache/region_resize_handles.png")
 SCREEN = (1600, 1000)
 CANVAS = (800, 500)  # what the screenshot is letterboxed into
 BOX = (300, 200, 400, 200)
@@ -77,11 +77,11 @@ def main() -> int:
         print("no display: GTK cannot be initialised")
         return 2
 
-    cfg = Config.load("/home/chiba/workspace/tl-kun/config.json")
-    cfg.path = Path("/tmp/tlkun_resize_render.json")  # never the real config
+    cfg = Config.load("/home/chiba/workspace/lintranslator/config.json")
+    cfg.path = Path("/tmp/lintranslator_resize_render.json")  # never the real config
 
     app = Gtk.Application(
-        application_id="dev.tlkun.resizerender", flags=Gio.ApplicationFlags.NON_UNIQUE
+        application_id="dev.lintranslator.resizerender", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
     failures: list[str] = []
 

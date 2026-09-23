@@ -14,8 +14,8 @@ import urllib.request
 
 import pytest
 
-from tlkun.config import TranslateConfig
-from tlkun.translate import (
+from lintranslator.config import TranslateConfig
+from lintranslator.translate import (
     ChatCompletionsTranslator,
     OpenAITranslator,
     OpenRouterTranslator,
@@ -123,7 +123,7 @@ def test_prompt_with_unknown_braces_does_not_raise():
 
 
 def test_empty_prompt_falls_back_to_the_builtin_default():
-    from tlkun.geometry import DEFAULT_PROMPT
+    from lintranslator.geometry import DEFAULT_PROMPT
 
     assert Recording("key", prompt="").system_prompt() == Recording(
         "key", prompt=None
@@ -160,7 +160,7 @@ def test_missing_key_raises_with_guidance():
     message = str(exc.value)
     assert "API key" in message
     # The message must name the environment variable, not just complain.
-    assert "TLKUN_API_KEY" in message
+    assert "LINTRANSLATOR_API_KEY" in message
 
 
 def test_malformed_response_is_reported_not_swallowed():
@@ -274,7 +274,34 @@ def test_environment_is_used_when_config_is_empty(monkeypatch):
 
 def test_no_key_anywhere_returns_none(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.delenv("TLKUN_API_KEY", raising=False)
+    monkeypatch.delenv("LINTRANSLATOR_API_KEY", raising=False)
+    assert resolve_api_key(TranslateConfig(api_key=None), "OPENROUTER_API_KEY") is None
+
+
+def test_the_pre_rename_key_variable_still_works(monkeypatch):
+    """`TLKUN_API_KEY` was exported in a profile before the rename.
+
+    A key that quietly stops being found does not fail loudly - it reports "no key
+    configured", which sends the user looking in the wrong place.
+    """
+    monkeypatch.delenv("LINTRANSLATOR_API_KEY", raising=False)
+    monkeypatch.setenv("TLKUN_API_KEY", "from-the-old-name")
+    assert resolve_api_key(TranslateConfig(api_key=None), "LINTRANSLATOR_API_KEY") == (
+        "from-the-old-name"
+    )
+
+
+def test_the_new_key_variable_wins_over_the_old(monkeypatch):
+    monkeypatch.setenv("TLKUN_API_KEY", "old")
+    monkeypatch.setenv("LINTRANSLATOR_API_KEY", "new")
+    assert resolve_api_key(TranslateConfig(api_key=None), "LINTRANSLATOR_API_KEY") == "new"
+
+
+def test_a_backend_with_its_own_variable_does_not_read_the_legacy_one(monkeypatch):
+    """`OPENROUTER_API_KEY` has no old form, so nothing is invented for it."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("LINTRANSLATOR_API_KEY", raising=False)
+    monkeypatch.setenv("TLKUN_API_KEY", "not-this-backends-key")
     assert resolve_api_key(TranslateConfig(api_key=None), "OPENROUTER_API_KEY") is None
 
 
@@ -425,7 +452,7 @@ def test_factory_rejects_unknown_backend():
 
 
 def test_factory_passes_api_base_override(monkeypatch):
-    monkeypatch.setenv("TLKUN_API_KEY", "k")
+    monkeypatch.setenv("LINTRANSLATOR_API_KEY", "k")
     cfg = TranslateConfig(backend="chat", model="m", api_base="http://localhost:8080/v1")
     t = build_translator(cfg)
     assert t.endpoint == "http://localhost:8080/v1/chat/completions"

@@ -2,7 +2,7 @@
 
 Deterministic and screen-free: a scripted screen that changes on every poll (a
 blinking caret, like a live game), carrying one dialogue line at a time, and -
-in the overlap scenario - a line of tl-kun's own UI inside the same read.
+in the overlap scenario - a line of lintranslator's own UI inside the same read.
 
 Three phases over the identical script, so the comparison is exact:
 
@@ -20,16 +20,16 @@ Run:  .venv-gi/bin/python probe/detect_latency.py
 import sys
 from dataclasses import dataclass
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 from PIL import Image, ImageDraw  # noqa: E402
 
-from tlkun import pipeline as pipeline_mod  # noqa: E402
-from tlkun.capture import Frame  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.ocr import OcrLine, OcrResult  # noqa: E402
-from tlkun.pipeline import Pipeline  # noqa: E402
-from tlkun.selftext import looks_like_own_ui  # noqa: E402
+from lintranslator import pipeline as pipeline_mod  # noqa: E402
+from lintranslator.capture import Frame  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.ocr import OcrLine, OcrResult  # noqa: E402
+from lintranslator.pipeline import Pipeline  # noqa: E402
+from lintranslator.selftext import looks_like_own_ui  # noqa: E402
 
 # The panel's status line, changing every poll - the worst realistic intruder,
 # because each change makes the frame change and keeps OCR running.
@@ -114,7 +114,7 @@ class StubTranslator:
         self.last_was_cached = False
 
     def translate(self, text: str, force: bool = False):
-        from tlkun.translate import Translation
+        from lintranslator.translate import Translation
 
         self.seen.append(text)
         return Translation(target=f"[ja] {text}", source=text, backend="stub", elapsed=0.001)

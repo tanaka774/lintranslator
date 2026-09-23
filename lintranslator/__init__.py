@@ -1,4 +1,4 @@
-"""tl-kun: screen-region OCR + auto-translation overlay for games.
+"""lintranslator: screen-region OCR + auto-translation overlay for games.
 
 Phase 1 (headless pipeline):
     capture -> change detection -> OCR -> translate -> print

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from tlkun.geometry import (
+from lintranslator.geometry import (
     DEFAULT_PROMPT,
     MIN_SIZE,
     PROMPT_PRESETS,

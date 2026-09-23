@@ -1,4 +1,4 @@
-"""Where tl-kun keeps its state, and how it writes it.
+"""Where lintranslator keeps its state, and how it writes it.
 
 The config can hold an API key in plain text, so two things are checked here
 that are easy to get wrong and invisible when they are: the mode the file is
@@ -13,8 +13,8 @@ import stat
 
 import pytest
 
-from tlkun import paths
-from tlkun.config import Config
+from lintranslator import paths
+from lintranslator.config import Config
 
 
 # --------------------------------------------------------------------------- #
@@ -216,14 +216,132 @@ def test_a_legacy_config_is_read_in_place_when_it_is_all_there_is(legacy):
 
 
 # --------------------------------------------------------------------------- #
+# The rename from tl-kun: state under the old XDG directories
+# --------------------------------------------------------------------------- #
+def _write_old_xdg_config(paths_mod, **extra):
+    """A config where the previous release kept it: `~/.config/tl-kun`."""
+    raw = {
+        "translate": {"backend": "openrouter", "api_key": "sk-or-v1-old", **extra},
+        "cache_path": "",
+    }
+    paths_mod.LEGACY_XDG_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    paths_mod.LEGACY_XDG_CONFIG_PATH.write_text(json.dumps(raw))
+    return raw
+
+
+def test_a_config_from_before_the_rename_is_found_and_migrated():
+    """The whole point: renaming the app must not look like a first run.
+
+    Losing the config means losing the API key and every setting, and a user who
+    does not notice simply re-enters it - so this is checked rather than assumed.
+    """
+    old = _write_old_xdg_config(paths)
+    assert paths.config_search_path() == paths.LEGACY_XDG_CONFIG_PATH
+
+    migration = paths.migrate_legacy_config()
+    assert migration is not None
+    assert migration.old_path == paths.LEGACY_XDG_CONFIG_PATH
+    moved = json.loads(migration.new_path.read_text())
+    assert moved["translate"]["api_key"] == "sk-or-v1-old"
+    # Never deleted: if the copy is wrong, the user still has their settings.
+    assert json.loads(paths.LEGACY_XDG_CONFIG_PATH.read_text()) == old
+
+
+def test_the_old_xdg_config_wins_over_one_beside_the_source(legacy):
+    """Both layouts existed; the XDG one is what the last release wrote."""
+    _write_legacy_config(legacy)
+    _write_old_xdg_config(paths)
+
+    migration = paths.migrate_legacy_config()
+    assert migration.old_path == paths.LEGACY_XDG_CONFIG_PATH
+    moved = json.loads(migration.new_path.read_text())
+    assert moved["translate"]["api_key"] == "sk-or-v1-old"
+
+
+def test_an_existing_config_is_never_overwritten_by_the_old_one():
+    _write_old_xdg_config(paths)
+    paths.DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    paths.DEFAULT_CONFIG_PATH.write_text('{"translate": {"api_key": "current"}}')
+
+    assert paths.migrate_legacy_config() is None
+    kept = json.loads(paths.DEFAULT_CONFIG_PATH.read_text())
+    assert kept["translate"]["api_key"] == "current"
+
+
+def test_the_warning_does_not_call_the_old_xdg_dir_the_source_tree():
+    """The old location is `~/.config/tl-kun`, and saying otherwise misleads."""
+    _write_old_xdg_config(paths)
+    warning = paths.migration_warning(paths.migrate_legacy_config())
+    assert "old location" in warning
+    assert "source tree" not in warning
+    assert "API key" in warning
+
+
+def test_a_config_beside_the_source_still_says_source_tree(legacy):
+    """The original wording has to survive: that one really is in the checkout."""
+    _write_legacy_config(legacy)
+    warning = paths.migration_warning(paths.migrate_legacy_config())
+    assert "source tree" in warning
+
+
+def test_nothing_to_migrate_when_the_old_xdg_dir_is_empty():
+    assert not paths.LEGACY_XDG_CONFIG_PATH.exists()
+    assert paths.migrate_legacy_config() is None
+    assert paths.config_search_path() == paths.DEFAULT_CONFIG_PATH
+
+
+def test_a_config_that_cannot_be_copied_is_used_where_it_is(monkeypatch):
+    """A read-only or full `$HOME` must not turn into a failure to start.
+
+    Found the honest way: the first run of the renamed app in a sandbox that
+    permits writes only in the workspace raised `OSError: [Errno 30] Read-only
+    file system` out of `Config.load` and the CLI died on a traceback - for a
+    downgrade whose fallback was sitting right there.
+    """
+    _write_old_xdg_config(paths)
+
+    def refuse(path, text, mode=0o600):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(paths, "write_private", refuse)
+
+    migration = paths.migrate_legacy_config()
+    assert migration is not None
+    assert not migration.succeeded
+    assert "Read-only" in migration.error
+    # The message must not claim a move that did not happen.
+    warning = paths.migration_warning(migration)
+    assert "could not copy" in warning
+    assert "moved your config" not in warning
+
+    # And the settings are still there to be read.
+    assert paths.config_search_path() == paths.LEGACY_XDG_CONFIG_PATH
+
+
+def test_loading_still_works_when_the_copy_fails(monkeypatch):
+    """The same failure, through the path the app actually takes."""
+    _write_old_xdg_config(paths)
+
+    def refuse(path, text, mode=0o600):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(paths, "write_private", refuse)
+
+    cfg = Config.load()
+    assert cfg.translate.api_key == "sk-or-v1-old"
+    assert cfg.path == paths.LEGACY_XDG_CONFIG_PATH
+    assert any("could not copy" in w for w in cfg.warnings), cfg.warnings
+
+
+# --------------------------------------------------------------------------- #
 # Directories
 # --------------------------------------------------------------------------- #
 def test_the_socket_fallback_lives_with_the_rest_of_the_state(monkeypatch, tmp_path):
     monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
-    from tlkun.control import candidate_paths
+    from lintranslator.control import candidate_paths
 
     resolved = candidate_paths()
-    assert resolved[-1] == paths.CACHE_DIR / "tl-kun.sock"
+    assert resolved[-1] == paths.CACHE_DIR / "lintranslator.sock"
 
 
 def test_weights_are_not_re_converted_just_because_a_path_moved(legacy):
@@ -235,3 +353,35 @@ def test_weights_go_to_the_data_dir_once_the_new_one_exists(legacy):
     target = paths.DATA_DIR / paths.CT2_DIR_NAME
     target.mkdir(parents=True)
     assert paths.default_ct2_dir() == target
+
+
+def test_weights_from_before_the_rename_are_used_where_they_are():
+    """600 MB is not copied to rename a directory.
+
+    A copy would double the disk cost, and a move that fails part way would lose
+    the one artefact here that is expensive to rebuild.
+    """
+    old = paths.LEGACY_XDG_DATA_DIR / paths.CT2_DIR_NAME
+    old.mkdir(parents=True)
+    assert paths.default_ct2_dir() == old
+
+
+def test_the_new_data_dir_wins_once_weights_are_there_too():
+    old = paths.LEGACY_XDG_DATA_DIR / paths.CT2_DIR_NAME
+    old.mkdir(parents=True)
+    new = paths.DATA_DIR / paths.CT2_DIR_NAME
+    new.mkdir(parents=True)
+    assert paths.default_ct2_dir() == new
+
+
+def test_the_old_home_variable_still_moves_the_state(monkeypatch, tmp_path):
+    """`TLKUN_HOME` was the documented portable-install switch; keep it working."""
+    monkeypatch.delenv("LINTRANSLATOR_HOME", raising=False)
+    monkeypatch.setenv("TLKUN_HOME", str(tmp_path / "portable"))
+    assert paths._override() == tmp_path / "portable"
+
+
+def test_the_new_home_variable_wins_over_the_old(monkeypatch, tmp_path):
+    monkeypatch.setenv("LINTRANSLATOR_HOME", str(tmp_path / "new"))
+    monkeypatch.setenv("TLKUN_HOME", str(tmp_path / "old"))
+    assert paths._override() == tmp_path / "new"

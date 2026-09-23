@@ -11,7 +11,7 @@ import hashlib
 
 import pytest
 
-from tlkun.ocr import (
+from lintranslator.ocr import (
     LANG_NAME_RE,
     TESSDATA_SHA256,
     OcrError,
@@ -62,7 +62,7 @@ def test_a_bad_name_is_refused_before_any_download(monkeypatch, tmp_path):
     def explode(*_a, **_kw):  # pragma: no cover - it must not be reached
         raise AssertionError("urlopen should not be called")
 
-    monkeypatch.setattr("tlkun.ocr.urllib.request.urlopen", explode)
+    monkeypatch.setattr("lintranslator.ocr.urllib.request.urlopen", explode)
     with pytest.raises(OcrError):
         download_tessdata(["../evil"], tmp_path)
 
@@ -70,6 +70,42 @@ def test_a_bad_name_is_refused_before_any_download(monkeypatch, tmp_path):
 def test_find_tessdata_refuses_a_bad_name(tmp_path):
     with pytest.raises(OcrError):
         find_tessdata(["../evil"], str(tmp_path))
+
+
+def test_language_data_left_under_the_old_name_is_still_found(monkeypatch, tmp_path):
+    """The pre-rename XDG data dir is read, not ignored.
+
+    The weights already work this way (`paths.default_ct2_dir`), and the same
+    argument applies here: re-downloading the language data because the app was
+    renamed is wasted work, and the copy on disk is already checksum-verified.
+    """
+    from lintranslator import paths
+
+    legacy = tmp_path / "old-data" / "tessdata"
+    legacy.mkdir(parents=True)
+    (legacy / "eng.traineddata").write_bytes(b"x" * 2048)
+    monkeypatch.setattr(paths, "LEGACY_XDG_DATA_DIR", tmp_path / "old-data")
+    monkeypatch.setattr(
+        "lintranslator.ocr.urllib.request.urlopen",
+        lambda *a, **kw: pytest.fail("should not download what is already on disk"),
+    )
+
+    assert find_tessdata(["eng"]) == legacy
+
+
+def test_a_new_install_still_prefers_its_own_data_dir(monkeypatch, tmp_path):
+    """The legacy directory is a fallback, not a new home."""
+    from lintranslator import paths
+
+    legacy = tmp_path / "old-data" / "tessdata"
+    legacy.mkdir(parents=True)
+    (legacy / "eng.traineddata").write_bytes(b"old" * 512)
+    current = paths.DATA_DIR / "tessdata"
+    current.mkdir(parents=True)
+    (current / "eng.traineddata").write_bytes(b"new" * 512)
+    monkeypatch.setattr(paths, "LEGACY_XDG_DATA_DIR", tmp_path / "old-data")
+
+    assert find_tessdata(["eng"]) == current
 
 
 # --------------------------------------------------------------------------- #
@@ -98,7 +134,7 @@ def test_a_language_without_a_pinned_digest_is_not_downloaded(monkeypatch, tmp_p
         called = True
         return FakeResponse(b"x" * 4096)
 
-    monkeypatch.setattr("tlkun.ocr.urllib.request.urlopen", urlopen)
+    monkeypatch.setattr("lintranslator.ocr.urllib.request.urlopen", urlopen)
     with pytest.raises(OcrError) as exc:
         download_tessdata(["xyz_not_pinned"], tmp_path)
     assert not called
@@ -108,7 +144,7 @@ def test_a_language_without_a_pinned_digest_is_not_downloaded(monkeypatch, tmp_p
 
 def test_the_opt_in_allows_an_unpinned_language(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "tlkun.ocr.urllib.request.urlopen",
+        "lintranslator.ocr.urllib.request.urlopen",
         lambda *a, **kw: FakeResponse(b"y" * 4096),
     )
     dest = download_tessdata(["xyz_not_pinned"], tmp_path, allow_unverified=True)
@@ -117,7 +153,7 @@ def test_the_opt_in_allows_an_unpinned_language(monkeypatch, tmp_path):
 
 def test_a_payload_that_does_not_match_the_pinned_digest_is_refused(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "tlkun.ocr.urllib.request.urlopen",
+        "lintranslator.ocr.urllib.request.urlopen",
         lambda *a, **kw: FakeResponse(b"not the real eng model" * 200),
     )
     with pytest.raises(OcrError) as exc:
@@ -133,7 +169,7 @@ def test_a_payload_matching_the_pinned_digest_is_installed(monkeypatch, tmp_path
         TESSDATA_SHA256, "fakelang", hashlib.sha256(payload).hexdigest()
     )
     monkeypatch.setattr(
-        "tlkun.ocr.urllib.request.urlopen", lambda *a, **kw: FakeResponse(payload)
+        "lintranslator.ocr.urllib.request.urlopen", lambda *a, **kw: FakeResponse(payload)
     )
     dest = download_tessdata(["fakelang"], tmp_path)
     assert (dest / "fakelang.traineddata").read_bytes() == payload
@@ -141,7 +177,7 @@ def test_a_payload_matching_the_pinned_digest_is_installed(monkeypatch, tmp_path
 
 
 def test_the_download_url_is_pinned_to_a_revision():
-    from tlkun.ocr import TESSDATA_REVISION, TESSDATA_URL
+    from lintranslator.ocr import TESSDATA_REVISION, TESSDATA_URL
 
     assert "/main/" not in TESSDATA_URL
     assert TESSDATA_REVISION in TESSDATA_URL
@@ -150,7 +186,7 @@ def test_the_download_url_is_pinned_to_a_revision():
 def test_an_existing_file_is_not_downloaded_again(monkeypatch, tmp_path):
     (tmp_path / "eng.traineddata").write_bytes(b"already here")
     monkeypatch.setattr(
-        "tlkun.ocr.urllib.request.urlopen",
+        "lintranslator.ocr.urllib.request.urlopen",
         lambda *a, **kw: pytest.fail("should not re-download an existing file"),
     )
     download_tessdata(["eng"], tmp_path)
@@ -159,7 +195,7 @@ def test_an_existing_file_is_not_downloaded_again(monkeypatch, tmp_path):
 
 def test_a_truncated_download_is_refused(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "tlkun.ocr.urllib.request.urlopen", lambda *a, **kw: FakeResponse(b"tiny")
+        "lintranslator.ocr.urllib.request.urlopen", lambda *a, **kw: FakeResponse(b"tiny")
     )
     with pytest.raises(OcrError):
         download_tessdata(["eng"], tmp_path)

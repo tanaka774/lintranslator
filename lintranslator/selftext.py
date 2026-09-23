@@ -1,6 +1,6 @@
-"""Text that can only have come from tl-kun's own windows.
+"""Text that can only have come from lintranslator's own windows.
 
-The occlusion gate (`tlkun.occlusion`) keeps the pipeline from capturing while the
+The occlusion gate (`lintranslator.occlusion`) keeps the pipeline from capturing while the
 picker or the settings dialog is on screen. The panel cannot be gated - it is the
 output and stays visible while watching - so a panel dragged over the box is
 caught here instead, by recognising our own text in the OCR result.
@@ -46,7 +46,7 @@ SELF_PHRASES = (
     "add a kwin window rule",
     "the picker is on screen",
     "move the panel clear",
-    "tl-kun",
+    "lintranslator",
 )
 
 # Reads that are nothing but a control label. Compared against the whole
@@ -102,7 +102,7 @@ def _normalise(text: str) -> str:
 
 
 def looks_like_own_ui(text: str) -> bool:
-    """Whether `text` came from tl-kun's own window rather than the game."""
+    """Whether `text` came from lintranslator's own window rather than the game."""
     if not text or not text.strip():
         return False
     folded = _normalise(text)

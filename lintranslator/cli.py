@@ -1,18 +1,18 @@
-"""tl-kun command line interface.
+"""lintranslator command line interface.
 
-    tlkun check                  verify tesseract, tessdata, portal, backend
-    tlkun grab  -o shot.png      capture the configured region once
-    tlkun read                    OCR + print the region (no translation)
-    tlkun run                     full pipeline: capture -> OCR -> translate
-    tlkun region --x ... --w ...  update the stored region
-    tlkun gui --pick              pick the region visually
-    tlkun gui                     pick a region, then translate live
-    tlkun reread                  re-read the box now (bind this to a hotkey)
-    tlkun status                  what the running GUI is doing
-    tlkun shortcut                how to bind a global Re-read hotkey
-    tlkun convert                 build the int8 model (600 MB, ~5x faster)
-    tlkun models                  list OpenRouter models for your key
-    tlkun languages [filter]      list the language codes NLLB can translate
+    lintranslator check                  verify tesseract, tessdata, portal, backend
+    lintranslator grab  -o shot.png      capture the configured region once
+    lintranslator read                    OCR + print the region (no translation)
+    lintranslator run                     full pipeline: capture -> OCR -> translate
+    lintranslator region --x ... --w ...  update the stored region
+    lintranslator gui --pick              pick the region visually
+    lintranslator gui                     pick a region, then translate live
+    lintranslator reread                  re-read the box now (bind this to a hotkey)
+    lintranslator status                  what the running GUI is doing
+    lintranslator shortcut                how to bind a global Re-read hotkey
+    lintranslator convert                 build the int8 model (600 MB, ~5x faster)
+    lintranslator models                  list OpenRouter models for your key
+    lintranslator languages [filter]      list the language codes NLLB can translate
 """
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def cmd_check(args) -> int:
 
     cfg = _load(args)
     ok = True
-    print("tl-kun environment check")
+    print("lintranslator environment check")
     print("-" * 52)
 
     version = tesseract_version()
@@ -113,7 +113,7 @@ def cmd_check(args) -> int:
         else:
             ok = False
             print(f"  model: MISSING at {model_dir}")
-            print("  -> python -m tlkun convert")
+            print("  -> python -m lintranslator convert")
         try:
             import ctranslate2  # noqa: F401
 
@@ -126,9 +126,9 @@ def cmd_check(args) -> int:
         from .translate import resolve_api_key
 
         env_names = {
-            "openrouter": ("OPENROUTER_API_KEY", "TLKUN_API_KEY"),
-            "openai": ("OPENAI_API_KEY", "TLKUN_API_KEY"),
-            "chat": ("TLKUN_API_KEY",),
+            "openrouter": ("OPENROUTER_API_KEY", "LINTRANSLATOR_API_KEY"),
+            "openai": ("OPENAI_API_KEY", "LINTRANSLATOR_API_KEY"),
+            "chat": ("LINTRANSLATOR_API_KEY",),
         }[backend]
         print(
             f" ({language_name(cfg.translate.source_lang)}"
@@ -137,7 +137,7 @@ def cmd_check(args) -> int:
         if not cfg.translate.model:
             ok = False
             print("  model: MISSING (this backend requires a model id)")
-            print("  -> tlkun models --backend openrouter")
+            print("  -> lintranslator models --backend openrouter")
         else:
             print(f"  model: {cfg.translate.model}")
         base = cfg.translate.api_base or "(provider default)"
@@ -203,7 +203,7 @@ def cmd_check(args) -> int:
             continue
         ok = False
         print(f"  {role}: {code!r} is not a FLORES-200 code, so NLLB scores it as <unk>")
-        print("  -> run `python -m tlkun languages` for the codes it does know")
+        print("  -> run `python -m lintranslator languages` for the codes it does know")
     if backend == "deepl" and deepl_code(cfg.translate.target_lang) is None:
         ok = False
         print(
@@ -410,23 +410,23 @@ def cmd_shortcut(args) -> int:
     """Print the exact setup for a global Re-read hotkey.
 
     Wayland forbids reading global keys, so the shortcut belongs to the desktop,
-    not to the app: a KDE custom shortcut runs `tlkun reread`, which talks to the
+    not to the app: a KDE custom shortcut runs `lintranslator reread`, which talks to the
     running window over its control socket. Printing the absolute paths here saves
-    the user from guessing which interpreter has tl-kun installed.
+    the user from guessing which interpreter has lintranslator installed.
     """
     from .control import socket_path
 
-    command = Path(sys.executable).with_name("tlkun")
+    command = Path(sys.executable).with_name("lintranslator")
     if not command.exists():
         command = Path(sys.executable)  # python -m fallback below
-        invocation = f"{command} -m tlkun reread"
+        invocation = f"{command} -m lintranslator reread"
     else:
         invocation = f"{command} reread"
 
     print("Global hotkey for Re-read")
     print("-" * 60)
     print("Option A - let the app register it (no setup):")
-    print("  Launch tl-kun from the application menu, or as a systemd user unit,")
+    print("  Launch lintranslator from the application menu, or as a systemd user unit,")
     print("  and it asks the compositor for Ctrl+Alt+R itself. The compositor")
     print("  refuses callers with no application id, so a plain terminal launch")
     print("  cannot do this (the panel will say so when it happens).")
@@ -453,12 +453,12 @@ def cmd_models(args) -> int:
     if backend != "openrouter":
         print(
             f"`models` queries OpenRouter only (current backend is {backend!r}).\n"
-            "Use it with: tlkun models --backend openrouter",
+            "Use it with: lintranslator models --backend openrouter",
             file=sys.stderr,
         )
         return 2
 
-    key = resolve_api_key(cfg.translate, "OPENROUTER_API_KEY", "TLKUN_API_KEY")
+    key = resolve_api_key(cfg.translate, "OPENROUTER_API_KEY", "LINTRANSLATOR_API_KEY")
     if not key:
         print(
             "no OpenRouter key found.\n"
@@ -522,7 +522,13 @@ def cmd_languages(args) -> int:
 
 # --------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="tlkun", description="game dialogue OCR translator")
+    p = argparse.ArgumentParser(
+        prog="lintranslator",
+        description=(
+            "screen translator for Linux: watches a screen region, reads it with OCR "
+            "and translates it"
+        ),
+    )
     p.add_argument(
         "--config", help=f"config path (default: {paths.DEFAULT_CONFIG_PATH})"
     )

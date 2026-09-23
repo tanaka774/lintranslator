@@ -13,7 +13,7 @@ import re
 
 import pytest
 
-from tlkun import languages as L
+from lintranslator import languages as L
 
 FLORES_PATTERN = re.compile(r"^[a-z]{2,3}_[A-Z][a-z]{3}$")
 
@@ -229,8 +229,8 @@ def test_the_table_matches_the_real_tokenizer_when_it_is_available(monkeypatch):
 # The command line surface
 # --------------------------------------------------------------------------- #
 def test_the_languages_command_prints_the_codes_a_config_needs(capsys):
-    """`tlkun check` sends people here, so it has to name real codes."""
-    from tlkun.cli import main
+    """`lintranslator check` sends people here, so it has to name real codes."""
+    from lintranslator.cli import main
 
     assert main(["languages", "korean"]) == 0
     printed = capsys.readouterr().out

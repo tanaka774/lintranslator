@@ -7,12 +7,12 @@ rejected to avoid a 200 MB dependency for two windows.
 
 | Piece | File | State |
 |---|---|---|
-| Region picker | `tlkun/picker.py` | verified by offscreen render |
-| Translation panel | `tlkun/panel.py` | verified by offscreen render |
-| App entry point | `tlkun/gui.py` | both modes smoke-tested |
-| Picker geometry | `tlkun/selection.py` | 15 unit tests |
+| Region picker | `lintranslator/picker.py` | verified by offscreen render |
+| Translation panel | `lintranslator/panel.py` | verified by offscreen render |
+| App entry point | `lintranslator/gui.py` | both modes smoke-tested |
+| Picker geometry | `lintranslator/selection.py` | 15 unit tests |
 | Pipeline loop | `tests/test_pipeline.py` | 4 end-to-end tests, capture+OCR stubbed |
-| CLI | `tlkun/cli.py` (`gui` subcommand) | verified |
+| CLI | `lintranslator/cli.py` (`gui` subcommand) | verified |
 
 Rendered output (the only practical way to verify UI on Wayland, since a client
 cannot screenshot its own window from outside):
@@ -116,15 +116,15 @@ it was given; the draw code now reads `area.get_width()` directly.
   into is unit-tested (15 tests in `tests/test_selection.py`).
 * The `GtkGizmo ... reported min height -2` warning seen during picker rendering
   is GTK-internal: it reproduces in a minimal `Gtk.ScrolledWindow` app with no
-  tl-kun code involved.
+  LinTranslator code involved.
 
 ## Reproduce
 
 ```bash
 .venv-gi/bin/python -m pytest tests/ -q                       # 41 tests
-.venv-gi/bin/python -m tlkun gui --demo --no-start --screenshot /tmp/panel.png
-.venv-gi/bin/python -m tlkun gui --pick --from-file probe/shot.webp --screenshot /tmp/picker.png
-.venv-gi/bin/python -m tlkun gui --pick --no-capture          # opens, no screen grab
+.venv-gi/bin/python -m lintranslator gui --demo --no-start --screenshot /tmp/panel.png
+.venv-gi/bin/python -m lintranslator gui --pick --from-file probe/shot.webp --screenshot /tmp/picker.png
+.venv-gi/bin/python -m lintranslator gui --pick --no-capture          # opens, no screen grab
 ```
 
 ## Follow-up found while finishing
@@ -135,6 +135,6 @@ this stack:
 
     RuntimeError: Tensor on device cpu is not on the expected device meta!
 
-That is a torch 2.14 meta-device regression, not a tl-kun bug, so the default
+That is a torch 2.14 meta-device regression, not a LinTranslator bug, so the default
 loader is kept and both weight formats stay on disk. Phase 3's CTranslate2 int8
 conversion is the real fix (~600 MB, several times faster inference).

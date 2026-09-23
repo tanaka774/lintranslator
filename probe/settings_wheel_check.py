@@ -27,18 +27,18 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/chiba/workspace/tl-kun")
+sys.path.insert(0, "/home/chiba/workspace/lintranslator")
 
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from tlkun import theme  # noqa: E402
-from tlkun.config import Config  # noqa: E402
-from tlkun.settings import SettingsDialog  # noqa: E402
+from lintranslator import theme  # noqa: E402
+from lintranslator.config import Config  # noqa: E402
+from lintranslator.settings import SettingsDialog  # noqa: E402
 
-CONFIG = Path("/home/chiba/workspace/tl-kun/config.json")
+CONFIG = Path("/home/chiba/workspace/lintranslator/config.json")
 failures: list[str] = []
 
 SLIDERS = ("font_scale", "width_scale", "target_lines", "source_lines")
@@ -69,7 +69,7 @@ def scroll_controllers(widget):
 
 def main() -> int:
     cfg = Config.load(str(CONFIG))
-    cfg.path = Path("/tmp/tlkun_wheel_probe.json")
+    cfg.path = Path("/tmp/lintranslator_wheel_probe.json")
     theme.install_for(cfg)
     dlg = SettingsDialog(None, cfg)
     dlg.set_default_size(780, 1080)
