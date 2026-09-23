@@ -47,9 +47,12 @@ class Region:
 class CaptureConfig:
     backend: str = "portal-screenshot"  # "portal-screenshot" | "portal-screencast"
     fps: float = 2.0
-    # dialogue box in the reference 1501x852 screenshot, as fractions
+    # A starting point, not a measurement: a wide band across the lower part of
+    # the screen, which is where dialogue boxes usually sit. The picker replaces
+    # it the first time one is chosen; this used to be the dialogue box of the
+    # reference screenshot, which made the default one game on one monitor.
     region: Region = field(
-        default_factory=lambda: Region(0.185, 0.793, 0.775, 0.105, "fraction")
+        default_factory=lambda: Region(0.10, 0.78, 0.80, 0.12, "fraction")
     )
 
 

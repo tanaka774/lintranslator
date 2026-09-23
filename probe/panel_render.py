@@ -15,7 +15,9 @@ window has no render node at all), in a timer slot of its own - changing a
 label and snapshotting it in the *same* slot gives "not paintable", because the
 cached node is invalidated and the compositor has not drawn the replacement.
 """
+import os
 import sys
+from io import BytesIO
 from pathlib import Path
 
 # Run from anywhere: the package is imported from this checkout, not from
@@ -25,13 +27,14 @@ sys.path.insert(0, str(APP_DIR))
 
 import cairo  # noqa: E402
 import gi  # noqa: E402
+from PIL import Image  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from lintranslator import panel as panel_mod  # noqa: E402
 from lintranslator import picker as picker_mod  # noqa: E402
-from lintranslator.config import Config  # noqa: E402
+from lintranslator.config import Config, Region  # noqa: E402
 from lintranslator.portal import ScreenshotPortal  # noqa: E402
 
 OUT = APP_DIR / "data"
@@ -62,11 +65,29 @@ def main() -> int:
     cfg.path = CONFIG
     cfg.translate.backend = "none"  # no network calls in a render probe
 
-    print("grabbing the screen for the picker to display...", flush=True)
-    portal = ScreenshotPortal()
-    png, size, elapsed = portal.grab()
-    portal.close()
-    print(f"  {size} in {elapsed * 1000:.0f} ms", flush=True)
+    # `LINTRANSLATOR_RENDER_SOURCE=<png>` renders over a supplied frame instead of
+    # grabbing the screen. The default (the live screen) is fine for looking at
+    # layout while working, but it captures whatever else is open - terminals,
+    # browsers, someone's actual desktop - so it must never be the frame that ends
+    # up in the README.
+    supplied = os.environ.get("LINTRANSLATOR_RENDER_SOURCE")
+    if supplied:
+        raw = Path(supplied).read_bytes()
+        with Image.open(BytesIO(raw)) as im:
+            size = im.size
+        png, elapsed = raw, 0.0
+        # The synthetic frame draws its dialogue box at the app's default region
+        # (see `make_render_frame.py`), so point the picker at it: a render that
+        # is meant to be published should show the box on the text, not wherever
+        # the developer's own config happened to leave it.
+        cfg.capture.region = Region(0.10, 0.78, 0.80, 0.12, "fraction")
+        print(f"rendering over {supplied} {size}", flush=True)
+    else:
+        print("grabbing the screen for the picker to display...", flush=True)
+        portal = ScreenshotPortal()
+        png, size, elapsed = portal.grab()
+        portal.close()
+        print(f"  {size} in {elapsed * 1000:.0f} ms", flush=True)
 
     app = Gtk.Application(
         application_id="dev.lintranslator.render", flags=Gio.ApplicationFlags.NON_UNIQUE

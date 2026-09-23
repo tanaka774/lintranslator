@@ -10,6 +10,13 @@ layers are generic.
 Current state: **Phase 3 complete** (pipeline + GUI + int8 backend + glossary).
 Verified end-to-end against the reference screenshot and live screen content.
 
+![The region picker: a selection box with drag handles sits over a two-line dialogue box, and the sidebar shows the OCR preview, the recognized text, and the translation controls](docs/picker.png)
+
+*The picker, with the box on the dialogue text and both previews on. The scene
+behind it is drawn by `probe/make_render_frame.py`, not captured - the GUI renders
+over whatever frame it is given, and a real screenshot would carry a game's
+artwork and the desktop it was taken on.*
+
 ### How this differs from LunaTranslator
 
 The name is a nod to [LunaTranslator](https://github.com/HIllya51/LunaTranslator),
@@ -277,7 +284,7 @@ tessdata dir     : /home/you/.local/share/lintranslator/tessdata
   eng           : ok
 portal ScreenCast: v5
 portal Screenshot: v2
-region           : fraction (0.185, 0.793, 0.775, 0.105)
+region           : fraction (0.10, 0.78, 0.80, 0.12)
 translate backend: ct2 (eng_Latn->jpn_Jpan)
   model: /home/you/.local/share/lintranslator/ct2/nllb-600m-int8 (629 MB)
   ctranslate2: installed
