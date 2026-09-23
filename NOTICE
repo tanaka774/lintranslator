@@ -77,8 +77,24 @@ ctranslate2     MIT              (extra: ct2)
 transformers    Apache-2.0       (extras: ct2, local)
 sentencepiece   Apache-2.0       (extras: ct2, local)
 torch           BSD-3-Clause     (extra: local)
-sacremoses      MIT              (extra: local)
-rapidocr-onnxruntime  Apache-2.0  (extra: rapidocr)
+sacremoses      MIT              (extra: local - transformers pulls it in for the
+                                 Marian tokenizer, which opus-mt models use)
+numpy           BSD-3-Clause     (extras: calibrate, test)
+python-xlib     LGPL-2.1-or-later (extra: x11)
+
+
+Linked GUI libraries (from the distribution, not from PyPI)
+------------------------------------------------------------
+
+PyGObject       LGPL-2.1-or-later  the `gi` bindings the GUI is written in
+GTK             LGPL-2.1-or-later  linked through PyGObject
+pycairo         LGPL-2.1-only      (MPL-1.1 alternative) imported by the picker
+                                    to draw the selection rectangle
+
+These are imported, not vendored: they come from the distro because they bind
+system libraries. LGPL in this position means the app may be MIT, but a
+distributor shipping a modified copy of *them* has obligations the app's own
+licence does not cover.
 
 
 External programs

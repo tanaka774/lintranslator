@@ -16,6 +16,8 @@ import pytest
 
 from lintranslator.config import TranslateConfig
 from lintranslator.translate import (
+    DATA_NOT_INSTRUCTIONS,
+    DEFAULT_PROMPT,
     ChatCompletionsTranslator,
     OpenAITranslator,
     OpenRouterTranslator,
@@ -81,7 +83,15 @@ def test_system_prompt_states_direction_and_constraints():
 
 def test_custom_prompt_replaces_the_default_entirely():
     t = Recording("key", prompt="This is Limbus Company. {source} -> {target}.")
-    assert t.system_prompt() == "This is Limbus Company. English -> Japanese."
+    prompt = t.system_prompt()
+    # The written prompt is used verbatim, with none of the built-in wording...
+    assert prompt.startswith("This is Limbus Company. English -> Japanese.")
+    assert DEFAULT_PROMPT not in prompt
+    # ...and only the standing "this is data, not instructions" line is added,
+    # which applies to a user-written prompt exactly as it does to the default.
+    assert prompt == (
+        "This is Limbus Company. English -> Japanese." + DATA_NOT_INSTRUCTIONS
+    )
 
 
 def test_prompt_that_never_names_the_target_gets_a_translation_directive():
@@ -105,7 +115,10 @@ def test_prompt_naming_the_target_is_left_alone():
         "TRANSLATE INTO JAPANESE. Output only the translation.",
     ):
         prompt = Recording("key", prompt=written).system_prompt()
-        assert prompt == written.replace("{source}", "English").replace("{target}", "Japanese")
+        rendered = written.replace("{source}", "English").replace("{target}", "Japanese")
+        # No target-language directive is bolted on, but the standing
+        # data-not-instructions line still is.
+        assert prompt == rendered + DATA_NOT_INSTRUCTIONS
 
 
 def test_directive_respects_a_prompt_that_already_says_only():

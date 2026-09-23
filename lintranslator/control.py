@@ -31,6 +31,9 @@ SOCKET_NAME = "lintranslator.sock"
 # Long enough for a compositor to have started the GUI, short enough that a
 # mistyped command does not appear to hang.
 CLIENT_TIMEOUT = 5.0
+# A reply is a status line. Anything past this is not one, and the client must
+# not be willing to buffer it.
+MAX_REPLY_BYTES = 64 * 1024
 
 Command = Callable[[str], str]
 
@@ -102,6 +105,13 @@ def send(command: str, timeout: float = CLIENT_TIMEOUT) -> str:
                 if not chunk:
                     break
                 data += chunk
+                # The protocol is one line in, one line out. A reply that keeps
+                # arriving is a broken or hostile peer at the other end of the
+                # socket, not something worth buffering without a bound.
+                if len(data) > MAX_REPLY_BYTES:
+                    raise ConnectionError(
+                        "the lintranslator GUI sent an oversized reply; ignoring it"
+                    )
         except TimeoutError as exc:
             raise ConnectionError(
                 f"the lintranslator GUI did not answer within {timeout:.1f}s "

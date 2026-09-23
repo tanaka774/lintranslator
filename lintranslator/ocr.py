@@ -39,6 +39,10 @@ TESSDATA_URL = (
     f"{TESSDATA_REVISION}/{{lang}}.traineddata"
 )
 
+# The largest file in tessdata_fast (chi_sim) is about 20 MB. This is a ceiling
+# on what the app is willing to hold in memory for one file, not a real size.
+MAX_TESSDATA_BYTES = 64 * 1024 * 1024
+
 # Languages this app will fetch by itself. A language that is not listed is not
 # refused forever - it is refused *silently*, which is the point: install it from
 # the distro, or opt in with `ocr.allow_unverified_tessdata`.
@@ -271,6 +275,15 @@ def parse_langs(langs: str) -> list[str]:
     return names
 
 
+def _file_digest(path: Path) -> str:
+    """SHA-256 of a file, read in blocks so a model file is never held twice."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def download_tessdata(
     langs: list[str],
     dest: Path | None = None,
@@ -301,9 +314,23 @@ def download_tessdata(
                 "(e.g. eng, chi_sim)"
             )
         target = dest / f"{lang}.traineddata"
-        if target.exists() and target.stat().st_size > 0:
-            continue
         expected = TESSDATA_SHA256.get(lang)
+        if target.exists() and target.stat().st_size > 0:
+            # An existing file is not evidence that it is the file we pinned. If
+            # it were trusted forever, a download truncated by a full disk - or
+            # one written before this check existed - would only ever surface
+            # later as tesseract failing on a binary it cannot parse, with
+            # nothing pointing back here.
+            if expected is None:
+                continue
+            try:
+                already_pinned = _file_digest(target) == expected
+            except OSError:
+                already_pinned = False
+            if already_pinned:
+                continue
+            # Fall through and fetch it again: a wrong file is replaced, a right
+            # one is never touched.
         if expected is None and not allow_unverified:
             raise OcrError(
                 f"no pinned checksum for {lang}.traineddata, so it will not be "
@@ -322,12 +349,17 @@ def download_tessdata(
                     length = resp.headers.get("Content-Length")
                     size = f" ({int(length) / 1e6:.1f} MB)" if length else ""
                     on_progress(f"downloading {lang}.traineddata{size} -> {dest}")
-                payload = resp.read()
+                payload = resp.read(MAX_TESSDATA_BYTES + 1)
         except (urllib.error.URLError, TimeoutError) as exc:
             raise OcrError(
                 f"could not download {lang}.traineddata from {url}: {exc}\n"
                 f"Download it manually into {dest}/, or install it system-wide."
             ) from exc
+        if len(payload) > MAX_TESSDATA_BYTES:
+            raise OcrError(
+                f"{lang}.traineddata is larger than "
+                f"{MAX_TESSDATA_BYTES // (1024 * 1024)} MB; refusing to install it"
+            )
         if len(payload) < 1024:
             raise OcrError(f"downloaded {lang}.traineddata looks truncated")
         digest = hashlib.sha256(payload).hexdigest()

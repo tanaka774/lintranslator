@@ -1,12 +1,17 @@
 [project]
 name = "lintranslator"
-version = "0.1.0"
+# Single-sourced from `lintranslator.__version__` below: two hand-kept copies of
+# the same number drift, and the one in the built metadata is the one users see.
+dynamic = ["version"]
 description = "Screen translator for Linux: watches a screen region, reads it with OCR and translates it (Wayland/KDE first)"
 readme = "README.md"
 # The app is MIT. The models it downloads are not: NLLB is CC-BY-NC-4.0
 # (non-commercial). See NOTICE.
 license = "MIT"
-license-files = ["LICENSE"]
+# NOTICE has to travel with the package. `license-files` replaces setuptools'
+# legacy NOTICE/AUTHORS globs, so naming only LICENSE dropped it - and NOTICE is
+# the only place the default model's non-commercial licence is disclosed.
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "tanaka" }]
 keywords = [
     "translation",
@@ -27,19 +32,27 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Games/Entertainment",
     "Topic :: Text Processing :: Linguistic",
 ]
-# Tested on 3.12 (the floor: 275 tests plus 4 GTK modules skipped, since
-# PyGObject is a system package) and on 3.14, which is what the development venv
-# runs. It used to say `<3.14`, which made pip refuse to install on the very
-# interpreter the suite is green on.
+# Tested on 3.12 (the floor) and on 3.14, which is what the development venv
+# runs; CI covers all three. It used to say `<3.14`, which made pip refuse to
+# install on the very interpreter the suite is green on.
 requires-python = ">=3.12,<3.15"
 dependencies = [
     "pillow>=10.0",
     "jeepney>=0.9",
     "pytesseract>=0.3.13",
 ]
+
+# Where to file things. Without this, an index page shows the version and the
+# summary and no way at all to reach the source.
+[project.urls]
+Homepage = "https://github.com/tanaka774/lintranslator"
+Repository = "https://github.com/tanaka774/lintranslator"
+Issues = "https://github.com/tanaka774/lintranslator/issues"
+Changelog = "https://github.com/tanaka774/lintranslator/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # Recommended local backend: int8 NLLB via CTranslate2. The tokenizer still
@@ -57,10 +70,11 @@ local = [
     "sentencepiece>=0.2",
     "sacremoses>=0.1",
 ]
-# Alternate OCR engine (PP-OCR). Slower here, kept for non-Latin sources.
-rapidocr = [
-    "rapidocr-onnxruntime>=1.4",
-]
+# There was a `rapidocr` extra here. It advertised PP-OCR as a second OCR engine,
+# but no engine class was ever written: `ocr.py` hardcodes tesseract and the
+# config's `ocr.engine` value went nowhere. An extra that installs a package the
+# app never imports is worse than no extra, so it is gone until the engine is
+# real - see the Roadmap.
 # Region auto-detection (`lintranslator.calibrate`). The GUI deliberately has no
 # auto-detect button and the pipeline never calls it, so numpy is not needed to
 # run the app - only to use the helper, or to run the test suite.
@@ -90,3 +104,13 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["lintranslator"]
+
+# The `.desktop` entry and its launcher are package data, not repo furniture:
+# `lintranslator install-desktop` copies them out of the installed package, which
+# is the only way a wheel install can get them.
+[tool.setuptools.package-data]
+lintranslator = ["data/*"]
+
+# The version lives in `lintranslator/__init__.py` and nowhere else.
+[tool.setuptools.dynamic]
+version = { attr = "lintranslator.__version__" }

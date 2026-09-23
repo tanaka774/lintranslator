@@ -181,7 +181,7 @@ def cmd_check(args) -> int:
                 if cfg.translate.api_key
                 else next((n for n in env_names if os.environ.get(n)), "unknown")
             )
-            print(f"  api key: set via {source} ({key[:6]}…{key[-4:]})")
+            print(f"  api key: set via {source} ({len(key)} chars)")
         elif backend == "chat":
             # A local llama.cpp / Ollama / vLLM server usually wants no key.
             print("  api key: none (fine for a local server that ignores auth)")
@@ -222,6 +222,27 @@ def cmd_check(args) -> int:
             f"  target: DeepL cannot translate into {cfg.translate.target_lang!r}"
             " -> pick another language, or another backend"
         )
+
+    # The GUI is the app's front door, and PyGObject is the one dependency pip
+    # cannot install: it binds system libraries. Without this row `check` could
+    # say "ready" and `gui` then died with a bare ModuleNotFoundError.
+    try:
+        import gi  # noqa: F401
+
+        print("PyGObject (GUI)  : installed")
+    except ImportError:
+        ok = False
+        print("PyGObject (GUI)  : MISSING - the GUI cannot start (the CLI still can)")
+        print("  Arch/CachyOS : sudo pacman -S python-gobject python-cairo")
+        print(
+            "  Debian/Ubuntu: sudo apt install python3-gi python3-gi-cairo "
+            "gir1.2-gtk-4.0"
+        )
+
+    # Unknown keys and an unreadable file are collected while loading, and this
+    # is the one command whose job is to say what is wrong with the setup.
+    for warning in cfg.warnings:
+        print(f"config warning   : {warning}")
 
     print("-" * 52)
     print("RESULT:", "ready" if ok else "problems found (see above)")
@@ -279,6 +300,23 @@ def cmd_gui(args) -> int:
     a second one for the panel, which meant quitting the first let the second
     launch - so a fresh panel appeared right after pressing Quit.
     """
+    # `gui.py` imports PyGObject inside `run()` so the CLI stays importable
+    # without it. That import is the one thing pip cannot supply, and letting it
+    # escape as a traceback tells a new user nothing; name the packages instead.
+    try:
+        import gi  # noqa: F401
+    except ImportError:
+        print(
+            "the GUI needs PyGObject (and pycairo), which come from your distro "
+            "rather than from pip:\n"
+            "  Arch/CachyOS : sudo pacman -S python-gobject python-cairo\n"
+            "  Debian/Ubuntu: sudo apt install python3-gi python3-gi-cairo "
+            "gir1.2-gtk-4.0\n"
+            "The terminal subcommands (check, grab, read, run) work without it.",
+            file=sys.stderr,
+        )
+        return 1
+
     from .gui import MODE_PANEL, MODE_PICK, run_gui
 
     cfg = _load(args)
@@ -643,6 +681,49 @@ def cmd_languages(args) -> int:
     return 0
 
 
+def cmd_install_desktop(args) -> int:
+    """Put the menu entry and its launcher where the desktop will find them.
+
+    This is the one piece of setup the app cannot do for itself at run time: the
+    compositor grants the global hotkey only to callers that have an *application
+    id*, and an application id comes from being started by a `.desktop` file. A
+    source checkout could copy the two files by hand - they ship inside the
+    package as data now - but an installed wheel had no way to reach them at all.
+    """
+    from importlib.resources import files
+
+    data = files("lintranslator").joinpath("data")
+    desktop_text = data.joinpath("lintranslator.desktop").read_text(encoding="utf-8")
+    launcher_text = data.joinpath("lintranslator-gui").read_text(encoding="utf-8")
+
+    data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+    bin_home = Path(os.environ.get("XDG_BIN_HOME") or Path.home() / ".local/bin")
+    desktop_path = data_home / "applications" / "lintranslator.desktop"
+    launcher_path = bin_home / "lintranslator-gui"
+
+    for directory in (desktop_path.parent, launcher_path.parent):
+        directory.mkdir(parents=True, exist_ok=True)
+    desktop_path.write_text(desktop_text, encoding="utf-8")
+    launcher_path.write_text(launcher_text, encoding="utf-8")
+    # The desktop entry runs this by name, so it has to be executable.
+    launcher_path.chmod(0o755)
+
+    print(f"launcher  : {launcher_path}")
+    print(f"menu entry: {desktop_path}")
+    if str(bin_home) not in os.environ.get("PATH", "").split(os.pathsep):
+        print(
+            f"note: {bin_home} is not on PATH, so the menu entry cannot find "
+            "lintranslator-gui;\n"
+            "      add it to PATH (most desktops do this already) and log back in."
+        )
+    print(
+        "\nStart LinTranslator from the application menu rather than a terminal: "
+        "that is what\nlets it register the global Re-read hotkey with the "
+        "compositor. Everything else\nworks from any launch."
+    )
+    return 0
+
+
 # --------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -812,6 +893,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sp.add_argument("filter", nargs="?", help="only names or codes containing this")
     sp.set_defaults(func=cmd_languages)
+
+    sp = sub.add_parser(
+        "install-desktop",
+        help="install the menu entry and launcher (what the global hotkey needs)",
+    )
+    sp.set_defaults(func=cmd_install_desktop)
     return p
 
 

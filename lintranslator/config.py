@@ -102,6 +102,10 @@ class TranslateConfig:
     allow_insecure_http: bool = False
     temperature: float = 0.0
     max_tokens: int = 1024
+    # Seconds to wait for one request to a hosted backend. This was a constant
+    # 20 s, which reported a local server still loading its model as
+    # "unreachable"; a slow endpoint on the LAN needs it raised.
+    timeout: float = 20.0
     # Free-form instruction prepended to every remote translation request. This
     # is where you tell the model what game it is translating, which is the single
     # biggest lever on quality. `{source}` and `{target}` are substituted with the
@@ -228,16 +232,36 @@ class Config:
             cfg = cls()
             cfg.path = p
         else:
-            raw = json.loads(p.read_text())
-            cfg = cls.from_dict(raw)
+            cfg = cls()
             cfg.path = p
-            # Reporting unknown keys prevents a silently ignored setting: a typo
-            # or a renamed field would otherwise look as if it had been applied.
-            unknown = _unknown_keys(raw)
-            if unknown:
+            try:
+                raw = json.loads(p.read_text())
+                if not isinstance(raw, dict):
+                    raise ValueError(
+                        f"the top level is {type(raw).__name__}, not a JSON object"
+                    )
+                cfg = cls.from_dict(raw)
+                cfg.path = p
+            except (OSError, ValueError, TypeError) as exc:
+                # A config the app cannot parse is not a reason to refuse to
+                # start: every setting has a working default, and the alternative
+                # is a traceback out of `check` or `gui` that says nothing about
+                # which key is wrong. Start on the defaults, and say so.
+                cfg = cls()
+                cfg.path = p
                 cfg.warnings.append(
-                    "ignoring unknown config key(s): " + ", ".join(sorted(unknown))
+                    f"could not read {p} ({type(exc).__name__}: {exc}); using "
+                    "defaults - fix or delete the file to clear this"
                 )
+            else:
+                # Reporting unknown keys prevents a silently ignored setting: a
+                # typo or a renamed field would otherwise look as if it had been
+                # applied.
+                unknown = _unknown_keys(raw)
+                if unknown:
+                    cfg.warnings.append(
+                        "ignoring unknown config key(s): " + ", ".join(sorted(unknown))
+                    )
 
         # A config written before the mode was set at creation is 0644 and holds
         # a key. Tightening on read is what reaches those files; the next save
@@ -255,7 +279,16 @@ class Config:
                 continue
             value = raw[section]
             current = getattr(cfg, section)
-            if hasattr(current, "__dataclass_fields__") and isinstance(value, dict):
+            if hasattr(current, "__dataclass_fields__"):
+                if not isinstance(value, dict):
+                    # `{"capture": "off"}` used to be assigned as-is, so the
+                    # failure surfaced much later as an AttributeError from
+                    # whichever attribute was read first.
+                    cfg.warnings.append(
+                        f"ignoring {section}: expected a JSON object, got "
+                        f"{type(value).__name__}"
+                    )
+                    continue
                 setattr(cfg, section, _build(current, value))
             else:
                 setattr(cfg, section, value)
@@ -293,6 +326,28 @@ def _unknown_keys(raw: dict[str, Any], cls: type = Config) -> set[str]:
     return unknown
 
 
+def _region_from(values: dict[str, Any]) -> Region:
+    """A `Region` from a config dict, refusing anything that is not a number.
+
+    `Region(**values)` accepts a string for `x` quite happily and only fails much
+    later, inside `to_pixels`, as `AttributeError: 'str' object has no attribute
+    'to_pixels'` on the panel's status card. Refusing here is what turns that
+    into "your config is wrong, and here is which key".
+    """
+    unknown = set(values) - {f.name for f in fields(Region)}
+    if unknown:
+        raise ValueError(f"unknown region key(s): {', '.join(sorted(unknown))}")
+    for key in ("x", "y", "w", "h"):
+        if key in values and (
+            isinstance(values[key], bool) or not isinstance(values[key], (int, float))
+        ):
+            raise ValueError(f"region.{key} must be a number, got {values[key]!r}")
+    mode = values.get("mode", "pixels")
+    if mode not in ("pixels", "fraction"):
+        raise ValueError(f"region.mode must be 'pixels' or 'fraction', got {mode!r}")
+    return Region(**values)
+
+
 def _build(obj: Any, values: dict[str, Any]) -> Any:
     """Rebuild a nested dataclass from a dict, honouring nested regions."""
     kwargs: dict[str, Any] = {}
@@ -301,7 +356,7 @@ def _build(obj: Any, values: dict[str, Any]) -> Any:
             continue
         v = values[f.name]
         if f.name == "region" and isinstance(v, dict):
-            kwargs[f.name] = Region(**v)
+            kwargs[f.name] = _region_from(v)
         else:
             kwargs[f.name] = v
     return type(obj)(**kwargs)

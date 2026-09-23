@@ -15,9 +15,14 @@ ScreenCast flow (optional, for a persistent 60fps stream):
 from __future__ import annotations
 
 import os
+import tempfile
 import time
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+
+from . import paths
 
 PORTAL_BUS = "org.freedesktop.portal.Desktop"
 PORTAL_PATH = "/org/freedesktop/portal/desktop"
@@ -49,6 +54,94 @@ def unwrap_dict(raw: dict | None) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# The file behind a Screenshot response
+# --------------------------------------------------------------------------- #
+# A PNG of any screen is a few MB; this is a ceiling on what the app is willing
+# to hold in memory for one, not a realistic size.
+MAX_SCREENSHOT_BYTES = 64 * 1024 * 1024
+
+
+def screenshot_dirs() -> tuple[Path, ...]:
+    """Directories a screenshot portal may legitimately have written into.
+
+    These are what the app is willing to *delete* from. The portal names a file
+    and the app removes it afterwards, which is what stops `~/Pictures` filling
+    up with one PNG per poll - but the name comes over D-Bus, and a peer that
+    owns `org.freedesktop.portal.Desktop` (a name that is free when no portal is
+    running) could otherwise name `~/.ssh/id_rsa` and have the app delete it.
+    """
+    candidates = []
+    pictures = os.environ.get("XDG_PICTURES_DIR")
+    candidates.append(Path(pictures) if pictures else Path.home() / "Pictures")
+    for var in ("XDG_RUNTIME_DIR", "XDG_CACHE_HOME"):
+        value = os.environ.get(var)
+        if value:
+            candidates.append(Path(value))
+    candidates.append(paths.CACHE_DIR)
+    candidates.append(Path(tempfile.gettempdir()))
+    return tuple(candidates)
+
+
+def screenshot_path(uri: str) -> Path:
+    """The local path behind a portal `uri`, or a refusal.
+
+    Only `file://` is accepted: a `http://` URI here would have the app fetch a
+    URL of the peer's choosing, and an empty scheme would have it resolve a
+    relative path against the working directory.
+    """
+    parsed = urllib.parse.urlsplit(uri)
+    if parsed.scheme != "file":
+        raise PortalError(
+            f"the portal returned {uri!r}, which is not a local file:// URI; "
+            "only local screenshots are supported"
+        )
+    if parsed.netloc not in ("", "localhost"):
+        raise PortalError(f"refusing a screenshot from another host ({uri!r})")
+    return Path(urllib.request.url2pathname(parsed.path))
+
+
+def read_screenshot(path: Path, limit: int = MAX_SCREENSHOT_BYTES) -> bytes:
+    """Read a portal screenshot, bounded, with the failures named."""
+    try:
+        if not path.is_file():
+            raise PortalError(f"the portal named {path}, which is not a file")
+        with path.open("rb") as handle:
+            data = handle.read(limit + 1)
+    except OSError as exc:
+        raise PortalError(f"cannot read portal screenshot {path}: {exc}") from exc
+    if len(data) > limit:
+        raise PortalError(
+            f"the portal's screenshot at {path} is larger than "
+            f"{limit // (1024 * 1024)} MB; refusing to read it"
+        )
+    return data
+
+
+def remove_screenshot(path: Path) -> bool:
+    """Delete a portal screenshot, but only where a portal may have put one.
+
+    Returns whether anything was removed. The resolved path is what gets tested,
+    so a symlink pointing out of the screenshots directory is never followed into
+    a delete, and never removed either - leaving it is the safe mistake.
+    """
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    for directory in screenshot_dirs():
+        try:
+            resolved.relative_to(directory.resolve())
+        except (OSError, ValueError):
+            continue
+        try:
+            resolved.unlink()
+        except OSError:
+            return False
+        return True
+    return False
+
+
+# --------------------------------------------------------------------------- #
 # Bus
 # --------------------------------------------------------------------------- #
 class PortalBus:
@@ -58,7 +151,19 @@ class PortalBus:
         from jeepney import DBusAddress
         from jeepney.io.blocking import open_dbus_connection
 
-        self.conn = open_dbus_connection(bus="SESSION")
+        try:
+            self.conn = open_dbus_connection(bus="SESSION")
+        except KeyError as exc:
+            # jeepney reads DBUS_SESSION_BUS_ADDRESS and lets the KeyError out.
+            # From a TTY, a cron job or a systemd unit without a session that is
+            # simply the state of the world, so it is reported as one.
+            raise PortalError(
+                "no session D-Bus (DBUS_SESSION_BUS_ADDRESS is not set), so "
+                "xdg-desktop-portal cannot be reached; screen capture needs a "
+                "running desktop session"
+            ) from exc
+        except OSError as exc:
+            raise PortalError(f"could not connect to the session D-Bus: {exc}") from exc
         self.unique_name = self.conn.unique_name
         self._addr = DBusAddress
 
@@ -182,23 +287,25 @@ class ScreenshotPortal:
         uri = results.get("uri")
         if not uri:
             raise PortalError("portal returned success but no uri")
-        path = Path(str(uri).replace("file://", "", 1))
-        try:
-            data = path.read_bytes()
-        except OSError as exc:
-            raise PortalError(f"cannot read portal screenshot {path}: {exc}") from exc
-        finally:
-            # The portal stores these in ~/Pictures; don't leave litter behind.
-            try:
-                path.unlink()
-            except OSError:
-                pass
+        path = screenshot_path(str(uri))
+        data = read_screenshot(path)
 
         from PIL import Image
         from io import BytesIO
 
-        with Image.open(BytesIO(data)) as im:
-            size = im.size
+        # Decode before deleting anything. The file is the portal's, and a peer
+        # that answers with something that is not an image does not get a delete
+        # out of us just for naming a path.
+        try:
+            with Image.open(BytesIO(data)) as im:
+                size = im.size
+        except Exception as exc:  # PIL raises a zoo of exception types here
+            raise PortalError(
+                f"the portal's screenshot at {path} is not a readable image: {exc}"
+            ) from exc
+
+        # The portal stores these in ~/Pictures; don't leave litter behind.
+        remove_screenshot(path)
         return data, size, elapsed
 
     def close(self) -> None:

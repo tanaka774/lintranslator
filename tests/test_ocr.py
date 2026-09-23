@@ -79,8 +79,12 @@ class FakeResponse:
     def __init__(self, payload: bytes) -> None:
         self._payload = payload
 
-    def read(self) -> bytes:
-        return self._payload
+    def read(self, size: int = -1) -> bytes:
+        # The real HTTPResponse takes a byte count, and the download path passes
+        # one so that a hostile or broken server cannot stream forever.
+        if size is None or size < 0:
+            return self._payload
+        return self._payload[:size]
 
     def __enter__(self):
         return self
@@ -147,14 +151,28 @@ def test_the_download_url_is_pinned_to_a_revision():
     assert TESSDATA_REVISION in TESSDATA_URL
 
 
-def test_an_existing_file_is_not_downloaded_again(monkeypatch, tmp_path):
-    (tmp_path / "eng.traineddata").write_bytes(b"already here")
+def test_an_existing_file_matching_the_pin_is_not_downloaded_again(monkeypatch, tmp_path):
+    payload = b"pretend eng model" * 200
+    monkeypatch.setitem(TESSDATA_SHA256, "eng", hashlib.sha256(payload).hexdigest())
+    (tmp_path / "eng.traineddata").write_bytes(payload)
     monkeypatch.setattr(
         "lintranslator.ocr.urllib.request.urlopen",
-        lambda *a, **kw: pytest.fail("should not re-download an existing file"),
+        lambda *a, **kw: pytest.fail("should not re-download a file that matches"),
     )
     download_tessdata(["eng"], tmp_path)
-    assert (tmp_path / "eng.traineddata").read_bytes() == b"already here"
+    assert (tmp_path / "eng.traineddata").read_bytes() == payload
+
+
+def test_an_existing_file_that_does_not_match_the_pin_is_replaced(monkeypatch, tmp_path):
+    """A truncated or tampered file is not trusted just because it is there."""
+    payload = b"the real eng model" * 200
+    monkeypatch.setitem(TESSDATA_SHA256, "eng", hashlib.sha256(payload).hexdigest())
+    (tmp_path / "eng.traineddata").write_bytes(b"truncated garbage")
+    monkeypatch.setattr(
+        "lintranslator.ocr.urllib.request.urlopen", lambda *a, **kw: FakeResponse(payload)
+    )
+    download_tessdata(["eng"], tmp_path)
+    assert (tmp_path / "eng.traineddata").read_bytes() == payload
 
 
 def test_a_truncated_download_is_refused(monkeypatch, tmp_path):
