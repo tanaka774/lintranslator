@@ -9,6 +9,15 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+- The picker's toolbar is three buttons plus the primary action: **Save** is gone,
+  **Close** is **Quit** - the word the card already uses for the same act - and the
+  vertical rules between the buttons went with them. Save wrote the region to
+  `config.json` and stopped there, which **Start** already does on its way to
+  opening the card, while `lintranslator region --x --y --w --h` stores one without
+  reading anything: a button with nothing of its own to do. The rules were
+  furniture at four buttons; the gap in front of Start stays, because Quit ends the
+  session and must not sit flush against the button that begins one - which is what
+  the second rule was really there for.
 - Settings has less text in it. The entry placeholders went first, because most
   of them named a control that already names itself: "pick a model below, or type
   any id" (the picker and Fetch list are the two buttons beside that field, and

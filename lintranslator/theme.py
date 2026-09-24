@@ -351,14 +351,6 @@ button.lintranslator-tool {{
   font-size: {FONT_BODY}px;
   border-radius: {RADIUS_CONTROL}px;
 }}
-/* The picker's toolbar groups its buttons with rules, so the shared 1px rule
-   has to work on its end too: a vertical sliver between two groups rather than
-   a horizontal divider between two sections. Scoped to the toolbar, because
-   that is the only place a rule sits in a row. */
-.lintranslator-toolbar .lintranslator-rule {{
-  min-width: 1px;
-  margin: {SPACE_XS}px {SPACE_SM}px;
-}}
 /* Reading panes: the OCR text and the translation preview. Sunken so they read
    as output rather than as something to type into. */
 .lintranslator-readout {{

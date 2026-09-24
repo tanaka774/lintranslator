@@ -57,7 +57,6 @@ SELF_LABELS = frozenset(
         "watching...",
         "watching…",
         "capture",
-        "save",
         "settings",
         "close",
         "quit",

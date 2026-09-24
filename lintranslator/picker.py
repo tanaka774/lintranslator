@@ -243,19 +243,25 @@ class RegionPicker(Gtk.ApplicationWindow):
     def _build_toolbar(self) -> Gtk.Widget:
         """The window's one control row: status, then every action.
 
-        The primary action carries the theme's accent and stands alone at the
-        end of the row, past a rule: it is the reason the window exists, and it
-        must not look like its neighbours. The region actions (Capture, Save)
-        and the window actions (Settings, Close) are separated from each other
-        by a second rule, so Close - which ends the session - is not adjacent to
-        the button that starts one.
+        The primary action carries the theme's accent and stands at the end of the
+        row, past a gap: it is the reason the window exists, and it must not look
+        like its neighbours. There is no **Save** any more: it wrote the region to
+        `config.json` and stopped there, which **Start** does on its way to opening
+        the card, while `lintranslator region --x --y --w --h` is how a region is
+        stored without reading anything. A button that only wrote the file had
+        nothing of its own to do.
+        The separators are gone too: at four buttons the row reads on its own, and
+        a vertical bar between every pair was more furniture than grouping. The gap
+        in front of Start stays, because **Quit** ends the session and must not sit
+        flush against the button that begins one - it is what the second separator
+        was really there for.
         """
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         bar.add_css_class("lintranslator-toolbar")
 
         # The status line lives here rather than at the bottom of the sidebar:
         # it is one line of state ("captured 2560x1440 - drag over the dialogue
-        # text", "saved to ..."), it has to be visible without scrolling, and it
+        # text", "the box is live"), it has to be visible without scrolling, and it
         # has room here. Ellipsised rather than wrapped, because this row is a
         # fixed height and a two-line status would make the whole window jump.
         self.status_label = Gtk.Label(label="", xalign=0)
@@ -271,24 +277,19 @@ class RegionPicker(Gtk.ApplicationWindow):
         self.capture_btn.connect("clicked", self._on_capture)
         bar.append(self.capture_btn)
 
-        save = Gtk.Button(label="Save")
-        save.set_tooltip_text("Save this region to config.json")
-        save.connect("clicked", self._on_save)
-        bar.append(save)
-
-        bar.append(self._rule())
-
         settings = Gtk.Button(label="Settings")
         settings.set_tooltip_text("Backend, model, API key and prompt")
         settings.connect("clicked", lambda *_: self._open_settings())
         bar.append(settings)
 
-        close = Gtk.Button(label="Close")
-        close.set_tooltip_text("Close the picker and stop translating")
-        close.connect("clicked", self._on_close_clicked)
-        bar.append(close)
+        self.quit_btn = Gtk.Button(label="Quit")
+        self.quit_btn.set_tooltip_text("Quit the picker and stop translating")
+        self.quit_btn.connect("clicked", self._on_quit_clicked)
+        bar.append(self.quit_btn)
 
-        bar.append(self._rule())
+        spacer = Gtk.Box()
+        spacer.set_size_request(14, -1)
+        bar.append(spacer)
 
         self.watch_btn = Gtk.Button(label="Start")
         self.watch_btn.set_tooltip_text(
@@ -298,7 +299,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         bar.append(self.watch_btn)
 
         # One class for the row, so the buttons are one size and one weight...
-        for button in (self.capture_btn, save, settings, close, self.watch_btn):
+        for button in (self.capture_btn, settings, self.quit_btn, self.watch_btn):
             button.add_css_class("lintranslator-btn")
             button.add_css_class("lintranslator-tool")
         # ...and one exception, which is the whole point of the row.
@@ -569,9 +570,10 @@ class RegionPicker(Gtk.ApplicationWindow):
         self._drag_last = None
         self._drag_sel = None
         self._refresh_preview()
-        # Keep a running pipeline pointed at the box the user can see. The
-        # config file is only written by Save / Apply box, but the area being
-        # read follows the drag, so the rectangle on screen is never a lie.
+        # Keep a running pipeline pointed at the box the user can see. Nothing is
+        # written to the config file here - `_on_start` is the one place that saves
+        # it - but the area being read follows the drag, so the rectangle on screen
+        # is never a lie about what is being read.
         if self._stage_region():
             self.status_label.set_text("box changed — press Apply box to keep watching it")
 
@@ -1112,7 +1114,15 @@ class RegionPicker(Gtk.ApplicationWindow):
             )
 
     # -- closing ----------------------------------------------------------- #
-    def _on_close_clicked(self, _button: Gtk.Button) -> None:
+    def _on_quit_clicked(self, _button: Gtk.Button) -> None:
+        """The toolbar's Quit, which is the panel's Quit by another name.
+
+        Both end the session: the card and its worker go, and the picker closes,
+        which quits the application. It is called Quit rather than Close because
+        that is what it does - the window's own X closes the picker too, and a
+        button that says Close next to a titlebar that also closes reads as two
+        different outcomes for one action.
+        """
         self._shutdown_panel()
         self.close()
 
@@ -1282,35 +1292,13 @@ class RegionPicker(Gtk.ApplicationWindow):
         else:
             do_grab()
 
-    def _on_save(self, _button: Gtk.Button) -> None:
-        if self.sel is None or self.screen_image is None:
-            self.status_label.set_text("capture the screen and drag a rectangle first")
-            return
-        if self.ocr is not None and self._ocr_error is not None:
-            # A known-broken OCR is worth refusing the save for, but waiting for
-            # one that is merely still preparing is not: the region does not
-            # depend on it, and this used to block the window until it finished.
-            self.status_label.set_text(f"cannot use this region yet: {self._ocr_error}")
-            return
-
-        x, y, w, h = self.sel
-        screen_w, screen_h = self.screen_size
-        region = self._region_from_selection()
-        if region is None:
-            return
-        self.config.capture.region = region
-        path = self.config.save()
-        self.status_label.set_text(f"saved to {path}")
-        # A running panel is re-pointed at the new area rather than restarted:
-        # restarting reloaded the model and rebuilt the card, so the translation
-        # window jumped position and stopped working for a moment every time the
-        # box was saved - and until it finished, the picker showed one box while
-        # the pipeline read another.
-        self._apply_region_live()
-        print(f"region saved to {path}: x={x} y={y} w={w} h={h} (screen {screen_w}x{screen_h})")
-
     def _apply_region_live(self) -> None:
-        """Point a running pipeline at the region in `config`, if we are watching."""
+        """Point a running pipeline at the region in `config`, if we are watching.
+
+        A re-point and not a restart: rebuilding the worker reloaded the model and
+        moved the card, and until it finished the picker showed one box while the
+        pipeline read another.
+        """
         if not getattr(self, "_watching", False):
             return
         panel = getattr(self, "_panel", None)

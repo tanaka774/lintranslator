@@ -42,10 +42,13 @@ lets you drag a rectangle over the dialogue text. The box can be resized from an
 edge or corner: grips sit at every corner and at the middle of every edge, the
 pointer changes shape over them, and the edge you grabbed travels with the pointer
 instead of snapping under it. The controls are one toolbar row: **Capture**,
-**Save**, **Settings** and **Close** grouped on the right, with **Start** —
-the action the window exists for — carrying the accent. It used to be two rows of
+**Settings** and **Quit** on the right, with **Start** — the action the window
+exists for — carrying the accent and a gap of its own. It used to be two rows of
 equal-width buttons with no primary action, which made the one button that matters
-look like its four neighbours.
+look like its neighbours; **Save** was one of them and is gone, because **Start**
+writes the region on its way to opening the card, and a region stored *without*
+reading anything is a shell job —
+`lintranslator region --x --y --w --h` (see [below](#setting-the-region-without-the-gui)).
 
 The picker is the only window on screen at launch. The translation card is not one
 of its controls: it would be a second window in the way while you are still framing
