@@ -474,31 +474,42 @@ Two consequences are shown rather than implied:
   and refused at startup with a message naming the setting, instead of an HTTP
   400 that names only the parameter.
 * The source language needs a matching **OCR** language, which is a separate
-  setting. Reading Japanese with `eng.traineddata` gives confident nonsense, so
-  when `ocr.langs` cannot read the source the dialog offers a one-click
-  `Use eng+jpn` — additive, never a silent overwrite. A name that is not
-  lowercase letters, digits and underscore is refused too — it would otherwise
-  become a filename under the tessdata directory — and the Settings dialog says
-  so instead of saving it.
+  setting. Reading Japanese with `eng.traineddata` gives confident nonsense, so a
+  list that cannot read the source says so in one line under the picker, naming
+  the model to tick. A name that is not lowercase letters, digits and underscore is
+  refused too — it would otherwise become a filename under the tessdata directory
+  — and the Settings dialog says so instead of saving it.
 
-  The **OCR languages** field beside it is that setting, and it is on screen
+  The **OCR languages** picker beside it is that setting, and it is on screen
   whether or not something is wrong, because the list has to be trimmed as well
-  as grown. Every model in it competes for every word: measured on one Korean
-  line, `kor` took 33 ms, `eng+kor` 68 ms and `kor+eng+jpn` 101 ms for identical
-  text at identical 92% confidence, and on clean English the extra models changed
-  nothing but the time (149 → 332 ms). Where they do change the answer is the
-  ambiguous case — a degraded capture where `eng+jpn` produced a `デ` where `eng`
-  had a dash — and the mixed one, where `kor` alone read "Manager Kim!" as
-  `1308 ㅎ 86@『 시 머 !`. So a list that has grown past what the box needs is
-  offered `Use kor+eng` — the source's model plus `eng`, which is what carries
-  the Latin names and UI labels any box can contain — while a list that already
-  is that is left alone: `eng+kor` over Korean is a choice, not a mistake.
+  as grown. It opens the 124 models `tessdata_fast` ships, searchable by name, as
+  a list of checkboxes: tick the languages the box is written in, untick the ones
+  it is not. Every model in the list competes for every word: measured on one
+  Korean line, `kor` took 33 ms, `eng+kor` 68 ms and `kor+eng+jpn` 101 ms for
+  identical text at identical 92% confidence, and on clean English the extra
+  models changed nothing but the time (149 → 332 ms). Where they do change the
+  answer is the ambiguous case — a degraded capture where `eng+jpn` produced a `デ`
+  where `eng` had a dash — and the mixed one, where `kor` alone read
+  "Manager Kim!" as `1308 ㅎ 86@『 시 머 !`.
 
-  The field takes exactly what `-l` takes, which is the escape hatch for anything
-  the button does not cover. Names are stored `+`-separated, so `kor eng` is
-  accepted and saved as `kor+eng`: tesseract splits that argument on `+` alone,
-  and `-l "kor eng"` makes it load one model named "kor eng" and give up on all
-  of them.
+  Each row says what ticking it would cost: `ready` (the model is already in a
+  tessdata directory), `will download` (one of the 16 the app fetches itself,
+  against a pinned checksum), or `not installed` — which is otherwise discovered
+  by saving and watching OCR fail. The model the source language needs is marked
+  `this box's language`, so "which of these 124 do I tick" has an answer on
+  screen, and a hint under the list names what is only competing. There is no
+  one-click fix button: it used to add the source's model or trim the list, and
+  once the list is the control both are a tick away — `eng` is worth keeping
+  anyway, since it is what carries the Latin names and UI labels any box can
+  contain. A list that already reads the box is left alone: `eng+kor` over Korean
+  is a choice, not a mistake.
+
+  Names are stored `+`-separated in the order the config already had them, so
+  opening Settings and pressing Save never rewrites a value nobody changed. That
+  order carries no meaning to tesseract, which splits the argument on `+` alone —
+  `-l "kor eng"` makes it load one model named "kor eng" and give up on all of
+  them, which is why a hand-edited `ocr.langs` is normalised before it reaches
+  `-l`.
 
 From a terminal the pair is reachable as flags, and `lintranslator check` validates it:
 

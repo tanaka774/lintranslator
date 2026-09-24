@@ -33,7 +33,18 @@ from .languages import (  # noqa: E402
     tesseract_lang,
 )
 from .occlusion import GUARD  # noqa: E402
-from .ocr import bad_langs, split_langs  # noqa: E402
+from .ocr import (  # noqa: E402
+    TESSDATA_SHA256,
+    bad_langs,
+    installed_models,
+    model_state,
+    split_langs,
+)
+from .ocr_languages import (  # noqa: E402
+    get as ocr_model,
+    ordered as ocr_models_ordered,
+    search as ocr_models_search,
+)
 from .translate import DEFAULT_NLLB_MODEL  # noqa: E402
 
 # Where the converted weights are expected: the user data dir, or an
@@ -529,6 +540,286 @@ class LanguagePicker(Gtk.MenuButton):
             row = row.get_next_sibling()
 
 
+def _in_chooser_order(stems) -> list[str]:
+    """A selection in the chooser's own order, unknown stems last.
+
+    Order carries no meaning to tesseract - measured, `eng+kor` and `kor+eng`
+    return the same text at the same confidence - so the value is written in a
+    fixed order rather than in the order the boxes happened to be clicked. One
+    rule, used by the picker and by the button's label, so the two cannot offer
+    one list and set another.
+    """
+    wanted = {stem for stem in stems if stem}
+    known = [model.stem for model in ocr_models_ordered() if model.stem in wanted]
+    unknown = list(dict.fromkeys(s for s in stems if s and ocr_model(s) is None))
+    return known + unknown
+
+
+class OcrLanguagePicker(Gtk.MenuButton):
+    """A searchable, multi-select chooser over every model tesseract ships.
+
+    The same shape as `LanguagePicker`, for the same reason - 124 entries is past
+    what a `Gtk.DropDown` shows usefully - with one difference: the value is a
+    *set*, so the rows are checkboxes and the popover stays open while you tick.
+
+    It replaces a text field that took the `-l` value directly. That field could
+    express anything, which was exactly the problem: it wanted tesseract's
+    spelling (`kor`, not `korean`), it could not say what exists or what is
+    missing, and one typo was an OCR failure with no visible cause.
+
+    Each row says how the model would be obtained - `ready`, `will download`, or
+    `not installed` - because the third state is otherwise discovered by saving
+    and watching OCR fail. The model the source language needs is marked too, so
+    "which of these 124 do I tick" has an answer on screen.
+
+    A stem in the config that is not in the table is still listed and still
+    ticked: opening Settings must never edit the config by itself, and dropping a
+    language someone set by hand is worse than showing it unlabelled.
+    """
+
+    # What the model the source language needs is called on its row.
+    NEEDED_TAG = "this box's language"
+    # How a model would be obtained, in the words the row uses. The keys are
+    # `ocr.model_state`.
+    STATE_LABELS = {
+        "installed": "ready",
+        "download": "will download",
+        "missing": "not installed",
+        "unknown": "not a known model",
+    }
+
+    def __init__(self, on_change=None) -> None:
+        super().__init__()
+        self._on_change = on_change
+        self._chosen: list[str] = []
+        self._extra: list[str] = []  # in the config, not in the table
+        self._installed: set[str] = set()
+        self._needed = ""
+        self.add_css_class("flat")
+        self.set_valign(Gtk.Align.CENTER)
+        # A label and an arrow, not a bare label: this opens a list, and a button
+        # that looks like a text field reads as one you are meant to type in.
+        self._label = Gtk.Label(xalign=0)
+        self._label.set_hexpand(True)
+        self._label.set_ellipsize(3)  # Pango.EllipsizeMode.END
+        content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        content.append(self._label)
+        content.append(Gtk.Image.new_from_icon_name("pan-down-symbolic"))
+        self.set_child(content)
+        self.set_hexpand(True)
+
+        self.popover = Gtk.Popover()
+        self.popover.set_size_request(430, -1)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        for edge in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{edge}")(8)
+
+        self.search = Gtk.SearchEntry()
+        self.search.set_placeholder_text("filter, e.g. korean or kor")
+        self.search.set_search_delay(0)
+        self.search.connect("search-changed", lambda *_: self.refresh())
+        box.append(self.search)
+
+        self.listbox = Gtk.ListBox()
+        self.listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.listbox.add_css_class("navigation-sidebar")
+
+        self.scroll = Gtk.ScrolledWindow()
+        self.scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.scroll.set_min_content_height(240)
+        self.scroll.set_max_content_height(380)
+        self.scroll.set_propagate_natural_height(True)
+        self.scroll.set_child(self.listbox)
+        box.append(self.scroll)
+
+        self.count_label = Gtk.Label(label="", xalign=0)
+        self.count_label.add_css_class("lintranslator-hint")
+        box.append(self.count_label)
+
+        self.popover.set_child(box)
+        self.set_popover(self.popover)
+        self.popover.connect("show", self._on_popover_shown)
+        self._update_label()
+
+    # -- value ------------------------------------------------------------- #
+    def get_langs(self) -> list[str]:
+        return list(self._chosen)
+
+    def set_langs(self, langs: list[str]) -> None:
+        """Set the selection. Fires no callback: this is the dialog writing back.
+
+        Everything not in the generated table is kept, in config order, and shown
+        as an extra row - see the class docstring.
+        """
+        # Kept in the order given, which for the config is the order it already
+        # had: opening Settings and pressing Save must not rewrite a value nobody
+        # changed. A *new* selection has no order of its own, so `_on_toggled`
+        # writes it in the chooser's order instead.
+        self._chosen = [stem for stem in langs if stem]
+        self._extra = [stem for stem in self._chosen if ocr_model(stem) is None]
+        self._update_label()
+        self.refresh()
+
+    def set_state(self, installed: set[str], needed: str | None) -> None:
+        """Tell the rows what is on this machine and what the source needs.
+
+        Rebuilds only when either actually changed: the hint is refreshed from
+        the toggle handler, and rebuilding the list there would destroy the
+        checkbox that is still emitting.
+        """
+        needed = (needed or "").strip()
+        if (installed, needed) == (self._installed, self._needed):
+            return
+        self._installed = installed
+        self._needed = needed
+        self.refresh()
+
+    # -- rendering --------------------------------------------------------- #
+    def refresh(self) -> None:
+        while (row := self.listbox.get_row_at_index(0)) is not None:
+            self.listbox.remove(row)
+
+        query = self.search.get_text().strip()
+        models = ocr_models_search(query)
+        for model in models:
+            self.listbox.append(
+                self._row(
+                    model.stem,
+                    model.name,
+                    state=model_state(model.stem, self._installed),
+                )
+            )
+        # Stems the config has that tessdata_fast does not: a hand-added file, or
+        # a name from a newer revision. Still selectable, still removable.
+        extras = [
+            stem
+            for stem in self._extra
+            if not query or query.casefold() in stem.casefold()
+        ]
+        for stem in extras:
+            self.listbox.append(self._row(stem, stem, state="unknown"))
+
+        if not models and not extras:
+            empty = Gtk.Label(
+                label=f"nothing matches “{query}”\nno tesseract model has that name",
+                justify=Gtk.Justification.CENTER,
+            )
+            empty.add_css_class("lintranslator-hint")
+            empty.set_margin_top(18)
+            empty.set_margin_bottom(18)
+            self.listbox.append(empty)
+
+        self._update_count(len(models) + len(extras), query)
+
+    def _update_count(self, shown: int | None = None, query: str | None = None) -> None:
+        if shown is None:
+            shown = len(ocr_models_search(self.search.get_text().strip()))
+            query = self.search.get_text().strip()
+        total = len(ocr_models_ordered())
+        ticked = len(self._chosen)
+        self.count_label.set_text(
+            f"{shown} of {total} OCR models match “{query}” — {ticked} ticked"
+            if query
+            else f"{total} OCR models — type to filter, {ticked} ticked"
+        )
+
+    def _row(self, stem: str, name: str, *, state: str) -> Gtk.ListBoxRow:
+        # The whole line is the checkbox, not just its indicator: the check, the
+        # name and the tags are one widget, so there is no click target to miss.
+        check = Gtk.CheckButton()
+        content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        label = Gtk.Label(label=name, xalign=0)
+        label.set_hexpand(True)
+        label.set_ellipsize(3)  # Pango.EllipsizeMode.END
+        content.append(label)
+        if stem == self._needed:
+            needed = Gtk.Label(label=self.NEEDED_TAG)
+            needed.add_css_class("lintranslator-hint")
+            content.append(needed)
+        tag = Gtk.Label(label=self.STATE_LABELS[state])
+        tag.add_css_class("lintranslator-hint")
+        content.append(tag)
+        check.set_child(content)
+        # Before the signal is connected, deliberately: `set_active` emits
+        # "toggled", and a row built for a language that is already chosen would
+        # otherwise report a change that never happened.
+        check.set_active(stem in self._chosen)
+        check.set_tooltip_text(self._detail(stem, state))
+        check.connect("toggled", self._on_toggled, stem)
+
+        row = Gtk.ListBoxRow()
+        row.set_child(check)
+        row.set_activatable(False)
+        setattr(row, "ocr_stem", stem)  # what the row is, for tests and for callers
+        return row
+
+    def _detail(self, stem: str, state: str) -> str:
+        what = f"tesseract reads it with `-l {stem}`, from {stem}.traineddata"
+        if state == "installed":
+            return f"{what}\nAlready in a tessdata directory that tesseract reads."
+        if state == "download":
+            return (
+                f"{what}\nThis app fetches it on first use, checked against a "
+                "pinned SHA-256 before it is installed."
+            )
+        if state == "unknown":
+            return (
+                f"{what}\nNot a model this version of the app knows about. It stays "
+                "in the list because the config names it."
+            )
+        return (
+            f"{what}\ntesseract ships this model, but the app will not fetch it - "
+            f"install it from your distribution (tesseract-data-{stem} / "
+            f"tesseract-ocr-{stem}) or drop {stem}.traineddata into the tessdata "
+            "directory yourself."
+        )
+
+    # -- events ------------------------------------------------------------ #
+    def _on_popover_shown(self, *_args) -> None:
+        # Re-read the file system every time it opens: the point of the tags is
+        # what is true now, and a language can be installed while the dialog is
+        # open. A handful of globs, so there is nothing here worth caching.
+        self._installed = installed_models()
+        self.search.set_text("")
+        self.refresh()
+        self.search.grab_focus()
+
+    def _on_toggled(self, _button: Gtk.CheckButton, stem: str) -> None:
+        ticked = set(self._chosen) ^ {stem}
+        # The extra stems come in config order so `_in_chooser_order` keeps them
+        # in it; the known ones it sorts into the table's order itself.
+        extras = [extra for extra in self._extra if extra in ticked]
+        # Store the selection in a fixed order, not the order it was ticked in:
+        # tesseract does not care which model comes first, and a value that
+        # reorders itself between sessions is noise in the config.
+        self._chosen = _in_chooser_order([*ticked, *extras])
+        self._update_label()
+        # Not `refresh()`: this runs inside the checkbox's own signal, and
+        # rebuilding the list would destroy the widget that is still emitting.
+        # The ticked rows are already drawn correctly; only the count moved.
+        self._update_count()
+        if self._on_change:
+            self._on_change()
+
+    def _update_label(self) -> None:
+        if not self._chosen:
+            self._label.set_text("pick OCR languages")
+            self.set_tooltip_text(
+                "Nothing is selected, so OCR cannot run. Tick every language the "
+                "box is written in."
+            )
+            return
+        names = [
+            model.name if (model := ocr_model(stem)) is not None else stem
+            for stem in self._chosen
+        ]
+        self._label.set_text(" + ".join(names))
+        self.set_tooltip_text(
+            "tesseract reads the box with "
+            + ", ".join(f"`-l {stem}`" for stem in self._chosen)
+        )
+
+
 class SettingsDialog(Gtk.Window):
     """Modal-ish settings window. Writes to config on close."""
 
@@ -615,6 +906,12 @@ class SettingsDialog(Gtk.Window):
         available = monitor.get_geometry().height if monitor else 1080
         _, natural = box.get_preferred_size()
         self.set_default_size(740, max(560, min(natural.height, available - 120)))
+
+        # Describe what is open, rather than waiting for something to change. The
+        # pair hints and the OCR row were blank until the first backend or
+        # language pick, so a dialog opened to *read* a setting showed nothing -
+        # including which OCR languages the box needs.
+        self._refresh_language()
 
     # -- the wheel over a slider ------------------------------------------- #
     def _ignore_wheel(self, widget: Gtk.Widget) -> None:
@@ -711,24 +1008,31 @@ class SettingsDialog(Gtk.Window):
         # glyph. The field takes exactly what tesseract's `-l` takes, so it can
         # be set, replaced and trimmed by hand; the button is a shortcut for the
         # one case worth a click.
+        # The OCR languages are a set to choose, not a value to spell. This was a
+        # hint that appeared only when something was wrong, behind a button that
+        # could only ever *add* - so a list that had grown could not be
+        # shortened, and growing is the direction that costs: every model in the
+        # list competes for every word, which is slower and lets a wrong script
+        # win a soft glyph. A text field took its place for one commit and was
+        # worse: it wanted tesseract's spelling, could not say what exists, and
+        # turned a typo into an OCR failure with no visible cause.
         self.ocr_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.ocr_row.append(Gtk.Label(label="OCR languages", xalign=0))
-        self.ocr_entry = Gtk.Entry()
-        self.ocr_entry.set_text(self._ocr_langs)
-        self.ocr_entry.set_hexpand(True)
-        self.ocr_entry.set_tooltip_text(
-            "What tesseract reads the box with — the value `-l` takes: `kor`, or "
-            "`kor+eng` for a box that also has Latin names. Every language added "
-            "is another model competing for every word."
-        )
-        self.ocr_entry.connect("changed", self._on_ocr_langs_changed)
-        self.ocr_row.append(self.ocr_entry)
-        self.ocr_sync_btn = Gtk.Button(label="")
-        self.ocr_sync_btn.add_css_class("lintranslator-tool")
-        self.ocr_sync_btn.connect("clicked", lambda *_: self._on_ocr_sync())
-        self.ocr_row.append(self.ocr_sync_btn)
+        self.ocr_picker = OcrLanguagePicker(self._on_ocr_langs_changed)
+        # Seeded from the config through the picker, so the two cannot start out
+        # disagreeing about what OCR is set to read.
+        self.ocr_picker.set_langs(split_langs(self._ocr_langs))
+        self.ocr_row.append(self.ocr_picker)
         language_notes.append(self.ocr_row)
 
+        # The advice layer, under the choice: what the source needs, and what is
+        # competing. Text only - there was a one-click fix button here ("Use
+        # eng+jpn", "Use eng+kor"), which stopped earning its place once the list
+        # itself became the control: the model the source needs is tagged in the
+        # list and the extra ones are the unticked-looking rows between it and
+        # `eng`, so the button was offering to do by proxy what was already one
+        # click away. What is left says the part the list cannot show by itself -
+        # that the list and the source disagree, and why that matters.
         self.ocr_hint = Gtk.Label(label="", xalign=0, wrap=True)
         self.ocr_hint.add_css_class("lintranslator-hint")
         self.ocr_hint.set_max_width_chars(70)
@@ -1087,115 +1391,77 @@ class SettingsDialog(Gtk.Window):
         a list that already *is* that is left alone: `eng+kor` is a choice, not a
         mistake, and a hint that fired on it would be nagging.
         """
+        wanted = tesseract_lang(source)
+        # Before the hint is decided, not after: the rows have to say what each
+        # model would cost and which one the source needs, and that is the answer
+        # to "which of these 124 do I tick".
+        self.ocr_picker.set_state(installed_models(self.config.ocr.tessdata_dir), wanted)
+
         problem = self._ocr_lang_problem()
         if problem:
             self.ocr_hint.set_text(problem)
             self.ocr_hint.set_visible(True)
-            self.ocr_sync_btn.set_visible(False)
             return
 
-        wanted = tesseract_lang(source)
         current = self._ocr_lang_set()
         if wanted is None:
-            # tesseract has no model for the source. There is no file to add and
-            # no minimal list to name, so the field is the only help - and it
-            # stays visible, because it is the setting.
+            # tesseract has no model for the source at all, so there is nothing to
+            # point at in the list and nothing to say.
             self.ocr_hint.set_text("")
             self.ocr_hint.set_visible(False)
-            self.ocr_sync_btn.set_visible(False)
             return
 
         minimal = self._ocr_minimal_set(wanted)
         extra = [name for name in current if name not in minimal]
 
         if wanted not in current:
-            offered = [*current, wanted]
             self.ocr_hint.set_text(
                 f"OCR reads “{self._ocr_langs.strip() or 'nothing'}”, but the source is "
-                f"{language_name(source)} — tesseract needs {wanted} for it."
-            )
-            self.ocr_sync_btn.set_label(f"Use {'+'.join(offered)}")
-            self.ocr_sync_btn.set_tooltip_text(
-                f"Add {wanted} to the OCR languages for the capture, giving "
-                f"“{'+'.join(offered)}”. Applied when you press Save."
+                f"{language_name(source)} — tick {wanted} in the list above, or the "
+                "text comes back as confident nonsense."
             )
         elif extra:
             listed = " and ".join(extra) if len(extra) == 2 else ", ".join(extra)
-            # "eng" is the whole minimal list when the source is English, so the
-            # usual "plus eng for Latin names" would explain it as itself.
-            if wanted == "eng":
-                why = "the source's own model"
-            else:
-                why = "the source's model plus eng for Latin names"
             self.ocr_hint.set_text(
                 f"OCR reads “{self._ocr_langs.strip()}”, so {listed} "
                 f"{'competes' if len(extra) == 1 else 'compete'} for every word as "
-                "well — slower, and a wrong script can win on a soft glyph. "
-                f"“{'+'.join(minimal)}” is {why}."
-            )
-            self.ocr_sync_btn.set_label(f"Use {'+'.join(minimal)}")
-            self.ocr_sync_btn.set_tooltip_text(
-                f"Set the OCR languages for the capture to “{'+'.join(minimal)}”, "
-                f"dropping {listed}. Applied when you press Save."
+                "well — slower, and a wrong script can win on a soft glyph. Untick "
+                "it if nothing in the box is written in it."
             )
         else:
             self.ocr_hint.set_text("")
             self.ocr_hint.set_visible(False)
-            self.ocr_sync_btn.set_visible(False)
             return
 
         self.ocr_hint.set_visible(True)
-        self.ocr_sync_btn.set_visible(True)
 
-    def _on_ocr_langs_changed(self, entry: Gtk.Entry) -> None:
-        """Follow the field: it is the control, `_ocr_langs` is what Save reads."""
-        self._ocr_langs = entry.get_text()
+    def _on_ocr_langs_changed(self) -> None:
+        """Follow the picker: it holds the choice, `_ocr_langs` is what Save reads."""
+        self._ocr_langs = "+".join(self.ocr_picker.get_langs())
         self._refresh_ocr_hint(self.source_picker.get_code())
 
     def _set_ocr_langs(self, value: str) -> None:
-        """Write the list into the field, which the state then follows.
+        """Write the list into the picker, which the state then follows.
 
-        Through the field rather than around it, so the two cannot disagree: a
-        button that changed only `_ocr_langs` would leave the visible box showing
-        the list it had just replaced.
+        Through the picker rather than around it, so the two cannot disagree: a
+        caller that changed only `_ocr_langs` would leave the visible selection
+        showing the list it had just replaced. The order is kept as given, so a
+        value that came from the config goes back to it unchanged.
         """
-        if self.ocr_entry.get_text() != value:
-            self.ocr_entry.set_text(value)  # emits "changed", which syncs state
-        else:
-            self._ocr_langs = value
-            self._refresh_ocr_hint(self.source_picker.get_code())
+        stems = split_langs(value)
+        self._ocr_langs = "+".join(stems)
+        self.ocr_picker.set_langs(stems)
+        self._refresh_ocr_hint(self.source_picker.get_code())
 
     @staticmethod
     def _ocr_minimal_set(wanted: str) -> list[str]:
         """The list that reads a box written in `wanted`, and nothing more.
 
-        `eng` comes along because it is what carries the Latin names and UI
-        labels any box can contain - the reason the add offer is `eng+jpn` and
-        not `jpn`. Both the hint and the button use this, so what is described
-        and what is applied cannot differ.
+        `eng` comes along because it is what carries the Latin names and UI labels
+        any box can contain, so `[jpn]` alone is not the list to aim at. It is
+        what decides which models the hint calls extra.
         """
         return [wanted] if wanted == "eng" else [wanted, "eng"]
-
-    def _on_ocr_sync(self) -> None:
-        """Apply the move the hint is offering: add the source's model, or trim."""
-        source = self.source_picker.get_code()
-        wanted = tesseract_lang(source)
-        if wanted is None:
-            return
-        current = self._ocr_lang_set()
-        minimal = self._ocr_minimal_set(wanted)
-        # One button, two directions. Adding is for "the source is unreadable";
-        # trimming is for "the list has grown past what reads this box", which
-        # only the user can judge - so the hint names what is extra and the button
-        # offers the list without it.
-        if wanted not in current:
-            updated = [*current, wanted]
-        elif [name for name in current if name not in minimal]:
-            updated = minimal
-        else:
-            return  # nothing was being offered; the button is hidden for this case
-        self._set_ocr_langs("+".join(updated))
-        self.status.set_text(f"OCR languages set to {self._ocr_langs} — press Save")
 
     def _refresh_model_hint(self, backend: str | None = None) -> None:
         backend = backend or BACKENDS[self.backend_dd.get_selected()][0]
@@ -1456,13 +1722,17 @@ class SettingsDialog(Gtk.Window):
         # that changed the language.
         self.config.translate.source_lang = self.source_picker.get_code()
         self.config.translate.target_lang = self.target_picker.get_code()
-        # An emptied field is not a setting: OCR with no language cannot run, so
-        # clearing the box leaves the stored list alone rather than saving a value
-        # the engine would refuse. Anything else is written in the one form `-l`
-        # accepts - `split_langs` also takes whitespace, and `-l "kor eng"` is not
-        # two languages but one model named "kor eng", which loads none of them.
+        # An empty selection is not a setting: OCR with no language cannot run, so
+        # the stored list stands and the picker is put back to it rather than left
+        # showing a selection that was never saved.
         ocr_warning: str | None = None
-        if self._ocr_langs.strip():
+        if not self._ocr_langs.strip():
+            ocr_warning = (
+                "No OCR language is ticked, so OCR could not run. OCR languages "
+                f"left at {self.config.ocr.langs!r}."
+            )
+            self._set_ocr_langs(self.config.ocr.langs)
+        else:
             # A name that is not a language name is kept out of the config: it
             # would become a tessdata filename, and `parse_langs` refuses it at
             # read time anyway. Saying so beats a save that looks like it worked.
@@ -1473,10 +1743,8 @@ class SettingsDialog(Gtk.Window):
                     f"{self.config.ocr.langs!r}."
                 )
             else:
+                # Stored `+`-joined, which is the only form `-l` accepts.
                 self.config.ocr.langs = "+".join(split_langs(self._ocr_langs))
-                # Show what was actually stored, so a list typed with spaces is
-                # not left on screen in a form the engine never sees.
-                self._set_ocr_langs(self.config.ocr.langs)
         self.config.display.font_scale = round(self.font_scale.get_value(), 2)
         self.config.display.width = int(self.width_scale.get_value())
         # Changing a line budget re-states the rule the card's height comes from,

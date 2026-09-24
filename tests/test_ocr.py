@@ -20,6 +20,7 @@ from lintranslator.ocr import (
     bad_langs,
     download_tessdata,
     find_tessdata,
+    model_state,
     parse_langs,
     split_langs,
 )
@@ -175,6 +176,66 @@ def test_an_existing_file_that_does_not_match_the_pin_is_replaced(monkeypatch, t
     )
     download_tessdata(["eng"], tmp_path)
     assert (tmp_path / "eng.traineddata").read_bytes() == payload
+
+
+# --------------------------------------------------------------------------- #
+# What is on this machine, for the Settings chooser
+# --------------------------------------------------------------------------- #
+def test_installed_models_reports_what_the_directories_hold(monkeypatch, tmp_path):
+    """The chooser says `ready` or `not installed`, and only the disk knows.
+
+    `osd` is a file like any other and is reported too: this answers "what is
+    here", and the caller decides which of them it recognises.
+    """
+    from lintranslator import ocr as ocr_mod
+
+    app_data = tmp_path / "data"
+    (app_data / "tessdata").mkdir(parents=True)
+    (app_data / "tessdata" / "kor.traineddata").write_bytes(b"x")
+    (app_data / "tessdata" / "osd.traineddata").write_bytes(b"x")
+    (app_data / "tessdata" / "notes.txt").write_text("not a model")
+
+    configured = tmp_path / "configured"
+    configured.mkdir()
+    (configured / "afr.traineddata").write_bytes(b"x")
+
+    monkeypatch.setattr(ocr_mod.paths, "DATA_DIR", app_data)
+    monkeypatch.setattr(ocr_mod, "SYSTEM_TESSDATA_CANDIDATES", ())
+
+    assert ocr_mod.installed_models() == {"kor", "osd"}
+    # A configured tessdata dir is searched as well, because `find_tessdata`
+    # will take a file from there.
+    assert ocr_mod.installed_models(str(configured)) == {"afr", "kor", "osd"}
+
+
+def test_installed_models_finds_a_system_tessdata_dir(monkeypatch, tmp_path):
+    from lintranslator import ocr as ocr_mod
+
+    system = tmp_path / "usr-share-tessdata"
+    system.mkdir()
+    (system / "jpn.traineddata").write_bytes(b"x")
+    monkeypatch.setattr(ocr_mod.paths, "DATA_DIR", tmp_path / "empty")
+    monkeypatch.setattr(ocr_mod, "SYSTEM_TESSDATA_CANDIDATES", (str(system),))
+
+    assert ocr_mod.installed_models() == {"jpn"}
+
+
+def test_installed_models_on_a_machine_with_nothing_installed(monkeypatch, tmp_path):
+    from lintranslator import ocr as ocr_mod
+
+    monkeypatch.setattr(ocr_mod.paths, "DATA_DIR", tmp_path / "empty")
+    monkeypatch.setattr(ocr_mod, "SYSTEM_TESSDATA_CANDIDATES", ())
+    assert ocr_mod.installed_models() == set()
+
+
+def test_model_state_separates_here_from_fetchable_from_unavailable():
+    """`grc` ships with tesseract but has no pinned digest, so the app will not
+    download it - a distinction that is invisible in a config file."""
+    installed = {"eng"}
+    assert model_state("eng", installed) == "installed"
+    assert model_state("rus", installed) == "download"
+    assert model_state("grc", installed) == "missing"
+    assert "rus" in TESSDATA_SHA256 and "grc" not in TESSDATA_SHA256
 
 
 def test_a_truncated_download_is_refused(monkeypatch, tmp_path):

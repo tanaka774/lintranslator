@@ -119,12 +119,14 @@ pip-only environment still runs everything that does not draw a window.
 * `tests/test_cleanup.py` - the `remove` command: what it reports, what it refuses
   to touch, and that nothing is deleted without confirmation
 * `tests/test_ocr.py` - OCR language-name validation (a name becomes a filename,
-  so traversal is refused), the pinned, checksum-verified tessdata download, and
-  the `+` form `-l` actually receives
+  so traversal is refused), the pinned, checksum-verified tessdata download, the
+  `+` form `-l` actually receives, and what the tessdata directories hold
+* `tests/test_ocr_languages.py` - the chooser's generated list of models: every
+  stem is one `-l` accepts, and nothing the app can download is missing from it
 * `tests/test_settings_ui.py` - the backend-dependent rows, and the language
   pickers: only real codes are offered, an unknown one in the config is shown and
-  warned about rather than replaced, and the OCR languages can be set, replaced
-  and trimmed by hand rather than only added to
+  warned about rather than replaced, and the OCR languages are a set that can be
+  grown, trimmed and searched rather than a text field
 
 The pipeline tests stub capture and OCR on purpose: a live screen is not a
 reproducible input. Verification runs during development saw 24 "changes" in 26

@@ -22,6 +22,7 @@ except (ImportError, ValueError):  # pragma: no cover - no GTK typelib
 
 from lintranslator.config import Config  # noqa: E402
 from lintranslator.languages import LANGUAGES  # noqa: E402
+from lintranslator import settings as settings_mod  # noqa: E402
 from lintranslator.settings import (  # noqa: E402
     BACKENDS,
     DEFAULT_CT2_DIR,
@@ -581,32 +582,50 @@ def test_swap_exchanges_the_pair(dialog):
 
 
 # --------------------------------------------------------------------------- #
-# The OCR language under the pair
+# The OCR languages: a set to choose, under the pair
 # --------------------------------------------------------------------------- #
-def _type_ocr_langs(dialog, value: str) -> None:
-    """Edit the field the way a user does. It is what Save reads, not the state."""
-    dialog.ocr_entry.set_text(value)
+def _row_for(dialog, stem: str) -> Gtk.ListBoxRow:
+    """The chooser's row for a stem, or an assertion failure naming it."""
+    listbox = dialog.ocr_picker.listbox
+    index = 0
+    while (row := listbox.get_row_at_index(index)) is not None:
+        if getattr(row, "ocr_stem", None) == stem:
+            return row
+        index += 1
+    raise AssertionError(f"no row for {stem!r} in the chooser")
 
 
-def test_ocr_offers_the_source_language_and_is_additive(dialog):
+def _tick(dialog, stem: str, on: bool = True) -> None:
+    """Tick a language the way a click does: through its checkbox."""
+    _row_for(dialog, stem).get_child().set_active(on)
+
+
+def _tags(dialog, stem: str) -> list[str]:
+    """The labels on a row after the name: the tags the chooser adds."""
+    box = _row_for(dialog, stem).get_child().get_child()
+    texts, child = [], box.get_first_child()
+    while child is not None:
+        texts.append(child.get_text() if hasattr(child, "get_text") else "")
+        child = child.get_next_sibling()
+    return texts[1:]
+
+
+def test_the_hint_names_the_model_the_source_needs(dialog):
     """`eng+jpn` reads a Japanese line with Latin names in it; `jpn` does not.
 
     The OCR language is a separate setting from the translation language, so the
     two drift apart silently - and reading Japanese with `eng` produces confident
-    nonsense rather than an error.
+    nonsense rather than an error. The hint is text, not a button: the row for
+    `jpn` is tagged in the list, so the fix is already one click away.
     """
-    _type_ocr_langs(dialog, "eng")
     dialog.source_picker.set_code("jpn_Jpan")
     dialog._refresh_language()
 
     assert dialog.ocr_hint.get_visible()
-    assert dialog.ocr_sync_btn.get_label() == "Use eng+jpn"
-    assert "tesseract needs jpn" in dialog.ocr_hint.get_text()
+    assert "tick jpn in the list above" in dialog.ocr_hint.get_text()
 
-    dialog._on_ocr_sync()
-    assert dialog._ocr_langs == "eng+jpn"
-    # Nothing left to offer once it is there.
-    assert not dialog.ocr_sync_btn.get_visible()
+    _tick(dialog, "jpn")
+    # Nothing left to say once it is there.
     assert not dialog.ocr_hint.get_visible()
 
     dialog._on_save(_save_button(dialog))
@@ -614,81 +633,146 @@ def test_ocr_offers_the_source_language_and_is_additive(dialog):
 
 
 def test_ocr_stays_quiet_when_it_already_reads_the_source(dialog):
-    _type_ocr_langs(dialog, "eng+jpn")
+    dialog._set_ocr_langs("eng+jpn")
     dialog.source_picker.set_code("jpn_Jpan")
     dialog._refresh_language()
     assert not dialog.ocr_hint.get_visible()
-    assert not dialog.ocr_sync_btn.get_visible()
 
 
 def test_ocr_is_silent_for_a_language_tesseract_cannot_read(dialog):
-    """No button, because there is no file to add."""
-    _type_ocr_langs(dialog, "eng")
+    """Nothing to point at, because there is no model to tick."""
     dialog.source_picker.set_code("zul_Latn")
     dialog._refresh_language()
-    assert not dialog.ocr_sync_btn.get_visible()
+    assert not dialog.ocr_hint.get_visible()
 
 
 def test_saving_without_touching_ocr_leaves_it_alone(dialog):
     """A tuned `ocr.langs` must not be rewritten by an unrelated Save."""
-    dialog.config.ocr.langs = "eng+chi_sim"
-    _type_ocr_langs(dialog, "eng+chi_sim")
+    dialog._set_ocr_langs("eng+chi_sim")
     dialog._on_save(_save_button(dialog))
     assert dialog.config.ocr.langs == "eng+chi_sim"
 
 
-# -- the field is a setting, not only a hint -------------------------------- #
-def test_the_ocr_field_is_visible_when_nothing_is_wrong(dialog):
-    """It used to appear only when the list could not read the source, which is
-    exactly when you are not trying to trim it. A setting you cannot see is a
-    setting you cannot set."""
-    _type_ocr_langs(dialog, "eng")
-    dialog.source_picker.set_code("eng_Latn")
-    dialog._refresh_language()
-
-    assert not dialog.ocr_hint.get_visible(), "nothing to warn about"
-    assert dialog.ocr_row.get_visible() is True
-    assert dialog.ocr_entry.get_text() == "eng"
-
-
-def test_the_field_opens_on_the_configured_list(dialog):
-    """Otherwise the box would edit something other than what is in force."""
+# -- the choice itself ------------------------------------------------------ #
+def test_the_chooser_opens_on_what_the_config_says(dialog):
+    """Otherwise the list would edit something other than what is in force."""
     dialog.config.ocr.langs = "eng+kor"
     dlg = SettingsDialog(None, dialog.config)
     try:
-        assert dlg.ocr_entry.get_text() == "eng+kor"
+        assert dlg.ocr_picker.get_langs() == ["eng", "kor"]
+        assert dlg.ocr_picker._label.get_text() == "English + Korean"
     finally:
         dlg.destroy()
 
 
-def test_the_ocr_languages_can_be_set_by_hand_not_only_added(dialog):
-    """The one button only ever added, so a list that had grown could not be
-    shortened - and growing is the direction that costs, because every model in
-    the list competes for every word."""
-    _type_ocr_langs(dialog, "kor")
+def test_ticking_and_unticking_are_both_possible(dialog):
+    """The whole point: the list could be grown but never shortened.
+
+    Every model in it competes for every word, so an OCR list that has grown is
+    slower and can lose a soft glyph to a script that is not on screen.
+    """
+    assert dialog.ocr_picker.get_langs() == ["eng"]
+
+    _tick(dialog, "kor")
+    assert dialog.ocr_picker.get_langs() == ["eng", "kor"]
+    assert dialog._ocr_langs == "eng+kor"
+
+    _tick(dialog, "eng", on=False)
+    assert dialog._ocr_langs == "kor"
+
     dialog._on_save(_save_button(dialog))
     assert dialog.config.ocr.langs == "kor"
 
 
-def test_the_button_offers_to_trim_a_list_that_has_grown(dialog):
+def test_the_choice_is_stored_in_one_order_whatever_order_it_was_ticked(dialog):
+    """`eng+kor` and `kor+eng` give the same text and the same confidence.
+
+    Order carries no meaning, so the value is written in the list's own order -
+    otherwise the same selection would look different in the config depending on
+    which box was clicked first.
+    """
+    _tick(dialog, "kor")
+    first = dialog._ocr_langs
+    _tick(dialog, "kor", on=False)
+    _tick(dialog, "kor")
+    assert dialog._ocr_langs == first == "eng+kor"
+
+
+def test_the_source_language_is_marked_in_the_list(dialog):
+    """"Which of these 124 do I tick" should have an answer on screen."""
+    dialog.source_picker.set_code("kor_Hang")
+    dialog._refresh_language()
+    assert dialog.ocr_picker.NEEDED_TAG in _tags(dialog, "kor")
+    assert dialog.ocr_picker.NEEDED_TAG not in _tags(dialog, "jpn")
+
+
+def test_each_row_says_how_the_model_would_be_obtained(dialog, monkeypatch):
+    """The state that is otherwise found by saving and watching OCR fail.
+
+    `rus` has a pinned checksum so the app fetches it; `grc` ships with tesseract
+    but the app will not download it, because it has no digest to check it
+    against. Both look identical in a config file.
+    """
+    monkeypatch.setattr(settings_mod, "installed_models", lambda *_: {"eng"})
+    dialog._refresh_language()
+
+    assert _tags(dialog, "eng") == ["this box's language", "ready"]
+    assert _tags(dialog, "rus") == ["will download"]
+    assert _tags(dialog, "grc") == ["not installed"]
+    assert "tesseract-data-grc" in _row_for(dialog, "grc").get_child().get_tooltip_text()
+
+
+def test_search_narrows_the_list(dialog):
+    dialog.ocr_picker.search.set_text("korean")
+    dialog.ocr_picker.refresh()
+    stems = []
+    index = 0
+    while (row := dialog.ocr_picker.listbox.get_row_at_index(index)) is not None:
+        stems.append(getattr(row, "ocr_stem", None))
+        index += 1
+    assert stems == ["kor", "kor_vert"]
+    assert "2 of 124" in dialog.ocr_picker.count_label.get_text()
+
+
+def test_a_stem_the_table_does_not_know_is_kept_and_shown(dialog):
+    """A hand-added file, or a name from a newer tessdata revision.
+
+    Dropping it would be the dialog editing the config by opening it, which is
+    the one thing it must never do.
+    """
+    dialog.config.ocr.langs = "eng+zzz_handmade"
+    dlg = SettingsDialog(None, dialog.config)
+    try:
+        assert dlg.ocr_picker.get_langs() == ["eng", "zzz_handmade"]
+        assert _tags(dlg, "zzz_handmade") == ["not a known model"]
+
+        # And it can be removed, which is what "control the list" has to mean.
+        _tick(dlg, "zzz_handmade", on=False)
+        dlg._on_save(_save_button(dlg))
+        assert dlg.config.ocr.langs == "eng"
+    finally:
+        dlg.destroy()
+
+
+# -- the advice under the choice -------------------------------------------- #
+def test_the_hint_names_what_is_only_competing(dialog):
     """Three models over a Korean box: one of them is only competing.
 
-    The source is already readable, so the move worth one click is the other
-    direction - drop what nothing in the box is written in. `eng` stays: it is
-    what reads the Latin names and UI labels the line can contain.
+    The source is already readable, so what is left to say is the cost of the
+    extra model - the user untick it, which is a click in the list.
     """
-    _type_ocr_langs(dialog, "eng+jpn+kor")
+    dialog._set_ocr_langs("eng+jpn+kor")
     dialog.source_picker.set_code("kor_Hang")
     dialog._refresh_language()
 
-    assert dialog.ocr_sync_btn.get_visible()
-    assert dialog.ocr_sync_btn.get_label() == "Use kor+eng"
+    assert dialog.ocr_hint.get_visible()
     assert "jpn competes for every word" in dialog.ocr_hint.get_text()
+    assert "Untick it if nothing in the box is written in it" in dialog.ocr_hint.get_text()
 
-    dialog._on_ocr_sync()
-    assert dialog.ocr_entry.get_text() == "kor+eng", "the field and the state disagree"
+    _tick(dialog, "jpn", on=False)
+    assert not dialog.ocr_hint.get_visible()
     dialog._on_save(_save_button(dialog))
-    assert dialog.config.ocr.langs == "kor+eng"
+    assert dialog.config.ocr.langs == "eng+kor"
 
 
 def test_a_list_that_already_reads_the_box_is_left_alone(dialog):
@@ -699,84 +783,82 @@ def test_a_list_that_already_reads_the_box_is_left_alone(dialog):
     for this case rather than warning about it.
     """
     for langs in ("eng+kor", "kor+eng"):
-        _type_ocr_langs(dialog, langs)
+        dialog._set_ocr_langs(langs)
         dialog.source_picker.set_code("kor_Hang")
         dialog._refresh_language()
         assert not dialog.ocr_hint.get_visible(), langs
-        assert not dialog.ocr_sync_btn.get_visible(), langs
 
 
-def test_the_trim_hint_reads_correctly_for_every_shape_of_extra(dialog):
-    """The first version said "kor, jpn competes", and explained an English
-    source's minimal list as "the source's model plus eng for Latin names"."""
-    _type_ocr_langs(dialog, "eng+jpn+kor")
+def test_the_hint_reads_correctly_for_every_shape_of_extra(dialog):
+    """The first version said "kor, jpn competes", which is not a sentence."""
+    dialog._set_ocr_langs("eng+jpn+kor")
     dialog.source_picker.set_code("kor_Hang")
     dialog._refresh_language()
     assert "jpn competes for every word" in dialog.ocr_hint.get_text()
 
-    _type_ocr_langs(dialog, "eng+jpn+kor")
     dialog.source_picker.set_code("eng_Latn")
     dialog._refresh_language()
     text = dialog.ocr_hint.get_text()
     assert "jpn and kor compete" in text, text
-    assert "the source's own model" in text, text
-    assert dialog.ocr_sync_btn.get_label() == "Use eng"
 
 
-def test_the_longest_offer_still_fits_the_dialog(dialog):
-    """The button's label grows with the list, and must not squeeze the field out.
+def test_an_empty_selection_is_not_saved_and_the_picker_is_put_back(dialog):
+    """OCR with no language cannot run, so an empty set is not a setting.
 
-    Measured with `Use eng+jpn+chi_sim+kor`: the row asks for 393 px minimum and
-    529 px natural, and the dialog opens 740 px wide, so the control the row
-    exists for keeps its space. A row that outgrew the dialog would put the field
-    the user is meant to edit off the edge.
+    The picker is restored rather than left showing a selection that was never
+    stored: a window that lies about what is in force is worse than one that
+    refuses.
     """
-    _type_ocr_langs(dialog, "eng+jpn+chi_sim")
-    dialog.source_picker.set_code("kor_Hang")
+    dialog.config.ocr.langs = "kor"
+    dialog._set_ocr_langs("kor")
+    _tick(dialog, "kor", on=False)
+
+    dialog._on_save(_save_button(dialog))
+
+    assert dialog.config.ocr.langs == "kor"
+    assert dialog.ocr_picker.get_langs() == ["kor"], "the picker kept an empty selection"
+    assert "No OCR language is ticked" in dialog.status.get_text()
+
+
+def test_a_hand_edited_bad_name_is_reported_not_silently_dropped(dialog):
+    """The value becomes a filename, so it is checked rather than trusted.
+
+    A picker cannot produce one of these, but `config.json` and `--langs` can, and
+    `parse_langs` refuses the name at read time anyway - so a save that accepted it
+    would only move the failure somewhere less explicable. It is shown rather than
+    dropped, because opening Settings must never edit the config by itself.
+    """
+    dialog.config.ocr.langs = "kor+../passwd"
+    dlg = SettingsDialog(None, dialog.config)
+    try:
+        assert dlg.ocr_picker.get_langs() == ["kor", "../passwd"]
+        assert "not a valid tesseract language name" in dlg.ocr_hint.get_text()
+
+        dlg._on_save(_save_button(dlg))
+
+        assert dlg.config.ocr.langs == "kor+../passwd"
+        assert "not a valid tesseract language name" in dlg.status.get_text()
+    finally:
+        dlg.destroy()
+
+
+def test_the_ocr_row_fits_the_dialog(dialog):
+    """The row is a label and a picker, and must not outgrow the dialog.
+
+    The picker is the control the row exists for; a selection wide enough to push
+    it off the edge would be a row nobody can use.
+    """
+    dialog._set_ocr_langs("eng+jpn+chi_sim+kor")
     dialog._refresh_language()
-    assert dialog.ocr_sync_btn.get_label() == "Use eng+jpn+chi_sim+kor"
+    label = dialog.ocr_picker._label.get_text()
+    # Four names, the longest label the button can carry, in the order the
+    # config holds them.
+    assert label == "English + Japanese + Chinese (simplified) + Korean", label
 
     width = dialog.get_default_size().width
     row = dialog.ocr_row.measure(Gtk.Orientation.HORIZONTAL, -1)
     # 160 px is the label column of this grid plus its margins.
     assert row.minimum + 160 <= width, f"the OCR row needs {row.minimum}px of {width}px"
-
-
-def test_a_space_separated_list_is_stored_the_way_tesseract_needs_it(dialog):
-    """`-l "kor eng"` is not two languages.
-
-    Tesseract splits `-l` on `+` alone, so that argument makes it load one model
-    named "kor eng" and give up on every language ("Tesseract couldn't load any
-    languages!"). `split_langs` accepts whitespace because the config and
-    `--langs` are hand-edited, so the field stores the form that works.
-    """
-    _type_ocr_langs(dialog, "kor eng")
-    dialog._on_save(_save_button(dialog))
-
-    assert dialog.config.ocr.langs == "kor+eng"
-    assert dialog.ocr_entry.get_text() == "kor+eng", "the box shows what was not stored"
-
-
-def test_an_emptied_field_does_not_clear_the_languages(dialog):
-    """OCR with no language cannot run, so an empty box is not a setting."""
-    dialog.config.ocr.langs = "kor"
-    _type_ocr_langs(dialog, "")
-    dialog._on_save(_save_button(dialog))
-    assert dialog.config.ocr.langs == "kor"
-
-
-def test_a_bad_name_is_refused_and_the_stored_list_is_kept(dialog):
-    """Free text that becomes a filename needs validating before it is stored.
-
-    `parse_langs` refuses such a name at read time anyway, so a save that
-    accepted it would only move the failure somewhere less explicable.
-    """
-    dialog.config.ocr.langs = "kor"
-    _type_ocr_langs(dialog, "kor+../passwd")
-    dialog._on_save(_save_button(dialog))
-
-    assert dialog.config.ocr.langs == "kor"
-    assert "not a valid tesseract language name" in dialog.ocr_hint.get_text()
 
 
 # --------------------------------------------------------------------------- #

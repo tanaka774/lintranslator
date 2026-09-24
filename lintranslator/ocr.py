@@ -410,7 +410,45 @@ def find_tessdata(
     )
 
 
+def installed_models(extra_dir: str | None = None) -> set[str]:
+    """Every language model already on this machine, by stem.
+
+    The Settings chooser has to say whether ticking a language works now, will
+    download, or needs installing, and only the file system knows the first. The
+    directories are the ones `find_tessdata` accepts, because a file in any of
+    them is one `ensure_ready` will find.
+    """
+    dirs: list[Path] = []
+    if extra_dir:
+        dirs.append(Path(extra_dir))
+    dirs.append(paths.DATA_DIR / "tessdata")
+    dirs.extend(Path(p) for p in SYSTEM_TESSDATA_CANDIDATES)
+
+    found: set[str] = set()
+    for path in dirs:
+        if path.is_dir():
+            found.update(
+                entry.name[: -len(".traineddata")]
+                for entry in path.glob("*.traineddata")
+            )
+    return found
+
+
+def model_state(stem: str, installed: set[str] | None = None) -> str:
+    """How OCR would get this model: already here, downloaded, or installed by hand.
+
+    `missing` is the state worth showing. The app fetches only what it has a
+    pinned checksum for, and a language outside that set fails at read time with
+    an `OcrError` naming the distro package - a fine message, but a poor way to
+    find out.
+    """
+    if stem in (installed_models() if installed is None else installed):
+        return "installed"
+    return "download" if stem in TESSDATA_SHA256 else "missing"
+
+
 def tesseract_version() -> str | None:
+    """The version string of the system binary, or None when it is not there."""
     try:
         out = subprocess.run(
             ["tesseract", "--version"], capture_output=True, text=True, timeout=10
