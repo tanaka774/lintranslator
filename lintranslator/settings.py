@@ -547,8 +547,8 @@ class SettingsDialog(Gtk.Window):
         self._last_backend: str | None = None
         # The OCR languages as edited here, which is not `config.ocr.langs`
         # until Save: `ocr.langs` is a tesseract setting with its own life
-        # (system tessdata, `--langs` on the command line), so it is changed by
-        # an explicit button press and written once, with everything else.
+        # (system tessdata, `--langs` on the command line), so the field edits
+        # this copy and it is written once, with everything else.
         self._ocr_langs: str = config.ocr.langs
         # Tall enough that Save stays visible without scrolling on a 1080p+
         # screen; the scroller covers smaller displays.
@@ -702,17 +702,36 @@ class SettingsDialog(Gtk.Window):
         self.language_hint.set_max_width_chars(70)
         language_notes.append(self.language_hint)
 
+        # The OCR languages are a setting, not only advice. This used to be a hint
+        # that appeared when something was wrong, behind a button that could only
+        # ever *add* - so a list that had grown could not be shortened, and the
+        # list growing is the direction that costs: every model in it competes
+        # for every word, which is slower and lets a wrong script win a soft
+        # glyph. The field takes exactly what tesseract's `-l` takes, so it can
+        # be set, replaced and trimmed by hand; the button is a shortcut for the
+        # one case worth a click.
         self.ocr_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.ocr_hint = Gtk.Label(label="", xalign=0, wrap=True)
-        self.ocr_hint.add_css_class("lintranslator-hint")
-        self.ocr_hint.set_max_width_chars(48)
-        self.ocr_hint.set_hexpand(True)
-        self.ocr_row.append(self.ocr_hint)
+        self.ocr_row.append(Gtk.Label(label="OCR languages", xalign=0))
+        self.ocr_entry = Gtk.Entry()
+        self.ocr_entry.set_text(self._ocr_langs)
+        self.ocr_entry.set_hexpand(True)
+        self.ocr_entry.set_tooltip_text(
+            "What tesseract reads the box with — the value `-l` takes: `kor`, or "
+            "`kor+eng` for a box that also has Latin names. Every language added "
+            "is another model competing for every word."
+        )
+        self.ocr_entry.connect("changed", self._on_ocr_langs_changed)
+        self.ocr_row.append(self.ocr_entry)
         self.ocr_sync_btn = Gtk.Button(label="")
         self.ocr_sync_btn.add_css_class("lintranslator-tool")
         self.ocr_sync_btn.connect("clicked", lambda *_: self._on_ocr_sync())
         self.ocr_row.append(self.ocr_sync_btn)
         language_notes.append(self.ocr_row)
+
+        self.ocr_hint = Gtk.Label(label="", xalign=0, wrap=True)
+        self.ocr_hint.add_css_class("lintranslator-hint")
+        self.ocr_hint.set_max_width_chars(70)
+        language_notes.append(self.ocr_hint)
         grid.attach(language_notes, 1, 3, 1, 1)
 
         # The Model row is rebuilt on every backend change: the label, the
@@ -1048,52 +1067,134 @@ class SettingsDialog(Gtk.Window):
         )
 
     def _refresh_ocr_hint(self, source: str) -> None:
-        """Offer the OCR language the source needs, without applying it.
+        """Say what is wrong with the OCR languages, and offer the one-click fix.
 
         Reading Japanese with `eng.traineddata` produces confident nonsense, and
         the OCR language is a separate setting from the translation language, so
-        the two drift apart silently. The button exists because the coupling is
-        real; it is a button and not an automatic write because `ocr.langs` may
-        have been tuned on purpose (a game with Latin names over Japanese text
-        wants `eng+jpn`, not `jpn`).
+        the two drift apart silently. The button is a button and not an automatic
+        write because `ocr.langs` may have been tuned on purpose (a game with
+        Latin names over Japanese text wants `eng+jpn`, not `jpn`) - and because
+        the other direction matters just as much: every model in the list
+        competes for every word, so it is slower and a wrong script can win on a
+        soft glyph.
+
+        So there are two offers and one rule for staying quiet. The list that
+        reads the box is the source's own model plus `eng`, which is what carries
+        the Latin names and UI labels any box can contain - the same reason the
+        add button offers `eng+jpn` rather than `jpn`. Anything beyond that is
+        competing without being asked for, which is worth one click to drop, and
+        a list that already *is* that is left alone: `eng+kor` is a choice, not a
+        mistake, and a hint that fired on it would be nagging.
         """
         problem = self._ocr_lang_problem()
         if problem:
             self.ocr_hint.set_text(problem)
+            self.ocr_hint.set_visible(True)
             self.ocr_sync_btn.set_visible(False)
-            self.ocr_row.set_visible(True)
             return
-        self.ocr_sync_btn.set_visible(True)
 
         wanted = tesseract_lang(source)
         current = self._ocr_lang_set()
-        missing = wanted is not None and wanted not in current
-        if not missing:
-            self.ocr_row.set_visible(False)
+        if wanted is None:
+            # tesseract has no model for the source. There is no file to add and
+            # no minimal list to name, so the field is the only help - and it
+            # stays visible, because it is the setting.
+            self.ocr_hint.set_text("")
+            self.ocr_hint.set_visible(False)
+            self.ocr_sync_btn.set_visible(False)
             return
-        added = "+".join([*current, wanted])
-        self.ocr_hint.set_text(
-            f"OCR reads “{self._ocr_langs.strip() or 'nothing'}”, but the source is "
-            f"{language_name(source)} — tesseract needs {wanted} for it."
-        )
-        self.ocr_sync_btn.set_label(f"Use {added}")
-        self.ocr_sync_btn.set_tooltip_text(
-            f"Add {wanted} to the OCR languages for the capture, giving "
-            f"“{added}”. Applied when you press Save."
-        )
-        self.ocr_row.set_visible(True)
+
+        minimal = self._ocr_minimal_set(wanted)
+        extra = [name for name in current if name not in minimal]
+
+        if wanted not in current:
+            offered = [*current, wanted]
+            self.ocr_hint.set_text(
+                f"OCR reads “{self._ocr_langs.strip() or 'nothing'}”, but the source is "
+                f"{language_name(source)} — tesseract needs {wanted} for it."
+            )
+            self.ocr_sync_btn.set_label(f"Use {'+'.join(offered)}")
+            self.ocr_sync_btn.set_tooltip_text(
+                f"Add {wanted} to the OCR languages for the capture, giving "
+                f"“{'+'.join(offered)}”. Applied when you press Save."
+            )
+        elif extra:
+            listed = " and ".join(extra) if len(extra) == 2 else ", ".join(extra)
+            # "eng" is the whole minimal list when the source is English, so the
+            # usual "plus eng for Latin names" would explain it as itself.
+            if wanted == "eng":
+                why = "the source's own model"
+            else:
+                why = "the source's model plus eng for Latin names"
+            self.ocr_hint.set_text(
+                f"OCR reads “{self._ocr_langs.strip()}”, so {listed} "
+                f"{'competes' if len(extra) == 1 else 'compete'} for every word as "
+                "well — slower, and a wrong script can win on a soft glyph. "
+                f"“{'+'.join(minimal)}” is {why}."
+            )
+            self.ocr_sync_btn.set_label(f"Use {'+'.join(minimal)}")
+            self.ocr_sync_btn.set_tooltip_text(
+                f"Set the OCR languages for the capture to “{'+'.join(minimal)}”, "
+                f"dropping {listed}. Applied when you press Save."
+            )
+        else:
+            self.ocr_hint.set_text("")
+            self.ocr_hint.set_visible(False)
+            self.ocr_sync_btn.set_visible(False)
+            return
+
+        self.ocr_hint.set_visible(True)
+        self.ocr_sync_btn.set_visible(True)
+
+    def _on_ocr_langs_changed(self, entry: Gtk.Entry) -> None:
+        """Follow the field: it is the control, `_ocr_langs` is what Save reads."""
+        self._ocr_langs = entry.get_text()
+        self._refresh_ocr_hint(self.source_picker.get_code())
+
+    def _set_ocr_langs(self, value: str) -> None:
+        """Write the list into the field, which the state then follows.
+
+        Through the field rather than around it, so the two cannot disagree: a
+        button that changed only `_ocr_langs` would leave the visible box showing
+        the list it had just replaced.
+        """
+        if self.ocr_entry.get_text() != value:
+            self.ocr_entry.set_text(value)  # emits "changed", which syncs state
+        else:
+            self._ocr_langs = value
+            self._refresh_ocr_hint(self.source_picker.get_code())
+
+    @staticmethod
+    def _ocr_minimal_set(wanted: str) -> list[str]:
+        """The list that reads a box written in `wanted`, and nothing more.
+
+        `eng` comes along because it is what carries the Latin names and UI
+        labels any box can contain - the reason the add offer is `eng+jpn` and
+        not `jpn`. Both the hint and the button use this, so what is described
+        and what is applied cannot differ.
+        """
+        return [wanted] if wanted == "eng" else [wanted, "eng"]
 
     def _on_ocr_sync(self) -> None:
+        """Apply the move the hint is offering: add the source's model, or trim."""
         source = self.source_picker.get_code()
         wanted = tesseract_lang(source)
         if wanted is None:
             return
         current = self._ocr_lang_set()
+        minimal = self._ocr_minimal_set(wanted)
+        # One button, two directions. Adding is for "the source is unreadable";
+        # trimming is for "the list has grown past what reads this box", which
+        # only the user can judge - so the hint names what is extra and the button
+        # offers the list without it.
         if wanted not in current:
-            current.append(wanted)
-        self._ocr_langs = "+".join(current)
+            updated = [*current, wanted]
+        elif [name for name in current if name not in minimal]:
+            updated = minimal
+        else:
+            return  # nothing was being offered; the button is hidden for this case
+        self._set_ocr_langs("+".join(updated))
         self.status.set_text(f"OCR languages set to {self._ocr_langs} — press Save")
-        self._refresh_ocr_hint(source)
 
     def _refresh_model_hint(self, backend: str | None = None) -> None:
         backend = backend or BACKENDS[self.backend_dd.get_selected()][0]
@@ -1471,8 +1572,11 @@ class SettingsDialog(Gtk.Window):
         # that changed the language.
         self.config.translate.source_lang = self.source_picker.get_code()
         self.config.translate.target_lang = self.target_picker.get_code()
-        # OCR languages only move when the button under the pair was pressed, so
-        # this is a no-op on a dialog that was only opened and saved.
+        # An emptied field is not a setting: OCR with no language cannot run, so
+        # clearing the box leaves the stored list alone rather than saving a value
+        # the engine would refuse. Anything else is written in the one form `-l`
+        # accepts - `split_langs` also takes whitespace, and `-l "kor eng"` is not
+        # two languages but one model named "kor eng", which loads none of them.
         ocr_warning: str | None = None
         if self._ocr_langs.strip():
             # A name that is not a language name is kept out of the config: it
@@ -1485,7 +1589,10 @@ class SettingsDialog(Gtk.Window):
                     f"{self.config.ocr.langs!r}."
                 )
             else:
-                self.config.ocr.langs = self._ocr_langs.strip()
+                self.config.ocr.langs = "+".join(split_langs(self._ocr_langs))
+                # Show what was actually stored, so a list typed with spaces is
+                # not left on screen in a form the engine never sees.
+                self._set_ocr_langs(self.config.ocr.langs)
         self.config.display.font_scale = round(self.font_scale.get_value(), 2)
         self.config.display.width = int(self.width_scale.get_value())
         # Changing a line budget re-states the rule the card's height comes from,

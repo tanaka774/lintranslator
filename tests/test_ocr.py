@@ -10,11 +10,13 @@ from __future__ import annotations
 import hashlib
 
 import pytest
+from PIL import Image
 
 from lintranslator.ocr import (
     LANG_NAME_RE,
     TESSDATA_SHA256,
     OcrError,
+    TesseractOcr,
     bad_langs,
     download_tessdata,
     find_tessdata,
@@ -181,3 +183,42 @@ def test_a_truncated_download_is_refused(monkeypatch, tmp_path):
     )
     with pytest.raises(OcrError):
         download_tessdata(["eng"], tmp_path)
+
+
+# --------------------------------------------------------------------------- #
+# What actually reaches `-l`
+# --------------------------------------------------------------------------- #
+def test_a_space_separated_list_reaches_tesseract_with_pluses(monkeypatch, tmp_path):
+    """`-l "kor eng"` is not two languages, it is one model named "kor eng".
+
+    Measured, tesseract answers that with "Failed loading language 'kor eng'" and
+    "Tesseract couldn't load any languages!", so the read fails outright for a
+    value `split_langs` and the Settings field both accept. The config and
+    `--langs` are hand-edited, so the argument is normalised rather than trusted.
+    """
+    import pytesseract
+
+    seen: dict = {}
+
+    def fake(image, **kwargs):
+        seen.update(kwargs)
+        return {
+            "text": ["오래간만이에요"],
+            "conf": ["92"],
+            "block_num": [1],
+            "par_num": [1],
+            "line_num": [1],
+            "left": [0],
+            "top": [0],
+            "width": [10],
+            "height": [10],
+        }
+
+    monkeypatch.setattr(pytesseract, "image_to_data", fake)
+    ocr = TesseractOcr(langs="kor eng", upscale=1.0, autocontrast=False)
+    monkeypatch.setattr(ocr, "ensure_ready", lambda: tmp_path)
+
+    result = ocr.read(Image.new("L", (40, 12), 255))
+
+    assert seen["lang"] == "kor+eng", "the list reached -l in a form tesseract refuses"
+    assert result.text == "오래간만이에요"

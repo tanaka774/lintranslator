@@ -459,6 +459,25 @@ Two consequences are shown rather than implied:
   become a filename under the tessdata directory — and the Settings dialog says
   so instead of saving it.
 
+  The **OCR languages** field beside it is that setting, and it is on screen
+  whether or not something is wrong, because the list has to be trimmed as well
+  as grown. Every model in it competes for every word: measured on one Korean
+  line, `kor` took 33 ms, `eng+kor` 68 ms and `kor+eng+jpn` 101 ms for identical
+  text at identical 92% confidence, and on clean English the extra models changed
+  nothing but the time (149 → 332 ms). Where they do change the answer is the
+  ambiguous case — a degraded capture where `eng+jpn` produced a `デ` where `eng`
+  had a dash — and the mixed one, where `kor` alone read "Manager Kim!" as
+  `1308 ㅎ 86@『 시 머 !`. So a list that has grown past what the box needs is
+  offered `Use kor+eng` — the source's model plus `eng`, which is what carries
+  the Latin names and UI labels any box can contain — while a list that already
+  is that is left alone: `eng+kor` over Korean is a choice, not a mistake.
+
+  The field takes exactly what `-l` takes, which is the escape hatch for anything
+  the button does not cover. Names are stored `+`-separated, so `kor eng` is
+  accepted and saved as `kor+eng`: tesseract splits that argument on `+` alone,
+  and `-l "kor eng"` makes it load one model named "kor eng" and give up on all
+  of them.
+
 From a terminal the pair is reachable as flags, and `lintranslator check` validates it:
 
 ```bash

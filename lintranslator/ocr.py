@@ -492,7 +492,13 @@ class TesseractOcr:
         config = f"--psm {self.psm}"
         kwargs: dict = {"config": config, "output_type": Output.DICT}
         if tessdata:
-            kwargs["lang"] = self.langs
+            # `-l` separates names with `+`, and only with `+`: passed "kor eng"
+            # tesseract tries to load a single model named "kor eng" and gives up
+            # on every language ("Tesseract couldn't load any languages!"). The
+            # config and `--langs` are hand-edited and `split_langs` accepts
+            # whitespace, so the argument is written back in the one form that
+            # works rather than passed through as it was typed.
+            kwargs["lang"] = "+".join(self.lang_list)
             kwargs["config"] = f"{config} --tessdata-dir {tessdata}"
 
         import time
