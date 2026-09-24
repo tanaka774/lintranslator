@@ -58,7 +58,8 @@ Requires Linux with a Wayland session (or X11), Python 3.12-3.14, and tesseract
 (see [Compatibility](#compatibility) above).
 
 There is no package yet - no AUR, Flatpak or PyPI entry - so this begins with the
-source. It is five commands and one long download.
+source. Four commands, and no model download: a fresh config translates through a
+hosted backend, so the local weights are opt-in.
 
 ```bash
 # 1. the code
@@ -77,17 +78,28 @@ sudo pacman -S tesseract python-gobject python-cairo   # Arch / CachyOS
 #    see it however the venv is built. --system-site-packages is what exposes it.
 uv venv --python /usr/bin/python3 --system-site-packages .venv
 # without uv:  python3 -m venv --system-site-packages .venv
-uv pip install --python .venv/bin/python -e '.[ct2]'
+uv pip install --python .venv/bin/python -e .
 
-# 4. convert the model to int8 - one time, and it is a download, not a build:
-#    ~2.5 GB of fp32 checkpoint into the HuggingFace cache, then ~630 MB of
-#    int8 weights into ~/.local/share/lintranslator/ct2/. Both numbers are on
-#    disk at once - see "What the conversion actually costs".
-.venv/bin/python -m lintranslator convert
-
-# 5. and what is missing, in plain language, with a non-zero exit if anything is.
+# 4. and what is missing, in plain language, with a non-zero exit if anything is.
 .venv/bin/python -m lintranslator check
 ```
+
+Then `.venv/bin/python -m lintranslator gui`, and put an API key and a model id
+in the picker's **Settings**. The only fetch along the way is the tesseract
+language data, 4.1 MB for `eng`.
+
+Running the model locally instead adds two steps, and they are the ones with the
+downloads in them:
+
+```bash
+uv pip install --python .venv/bin/python -e '.[ct2]'   # int8 NLLB, no torch
+.venv/bin/python -m lintranslator convert              # asks first; ~3 GB
+```
+
+`convert` fetches ~2.5 GB of fp32 checkpoint into the HuggingFace cache and
+leaves ~630 MB of int8 weights in `~/.local/share/lintranslator/ct2/`; both stay
+on disk at once (see "What the conversion actually costs" below). It says so and
+waits for a yes, and takes `--yes` when there is no terminal to ask.
 
 It does not have to be a checkout. Installing from the repository works the same
 way and keeps no source tree around:
@@ -95,26 +107,30 @@ way and keeps no source tree around:
 ```bash
 uv venv --python /usr/bin/python3 --system-site-packages ~/.venvs/lintranslator
 uv pip install --python ~/.venvs/lintranslator/bin/python \
-    "lintranslator[ct2] @ git+https://github.com/tanaka774/lintranslator"
+    "lintranslator @ git+https://github.com/tanaka774/lintranslator"
 ~/.venvs/lintranslator/bin/lintranslator check
 ```
 
 ## What is downloaded, and when
 
-Nothing is downloaded at install time. Which backend you translate with decides
-everything after that, and the difference is large enough to be worth choosing
-deliberately. **Translating through a hosted backend means skipping step 4
-entirely - install plain `-e .` and no model is involved at all.**
+Nothing is downloaded at install time, and the default configuration does not
+need anything downloaded afterwards either: a fresh config translates through a
+hosted backend. Which backend you use decides the rest, and the difference is
+large enough to be worth choosing deliberately.
 
 | backend | what is fetched | when |
 |---|---|---|
-| DeepL, OpenRouter, OpenAI, your own endpoint | **nothing from HuggingFace** - no ctranslate2, no torch, no weights | - |
-| `ct2`, the default in a fresh config | the converted int8 weights, 629 MB, plus ~22 MB of tokenizer | the weights when *you* run `lintranslator convert`; the tokenizer on first use |
-| `local` | the fp32 checkpoint, 2.46 GB, plus the same tokenizer | automatically, on the first translation |
+| **OpenRouter, the default in a fresh config** | **nothing from HuggingFace** - no ctranslate2, no torch, no weights | - |
+| DeepL, OpenAI, your own endpoint | the same nothing | - |
+| `ct2`, opt-in | the converted int8 weights, 629 MB, plus ~22 MB of tokenizer | the weights when *you* run `lintranslator convert`, which asks first; the tokenizer on first use |
+| `local`, opt-in | the fp32 checkpoint, 2.46 GB, plus the same tokenizer | only when `translate.allow_model_download` is set - the backend refuses otherwise |
 
-The local model is what a fresh config defaults to, not something the install
-requires: it is a settings change, and the picker's Settings dialog is where it
-happens.
+The two local backends are a settings change rather than a requirement, and both
+of them are explicit about the download: `lintranslator convert` prints what it
+will fetch and waits for a yes (`--yes` when there is no terminal to ask), and
+`local` will not fetch the checkpoint until `translate.allow_model_download: true`
+is set. So no path through this app starts a multi-gigabyte download without
+saying so first.
 
 In every one of those cases the OCR side fetches tesseract language data on first
 use - 4.1 MB for `eng`, pinned to a revision and checksum-verified. That one
@@ -154,8 +170,8 @@ this project used to claim. Measured against the current `main` of the model rep
 | tokenizer | 17 MB `tokenizer.json` + 4.9 MB `sentencepiece.bpe.model` | same cache |
 | **int8 weights** | **629 MB** — `model.bin` 623 MB + `shared_vocabulary.json` 5.9 MB | `~/.local/share/lintranslator/ct2/` |
 
-So budget **~3 GB** for the default backend, and **~630 MB** if you clean up
-afterwards.
+So budget **~3 GB** while a conversion runs, and **~630 MB** if you clean up
+afterwards. None of it applies to a hosted backend, which downloads neither.
 
 **Nothing deletes the checkpoint.** After the conversion only the tokenizer is
 still read — the `ct2` backend loads it once per run — so the 2.5 GB of fp32
@@ -232,13 +248,18 @@ tessdata dir     : /home/you/.local/share/lintranslator/tessdata
 portal ScreenCast: v5
 portal Screenshot: v2
 region           : fraction (0.10, 0.78, 0.80, 0.12)
-translate backend: ct2 (eng_Latn->jpn_Jpan)
-  model: /home/you/.local/share/lintranslator/ct2/nllb-600m-int8 (629 MB)
-  ctranslate2: installed
+translate backend: openrouter (English->Japanese)
+  model: google/gemini-2.5-flash-lite
+  api base: (provider default)
+  api key: set via config.json (73 chars)
 languages        : eng_Latn -> jpn_Jpan
 PyGObject (GUI)  : installed
 RESULT: ready
 ```
+
+(`languages` shows the FLORES-200 pair the local backends would use; the hosted
+ones are handed names. The key is described rather than printed - ten characters
+of it would be ten characters too many.)
 
 Anything wrong is named rather than implied: a missing tesseract, a model that has
 not been converted, a language pair NLLB cannot score, a missing PyGObject - the

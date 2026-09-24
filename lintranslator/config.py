@@ -74,16 +74,31 @@ class OcrConfig:
 
 @dataclass
 class TranslateConfig:
-    backend: str = "ct2"  # "ct2" | "local" | "deepl" | "openrouter" | "openai" | "chat" | "none"
+    # Hosted by default, on purpose. The local backends cannot translate a line
+    # until 2.5 GB of weights have been downloaded, which is a strange thing for a
+    # first run to do unasked; OpenRouter is the widest of the hosted options and
+    # reaches a working setup with one key. Switching to a local backend is a
+    # Settings change either way - see `allow_model_download` below.
+    backend: str = "openrouter"  # "ct2" | "local" | "deepl" | "openrouter" | "openai" | "chat" | "none"
     # Where the int8-converted CTranslate2 model lives (ct2 backend). The user
     # data dir, unless an older install left the weights in the source tree.
     ct2_model_dir: str = field(default_factory=lambda: str(paths.default_ct2_dir()))
     source_lang: str = "eng_Latn"
     target_lang: str = "jpn_Jpan"
-    model: str = "facebook/nllb-200-distilled-600M"
+    # Empty means "whatever this backend defaults to": the NLLB repo for `ct2`
+    # and `local` (see their constructors), and for the hosted chat backends the
+    # model you chose in Settings. Their ids change too often for a baked-in
+    # default to stay right, so there deliberately is not one.
+    model: str = ""
     device: str = "cpu"
     threads: int = 8
     max_new_tokens: int = 192
+    # `local` hands the model id to transformers, which downloads it without
+    # asking: 2.46 GB for the model this project uses, into the shared HuggingFace
+    # cache. Off by default, so that is a decision rather than a surprise.
+    # `lintranslator convert` does not need it - it says what it will fetch and
+    # asks first, and leaves the faster int8 weights behind as well.
+    allow_model_download: bool = False
     # Term overrides. Accepts {"Term": "訳"} (applied to the output) or
     # {"pre": {...}, "post": {...}} for explicit control.
     glossary: dict = field(default_factory=dict)

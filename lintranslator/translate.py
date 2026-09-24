@@ -194,6 +194,35 @@ def _nllb_model_name(value: str | None) -> str:
     return (value or "").strip() or DEFAULT_NLLB_MODEL
 
 
+#: Filenames that mean the checkpoint itself is on disk. The repository this
+#: project defaults to changed its weights file from `model.safetensors` to
+#: `pytorch_model.bin` between revisions, so both are looked for.
+_WEIGHT_GLOBS = ("*.safetensors", "pytorch_model*.bin")
+
+
+def model_is_cached(model: str) -> bool:
+    """Whether the *weights* are already downloaded, not just the tokenizer.
+
+    `ct2` caches the tokenizer out of the same repository, so a cache directory
+    that exists is not evidence that the 2.5 GB is there. Only a weights file
+    counts, which is what makes this usable as a "would this download?" test.
+    """
+    # Imported here rather than at the top: `cleanup` imports this module.
+    from .cleanup import hf_repo_dir
+
+    repo = hf_repo_dir(model)
+    if not repo.is_dir():
+        return False
+    for pattern in _WEIGHT_GLOBS:
+        for path in repo.glob(f"snapshots/*/{pattern}"):
+            try:
+                if path.is_file() and path.stat().st_size > 0:
+                    return True
+            except OSError:  # a dangling symlink into blobs/
+                continue
+    return False
+
+
 class NllbTranslator(Translator):
     """Local NLLB-200 translation via transformers (CPU or CUDA)."""
 
@@ -207,12 +236,14 @@ class NllbTranslator(Translator):
         device: str = "cpu",
         threads: int = 8,
         max_new_tokens: int = 192,
+        allow_download: bool = False,
     ) -> None:
         self.model_name = _nllb_model_name(model)
         self.source_lang = source_lang
         self.target_lang = target_lang
         self.device = device
         self.max_new_tokens = max_new_tokens
+        self.allow_download = allow_download
         self._threads = threads
         self._tokenizer = None
         self._model = None
@@ -223,6 +254,21 @@ class NllbTranslator(Translator):
         """Load the model. Separate from __init__ so startup cost is explicit."""
         if self._model is not None:
             return
+        if not self.allow_download and not model_is_cached(self.model_name):
+            # transformers fetches this without a word, and it is not a small
+            # fetch. Nothing has happened yet, so the message can offer the ways
+            # forward rather than report a failure.
+            raise TranslatorError(
+                f"the `local` backend would download {self.model_name} first - "
+                "about 2.5 GB for the default model - and it is not in the "
+                "HuggingFace cache yet.\n"
+                "  Nothing was fetched. Either run `lintranslator convert`, which\n"
+                "  downloads the same checkpoint and writes the faster int8 "
+                "weights\n"
+                "  as well, or set translate.allow_model_download: true to let "
+                "this\n"
+                "  backend fetch it."
+            )
         try:
             import torch
             from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
@@ -793,6 +839,7 @@ def build_translator(cfg) -> Translator:
             device=cfg.device,
             threads=cfg.threads,
             max_new_tokens=cfg.max_new_tokens,
+            allow_download=bool(getattr(cfg, "allow_model_download", False)),
         )
     if backend == "deepl":
         # DeepL cannot translate into most of what NLLB can. Saying so beats

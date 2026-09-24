@@ -9,6 +9,21 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+- The default backend is OpenRouter, not the local int8 model. A fresh install
+  could not translate a word until 2.5 GB had been downloaded and converted, which
+  is an odd thing to ask of a first run; it now needs an API key and a model id,
+  both of which live in Settings. Nothing about the hosted path downloads a model.
+- `lintranslator convert` says what it will fetch - the fp32 checkpoint into the
+  shared HuggingFace cache, and the converted weights beside it - and waits for a
+  yes. Without a terminal there is nobody to ask, so it refuses unless `--yes` is
+  passed.
+- The `local` backend no longer downloads the checkpoint by itself. transformers
+  would fetch whatever was missing while the panel said "warming up"; it now
+  refuses unless `translate.allow_model_download` is set, and says so by name
+  alongside the `lintranslator convert` alternative. A cache holding only the
+  tokenizer - which is what the `ct2` backend leaves behind - deliberately does not
+  count as the model being present, because that is exactly the case where the
+  download would have happened unannounced.
 - The picker's toolbar is three buttons plus the primary action: **Save** is gone,
   **Close** is **Quit** - the word the card already uses for the same act - and the
   vertical rules between the buttons went with them. Save wrote the region to

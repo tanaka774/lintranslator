@@ -149,7 +149,7 @@ def cmd_check(args) -> int:
         if not cfg.translate.model:
             ok = False
             print("  model: MISSING (this backend requires a model id)")
-            print("  -> lintranslator models --backend openrouter")
+            print(f"  -> lintranslator models --backend {backend}")
         else:
             print(f"  model: {cfg.translate.model}")
         base = cfg.translate.api_base or "(provider default)"
@@ -539,9 +539,13 @@ def cmd_models(args) -> int:
 
 
 def cmd_convert(args) -> int:
-    from .convert import convert
+    from .convert import confirm_download, convert
 
     out = args.out or paths.default_ct2_dir()
+    # What this fetches is measured in gigabytes, so it says so and asks first
+    # (and refuses without --yes when there is no terminal to ask).
+    if not confirm_download(args.model, out, args.quantization, args.yes):
+        return 1
     convert(args.model, out, args.quantization, args.force)
     return 0
 
@@ -880,6 +884,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--out", default=None, help="output dir (default: data/ct2/...)")
     sp.add_argument("--quantization", default="int8", choices=["int8", "int16", "float32"])
     sp.add_argument("--force", action="store_true")
+    sp.add_argument(
+        "--yes",
+        action="store_true",
+        help="do not ask before downloading the checkpoint (needed without a terminal)",
+    )
     sp.set_defaults(func=cmd_convert)
 
     sp = sub.add_parser("region", help="save a region into the config")

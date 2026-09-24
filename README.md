@@ -75,7 +75,8 @@ that is not available.
 ## Install
 
 There is no package yet - no AUR, Flatpak or PyPI entry - so this starts from the
-source. It is five commands and one long download.
+source. Four commands, and nothing large is downloaded: a fresh config translates
+through a hosted backend, so no model is involved until you ask for one.
 
 ```bash
 # 1. the code
@@ -91,36 +92,39 @@ sudo pacman -S tesseract python-gobject python-cairo          # Arch / CachyOS
 # 3. environment. The interpreter must be the distro's own Python: PyGObject is a
 #    compiled binding to it, and --system-site-packages is what exposes it.
 uv venv --python /usr/bin/python3 --system-site-packages .venv
-uv pip install --python .venv/bin/python -e '.[ct2]'
+uv pip install --python .venv/bin/python -e .
 
-# 4. the translation model, converted to int8 once. ~3 GB on disk while it runs.
-.venv/bin/python -m lintranslator convert
-
-# 5. what is missing, in plain language, with a non-zero exit if anything is.
+# 4. what is missing, in plain language, with a non-zero exit if anything is.
 .venv/bin/python -m lintranslator check
 ```
 
+Then run `.venv/bin/python -m lintranslator gui` and put an API key and a model
+id in the picker's **Settings**. The only thing fetched along the way is the
+tesseract language data: 4.1 MB for `eng`, on first use, pinned and
+checksum-verified, no root needed. DeepL, OpenRouter, OpenAI and any
+OpenAI-compatible endpoint load none of the local machinery.
+
+**Running the model on your own machine instead?** That is an opt-in, and it is
+where the downloads are:
+
+```bash
+uv pip install --python .venv/bin/python -e '.[ct2]'   # int8 NLLB, no torch
+.venv/bin/python -m lintranslator convert             # asks first; ~3 GB
+```
+
+`convert` prints what it will fetch and leaves on disk, and waits for a yes
+(`--yes` for scripts). `.[local]` is the older transformers route for models that
+cannot be converted, and it will not fetch weights behind your back either: it
+refuses until `translate.allow_model_download` is set. `.[x11]` adds keep-above
+support under XWayland, and `.[calibrate]` adds the region auto-detection helper.
+
 No `uv`? It only creates the venv and installs into it; `python3 -m venv
---system-site-packages .venv` and `.venv/bin/pip install -e '.[ct2]'` do the same.
-There is also no need to clone: `uv pip install --python .venv/bin/python
-"lintranslator[ct2] @ git+https://github.com/tanaka774/lintranslator"` installs
-straight from the repository, which is what
-[the install notes](docs/install.md#install) suggest to anyone who would rather
-not keep a checkout around.
-
-**Translating through a hosted backend instead?** Then install plain `-e .`
-without the extra and skip step 4 altogether: DeepL, OpenRouter, OpenAI and any
-OpenAI-compatible endpoint load none of the local machinery, and the only thing
-that gets downloaded is the OCR language data — 4.1 MB, on first use. The local
-model is what a *fresh config* defaults to, not something the install requires,
-so pick the backend in Settings on the first run. See
-[what is downloaded, and when](docs/install.md#what-is-downloaded-and-when).
-
-`.[ct2]` is the fast path: int8 NLLB through CTranslate2, no torch. `.[local]` is
-the older transformers route for models that cannot be converted, `.[x11]` adds
-keep-above support under XWayland, and `.[calibrate]` adds the region
-auto-detection helper. tesseract language data is fetched on first use, pinned and
-checksum-verified, so no root is needed for it.
+--system-site-packages .venv` and `.venv/bin/pip install -e .` do the same. There
+is also no need to clone: `uv pip install --python .venv/bin/python "lintranslator
+@ git+https://github.com/tanaka774/lintranslator"` installs straight from the
+repository, which is what [the install notes](docs/install.md#install) suggest to
+anyone who would rather not keep a checkout around. Full detail on every download
+is in [what is downloaded, and when](docs/install.md#what-is-downloaded-and-when).
 
 Nothing deletes the 2.5 GB fp32 checkpoint after the conversion. `lintranslator
 remove` reports what is on disk and takes any of it back —

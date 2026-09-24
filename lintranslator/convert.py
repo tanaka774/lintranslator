@@ -41,7 +41,6 @@ def convert(
         print(f"{out} already exists; pass --force to overwrite", file=sys.stderr)
         return out
 
-    print(f"converting {model} -> {out} ({quantization}) ...", file=sys.stderr)
     started = time.monotonic()
     # low_cpu_mem_usage avoids holding two full copies of the weights in RAM,
     # which matters for a 600M-parameter model on a normal desktop.
@@ -55,6 +54,51 @@ def convert(
         file=sys.stderr,
     )
     return out
+
+
+def confirm_download(
+    model: str,
+    out: Path | str,
+    quantization: str = "int8",
+    assume_yes: bool = False,
+) -> bool:
+    """Report what a conversion will download, and ask before it starts.
+
+    Two things are left on disk, and neither is small: the fp32 checkpoint in the
+    shared HuggingFace cache (2.46 GB for the model this project defaults to) and
+    the converted weights at `out` (629 MB). `convert` is the only place that is
+    supposed to fetch model weights at all, so it is the place to say so first.
+
+    Without a terminal there is nobody to ask, and the answer is not "yes": a
+    download this size belongs behind an explicit `--yes` in a script.
+    """
+    print(f"converting {model} -> {out} ({quantization})", file=sys.stderr)
+    print(
+        "  downloads : the fp32 checkpoint into the HuggingFace cache\n"
+        "              ~2.5 GB for facebook/nllb-200-distilled-600M; less or more "
+        "for others",
+        file=sys.stderr,
+    )
+    print(
+        "  writes    : the converted weights, ~629 MB for the model above\n"
+        "  both stay on disk until `lintranslator remove` takes them back",
+        file=sys.stderr,
+    )
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        print(
+            "not a terminal, so there is nobody to ask: pass --yes to confirm "
+            "this download",
+            file=sys.stderr,
+        )
+        return False
+    try:
+        answer = input("continue? [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print(file=sys.stderr)
+        return False
+    return answer in ("y", "yes")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -71,7 +115,14 @@ def main(argv: list[str] | None = None) -> int:
         help="weight quantization (int8 is the smallest and fastest here)",
     )
     parser.add_argument("--force", action="store_true", help="overwrite an existing output")
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="do not ask before downloading the checkpoint",
+    )
     args = parser.parse_args(argv)
+    if not confirm_download(args.model, args.out, args.quantization, args.yes):
+        return 1
     convert(args.model, args.out, args.quantization, args.force)
     return 0
 
