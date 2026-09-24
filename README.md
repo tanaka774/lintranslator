@@ -108,6 +108,14 @@ straight from the repository, which is what
 [the install notes](docs/install.md#install) suggest to anyone who would rather
 not keep a checkout around.
 
+**Translating through a hosted backend instead?** Then install plain `-e .`
+without the extra and skip step 4 altogether: DeepL, OpenRouter, OpenAI and any
+OpenAI-compatible endpoint load none of the local machinery, and the only thing
+that gets downloaded is the OCR language data — 4.1 MB, on first use. The local
+model is what a *fresh config* defaults to, not something the install requires,
+so pick the backend in Settings on the first run. See
+[what is downloaded, and when](docs/install.md#what-is-downloaded-and-when).
+
 `.[ct2]` is the fast path: int8 NLLB through CTranslate2, no torch. `.[local]` is
 the older transformers route for models that cannot be converted, `.[x11]` adds
 keep-above support under XWayland, and `.[calibrate]` adds the region

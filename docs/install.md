@@ -99,6 +99,32 @@ uv pip install --python ~/.venvs/lintranslator/bin/python \
 ~/.venvs/lintranslator/bin/lintranslator check
 ```
 
+## What is downloaded, and when
+
+Nothing is downloaded at install time. Which backend you translate with decides
+everything after that, and the difference is large enough to be worth choosing
+deliberately. **Translating through a hosted backend means skipping step 4
+entirely - install plain `-e .` and no model is involved at all.**
+
+| backend | what is fetched | when |
+|---|---|---|
+| DeepL, OpenRouter, OpenAI, your own endpoint | **nothing from HuggingFace** - no ctranslate2, no torch, no weights | - |
+| `ct2`, the default in a fresh config | the converted int8 weights, 629 MB, plus ~22 MB of tokenizer | the weights when *you* run `lintranslator convert`; the tokenizer on first use |
+| `local` | the fp32 checkpoint, 2.46 GB, plus the same tokenizer | automatically, on the first translation |
+
+The local model is what a fresh config defaults to, not something the install
+requires: it is a settings change, and the picker's Settings dialog is where it
+happens.
+
+In every one of those cases the OCR side fetches tesseract language data on first
+use - 4.1 MB for `eng`, pinned to a revision and checksum-verified. That one
+cannot be avoided, because OCR always runs locally: reading the screen is the
+part of the pipeline that has no remote equivalent. A language without a pinned
+checksum is not fetched automatically (see `ocr.allow_unverified_tessdata`).
+
+So an API user installs: the base package, `tesseract`, PyGObject from the
+distro, and 4.1 MB of language data. Not three gigabytes.
+
 The commands in this document are then written as `.venv/bin/python -m
 lintranslator ...`; with the venv above, use its `lintranslator` script instead.
 Either way, `lintranslator install-desktop` is what puts the app in the
