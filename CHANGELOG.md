@@ -16,6 +16,18 @@ from there rather than keeping a second copy.
 - The launcher script looks for a virtualenv two levels up as well as one, so it
   still finds a source checkout's `.venv` now that it lives inside the package
   rather than in a top-level `packaging/` directory.
+- The picker rebuilds its OCR engine when Settings are applied. It kept the
+  engine it was opened with, so changing the OCR languages wrote the config and
+  fetched the model while the preview went on reading with the old one — a clean
+  printed Korean line came back as "(no text found in this region)".
+- The OCR languages are editable in Settings instead of only addable. The row
+  appeared only when the list could not read the source, and its one button could
+  only append, so a list that had grown could not be shortened even though every
+  extra model competes for every word. The field takes what `-l` takes, and the
+  button now offers whichever move is missing: adding the source's model, or
+  dropping the models that are only competing. A list typed with spaces is stored
+  in the form tesseract needs — `kor eng` becomes `kor+eng`, where `-l "kor eng"`
+  loads no language at all.
 
 ## [0.1.0] - 2026-09-24
 

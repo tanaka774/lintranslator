@@ -57,26 +57,52 @@ not observed.
 Requires Linux with a Wayland session (or X11), Python 3.12-3.14, and tesseract
 (see [Compatibility](#compatibility) above).
 
+There is no package yet - no AUR, Flatpak or PyPI entry - so this begins with the
+source. It is five commands and one long download.
+
 ```bash
-# 1. tesseract, and the GTK stack. PyGObject and pycairo come from the distro
+# 1. the code
+git clone https://github.com/tanaka774/lintranslator
+cd lintranslator
+
+# 2. tesseract, and the GTK stack. PyGObject and pycairo come from the distro
 #    rather than from pip: they are bindings to system libraries, and a pip
 #    build of them needs a compiler and the cairo headers.
 sudo pacman -S tesseract python-gobject python-cairo   # Arch / CachyOS
 # sudo apt install tesseract-ocr python3-gi python3-gi-cairo python3-cairo \
 #                  gir1.2-gtk-4.0                       # Debian / Ubuntu
 
-# 2. environment. --system-site-packages is what lets the venv see the
-#    distro's PyGObject; tesseract language data is fetched at first run.
-uv venv --python 3.12 --system-site-packages .venv
-uv pip install --python .venv/bin/python -e .
+# 3. environment. The interpreter has to be the distro's own Python: PyGObject is
+#    a compiled binding to that exact interpreter, so a uv-managed 3.12 cannot
+#    see it however the venv is built. --system-site-packages is what exposes it.
+uv venv --python /usr/bin/python3 --system-site-packages .venv
+# without uv:  python3 -m venv --system-site-packages .venv
 uv pip install --python .venv/bin/python -e '.[ct2]'
 
-# 3. convert the model to int8 - one time, and it is a download, not a build:
+# 4. convert the model to int8 - one time, and it is a download, not a build:
 #    ~2.5 GB of fp32 checkpoint into the HuggingFace cache, then ~630 MB of
 #    int8 weights into ~/.local/share/lintranslator/ct2/. Both numbers are on
 #    disk at once - see "What the conversion actually costs".
 .venv/bin/python -m lintranslator convert
+
+# 5. and what is missing, in plain language, with a non-zero exit if anything is.
+.venv/bin/python -m lintranslator check
 ```
+
+It does not have to be a checkout. Installing from the repository works the same
+way and keeps no source tree around:
+
+```bash
+uv venv --python /usr/bin/python3 --system-site-packages ~/.venvs/lintranslator
+uv pip install --python ~/.venvs/lintranslator/bin/python \
+    "lintranslator[ct2] @ git+https://github.com/tanaka774/lintranslator"
+~/.venvs/lintranslator/bin/lintranslator check
+```
+
+The commands in this document are then written as `.venv/bin/python -m
+lintranslator ...`; with the venv above, use its `lintranslator` script instead.
+Either way, `lintranslator install-desktop` is what puts the app in the
+application menu - see [the hotkey section](guide.md#re-read-when-a-line-comes-out-wrong).
 
 `.[ct2]` is the fast path. `.[local]` is the older transformers route: the same
 2.5 GB checkpoint, loaded through torch instead of CTranslate2, which is slower

@@ -74,23 +74,39 @@ that is not available.
 
 ## Install
 
+There is no package yet - no AUR, Flatpak or PyPI entry - so this starts from the
+source. It is five commands and one long download.
+
 ```bash
-# 1. tesseract and the GTK stack. PyGObject and pycairo come from the distro
+# 1. the code
+git clone https://github.com/tanaka774/lintranslator
+cd lintranslator
+
+# 2. tesseract and the GTK stack. PyGObject and pycairo come from the distro
 #    rather than from pip: they bind system libraries.
 sudo pacman -S tesseract python-gobject python-cairo          # Arch / CachyOS
 # sudo apt install tesseract-ocr python3-gi python3-gi-cairo python3-cairo \
 #                  gir1.2-gtk-4.0                              # Debian / Ubuntu
 
-# 2. environment. --system-site-packages is what lets the venv see PyGObject.
-uv venv --python 3.12 --system-site-packages .venv
+# 3. environment. The interpreter must be the distro's own Python: PyGObject is a
+#    compiled binding to it, and --system-site-packages is what exposes it.
+uv venv --python /usr/bin/python3 --system-site-packages .venv
 uv pip install --python .venv/bin/python -e '.[ct2]'
 
-# 3. the translation model, converted to int8 once. ~3 GB on disk while it runs.
+# 4. the translation model, converted to int8 once. ~3 GB on disk while it runs.
 .venv/bin/python -m lintranslator convert
 
-# 4. what is missing, in plain language, with a non-zero exit if anything is.
+# 5. what is missing, in plain language, with a non-zero exit if anything is.
 .venv/bin/python -m lintranslator check
 ```
+
+No `uv`? It only creates the venv and installs into it; `python3 -m venv
+--system-site-packages .venv` and `.venv/bin/pip install -e '.[ct2]'` do the same.
+There is also no need to clone: `uv pip install --python .venv/bin/python
+"lintranslator[ct2] @ git+https://github.com/tanaka774/lintranslator"` installs
+straight from the repository, which is what
+[the install notes](docs/install.md#install) suggest to anyone who would rather
+not keep a checkout around.
 
 `.[ct2]` is the fast path: int8 NLLB through CTranslate2, no torch. `.[local]` is
 the older transformers route for models that cannot be converted, `.[x11]` adds
