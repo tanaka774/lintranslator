@@ -32,9 +32,12 @@ if [ -n "${LINTRANSLATOR_PYTHON:-}" ]; then
     exec "$LINTRANSLATOR_PYTHON" -m lintranslator gui "$@"
 fi
 
-# This script lives in `packaging/` inside the checkout, so the venvs are one
-# level up. `-x` rather than a directory test: a venv without python is not one.
-for candidate in "$here/../.venv/bin/python" "$here/../.venv-gi/bin/python"; do
+# In a source checkout this script sits in `lintranslator/data/`, so those venvs
+# are two levels up; installed to ~/.local/bin by `lintranslator install-desktop`
+# they are not there at all and the PATH lookup below is what runs. `-x` rather
+# than a directory test: a venv without python is not one.
+for candidate in "$here/../.venv/bin/python" "$here/../.venv-gi/bin/python" \
+                 "$here/../../.venv/bin/python" "$here/../../.venv-gi/bin/python"; do
     if [ -x "$candidate" ]; then
         exec "$candidate" -m lintranslator gui "$@"
     fi

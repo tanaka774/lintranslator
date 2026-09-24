@@ -32,8 +32,8 @@ lintranslator/
   cli.py         check / grab / read / run / region / gui / convert / models / reread / status /
                  shortcut / remove / languages / install-desktop
   data/          the `.desktop` entry and its launcher, installed by `install-desktop`
-tests/           426 tests: core, geometry, pipeline, glossary, backends, languages,
-                 OCR languages, paths/permissions, the desktop install
+tests/           429 tests: core, geometry, pipeline, glossary, backends, languages,
+                 OCR languages, paths/permissions, the desktop install, the CLI default
 probe/           spike scripts, raw measurements, per-phase results
 docs/            this documentation, and the picker render in the README
 PLAN.md          feasibility study with the full benchmark tables
@@ -109,6 +109,8 @@ pip-only environment still runs everything that does not draw a window.
   and tokenizer naming
 * `tests/test_remote_backends.py` - request shaping, key resolution, failures
 * `tests/test_geometry.py` - region arithmetic, prompt templating
+* `tests/test_cli.py` - what a bare `lintranslator` means, and that a flag with no
+  subcommand still reaches the GUI rather than a usage error
 * `tests/test_calibrate.py` - dialogue detection, including the `near` anchoring
 * `tests/test_languages.py` - the language table, per-backend codes, and the
   check that every code in it is one the real NLLB tokenizer can score

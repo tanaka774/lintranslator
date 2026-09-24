@@ -9,6 +9,14 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+- Running `lintranslator` with no subcommand opens the GUI. `gui` was always
+  described as the default in `--help`, but the parser required a subcommand and
+  exited 2 instead, which is the wrong answer for the thing a `.desktop` launcher
+  or a double-click on the entry point does.
+- The launcher script looks for a virtualenv two levels up as well as one, so it
+  still finds a source checkout's `.venv` now that it lives inside the package
+  rather than in a top-level `packaging/` directory.
+
 ## [0.1.0] - 2026-09-24
 
 First release. Everything below is new; the entries are grouped by what they mean

@@ -736,7 +736,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--config", help=f"config path (default: {paths.DEFAULT_CONFIG_PATH})"
     )
-    sub = p.add_subparsers(dest="command", required=True)
+    # Not `required`: no subcommand means the GUI, and `parse_argv` decides that
+    # after parsing rather than before (see its docstring).
+    sub = p.add_subparsers(dest="command", required=False)
 
     def add_common(sp):
         # `--config` is defined on the top-level parser, so argparse only accepts
@@ -902,8 +904,29 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def parse_argv(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse the command line, treating "no subcommand" as the GUI.
+
+    `gui` has always been described as the default in `--help`, and for a desktop
+    app that is what running it should mean: a bare `lintranslator`, a launcher
+    script, or a double-click on the entry point all open the picker rather than
+    printing a usage error.
+
+    The subcommand is optional so that this can be decided *after* parsing - a
+    flag with no subcommand (`lintranslator --config other.json`) means the GUI
+    too. The second parse is what fills in the GUI's own options; assigning
+    `func` by hand would leave every `args.*` it reads undefined.
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command is None:
+        args = parser.parse_args(argv + ["gui"])
+    return args
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    args = parse_argv(argv)
     if args.command == "region":
         cfg = Config.load(args.config)
         mode = "fraction" if args.fraction else "pixels"
