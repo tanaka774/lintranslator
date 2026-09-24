@@ -655,8 +655,72 @@ def test_a_notice_never_replaces_a_translation(picker):
     panel._note_keep_above(False, "native Wayland")
     assert panel.target_label.get_text() == "はい。"
     assert not panel.target_label.has_css_class("lintranslator-notice")
-    # The short form still reaches the status row, so it is not swallowed.
+    # The short form still reaches the status row, so it is not swallowed. It is
+    # split on the em dash: what lands there is the statement, and the pointer to
+    # the ⋮ menu is dropped, because the menu is a click away from either place.
     assert "Not always-on-top" in panel.status_label.get_text()
+
+
+# --------------------------------------------------------------------------- #
+# Always-on-top: silent where it cannot work, one line where it failed
+# --------------------------------------------------------------------------- #
+class _FakeWaylandDisplay:
+    """Stands in for GdkWaylandDisplay.
+
+    The check is by class name on purpose (see `_apply_keep_above`): the X11
+    typelib is not present everywhere, so the panel may not touch
+    `Gdk.X11Display` to find out what it is running on.
+    """
+
+
+class _FakeX11Display:
+    """Stands in for GdkX11Display - the backend that can actually ask."""
+
+
+def test_native_wayland_says_nothing_about_always_on_top(picker, monkeypatch):
+    """A request that cannot be made is not reported.
+
+    The notice this replaces ran to three lines with the whole fix in it, on every
+    launch of every native Wayland session, and stayed until the first
+    translation - telling users who had already added the KWin window rule to go
+    and add it, and clearable only by a translation. Nothing was attempted here,
+    so the card says nothing; the fix is in docs/guide.md.
+    """
+    panel = picker._panel
+    monkeypatch.setattr(panel, "get_display", lambda: _FakeWaylandDisplay())
+
+    panel._apply_keep_above()
+
+    assert panel.last_event is None
+    # Whatever the card was showing, it is not this notice: the picker's own idle
+    # line is what a panel that has never translated holds.
+    assert "always-on-top" not in panel.target_label.get_text().lower()
+    assert not panel.target_label.has_css_class("lintranslator-notice")
+    # An X11 panel on the same session would have set the tooltip; this one must
+    # not have, or the status row would explain a problem the card is not showing.
+    assert not (panel.status_label.get_tooltip_text() or "").lower().startswith(
+        "not always-on-top"
+    )
+
+
+def test_an_x11_failure_still_reports_on_the_card(picker, monkeypatch):
+    """The X11 path can fail in ways the user can fix, so it says so - in a line."""
+    panel = picker._panel
+    # The X11 branch is only reachable from an X11 window, and this test machine
+    # may be running Wayland - the CI one is. The backend is a class name to the
+    # code, so a stand-in class is enough to get there.
+    monkeypatch.setattr(panel, "get_display", lambda: _FakeX11Display())
+    monkeypatch.delenv("DISPLAY", raising=False)
+
+    panel._apply_keep_above()
+
+    text = panel.target_label.get_text()
+    assert "Not always-on-top in this session" in text
+    assert "no DISPLAY" in text, "why it failed is part of the fix"
+    # One line, not the three the instructions used to take.
+    assert "\n" not in text
+    # The steps are in the guide, and the notice names it.
+    assert "docs/guide.md" in text
 
 
 # --------------------------------------------------------------------------- #

@@ -88,11 +88,12 @@ def main() -> int:
                 lambda: panel._show_event(event("はい。")),
             ),
             (
-                "keep-above warning",
+                "keep-above notice",
+                # The one-liner the card shows when the X11 request could not be
+                # made; the instructions themselves are in docs/guide.md. Native
+                # Wayland shows nothing here, so this is the longest it gets.
                 lambda: panel.status_label.set_text(
-                    "not always-on-top — on Wayland add a KWin window rule for "
-                    "'lintranslator', or launch with GDK_BACKEND=x11 (see docs/guide.md) "
-                    "[native Wayland]"
+                    "Not always-on-top in this session — see docs/guide.md"
                 ),
             ),
         ]

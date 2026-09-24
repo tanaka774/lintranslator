@@ -54,6 +54,14 @@ class UiMessage:
     detail: str = ""  # e.g. line-broken source for display
 
 
+# What the card says when the keep-above request could not be made. One line, not
+# three: it fires on the X11 path when something is genuinely wrong, and the fix
+# it names is in docs/guide.md, under "Always on top". Native Wayland says nothing
+# at all - there the request is impossible rather than failed, and a notice that
+# can never be cleared by fixing anything is noise on every launch.
+KEEP_ABOVE_SHORT = "Not always-on-top in this session — see docs/guide.md"
+
+
 class LabelButton(Gtk.Button):
     """A button whose label can be aligned, and that still answers set_label().
 
@@ -909,7 +917,13 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             # the compositor's, and GTK4 removed the keep-above API. The card may
             # still be kept above by a compositor window rule, but that cannot be
             # detected from here, so no claim is made either way.
-            self._note_keep_above(False, "native Wayland")
+            #
+            # Nothing is attempted, so nothing is broken, and nothing is said. A
+            # notice here would fire on every launch of every native Wayland
+            # session and stay on the card until the first translation, telling
+            # users who already have the window rule to go and add it - a message
+            # that no action of theirs can clear, in the place the translation
+            # goes. The fix is in docs/guide.md, under "Always on top".
             return False
         display_name = os.environ.get("DISPLAY")
         if not display_name:
@@ -975,11 +989,11 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         if ok:
             return
         # A window rule is the fix, and saying so is the whole point: an
-        # unexplained card that sinks behind the game reads as broken.
+        # unexplained card that sinks behind the game reads as broken. One line,
+        # not the instructions: the translation area is where translations go, and
+        # the steps themselves are in docs/guide.md.
         self._show_notice(
-            "Not always-on-top. On Wayland add a KWin window rule for 'LinTranslator', "
-            "or launch with GDK_BACKEND=x11 (see docs/guide.md, 'Always on top')."
-            + (f" [{detail}]" if detail else "")
+            KEEP_ABOVE_SHORT + (f" [{detail}]" if detail else "")
         )
 
     @staticmethod
@@ -1340,12 +1354,12 @@ class TranslatorPanel(Gtk.ApplicationWindow):
     def _show_notice(self, text: str, error: bool = False) -> None:
         """Explain a setup problem where the translation goes.
 
-        These are the long ones - "not always-on-top", "no global hotkey" - that
-        run to two or three lines. The status row is a single ellipsised line, so
-        text that long would be cut to a few characters there. The translation
-        area has three reserved lines and is empty until the first line is
-        translated, which is exactly when these appear; the first translation
-        displaces the notice, and its text stays in the tooltip.
+        These are the long ones - "no global hotkey" - that run to two or three
+        lines. The status row is a single ellipsised line, so text that long would
+        be cut to a few characters there. The translation area has three reserved
+        lines and is empty until the first line is translated, which is exactly
+        when these appear; the first translation displaces the notice, and its
+        text stays in the tooltip.
         """
         self.status_label.set_tooltip_text(text)
         if self.last_event is not None:

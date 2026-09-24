@@ -178,12 +178,16 @@ wide, so the left edge stepped in by 19 px.
 
 The translation is the headline and the original text sits below it, because a
 translation panel that covers the text you are trying to read is worse than no
-panel. Notes that run to several lines — "not always-on-top", "no global hotkey" —
-take over the translation area while it is still empty, where they are readable,
-rather than being ellipsised into the one-line status row; the first translation
-displaces them and their text stays in the status tooltip. Errors share the status
-row instead of adding a line of their own, so the card cannot grow taller exactly
+panel. Notes that run to several lines — "no global hotkey" — take over the
+translation area while it is still empty, where they are readable, rather than
+being ellipsised into the one-line status row; the first translation displaces
+them and their text stays in the status tooltip. Errors share the status row
+instead of adding a line of their own, so the card cannot grow taller exactly
 when something has gone wrong.
+
+The always-on-top note is the exception, because it is the one that has nothing
+to do with the translation: it is a single line, and on native Wayland there is
+no note at all — see [Always on top](#always-on-top-read-this-first).
 
 The header strip is the **drag handle**, and it names the backend, the model and
 the box being read. It is the only draggable part: when the whole card was the
@@ -329,6 +333,16 @@ Stacking belongs to the compositor, and GTK4 removed the `keep_above` API that
 GTK3 had. LinTranslator does what it can, reports when it cannot, and does not pretend
 otherwise.
 
+**Nothing is reported on a native Wayland session**, because there is nothing the
+user could do about it from inside the app: the request cannot be made at all, a
+window rule is the only fix, and the card cannot detect whether one is already in
+force. A warning there would sit in the translation area on every launch, telling
+users who have already added the rule to go and add it, and no action of theirs
+would clear it. So the card stays quiet and the two options below are here
+instead. The one case the card does report is an X11 one — `python-xlib` missing,
+or the window not found — because that is a failure the user can fix, and the
+notice names it in a single line.
+
 Two options that work:
 
 **A — launch under XWayland** (no setup, verified working). The standard
@@ -339,8 +353,8 @@ GDK_BACKEND=x11 .venv/bin/python -m lintranslator gui
 ```
 
 Confirmed on this machine by reading the property back off the window:
-`_NET_WM_STATE contains ABOVE: True`. The status line stops showing the warning
-once it takes effect.
+`_NET_WM_STATE contains ABOVE: True`. The notice does not appear at all once it
+takes effect.
 
 **B — a KWin window rule via System Settings** (native Wayland, permanent):
 
