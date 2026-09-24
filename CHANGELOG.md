@@ -9,6 +9,15 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+- The install instructions no longer build the venv on a uv-managed Python. They
+  said `uv venv --python 3.12 --system-site-packages`, which produces a uv-managed
+  3.12 whose "system" site-packages is uv's own - so the flag that existed for
+  PyGObject exposed nothing, the distro's copy (built for the system 3.14) stayed
+  invisible, and the GUI could not start. Both recipes now use the distro's
+  interpreter, with the reason written next to them.
+- The instructions also never said how to *get* the source. They now start with
+  it, and give the install-from-git form for anyone who would rather not keep a
+  checkout.
 - Running `lintranslator` with no subcommand opens the GUI. `gui` was always
   described as the default in `--help`, but the parser required a subcommand and
   exited 2 instead, which is the wrong answer for the thing a `.desktop` launcher
