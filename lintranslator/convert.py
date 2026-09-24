@@ -4,7 +4,7 @@ Why this exists: running NLLB-600M through transformers needs the 2.5 GB fp32
 checkpoint resident and runs at 0.8-1.6 s/line on CPU. The int8 CTranslate2
 build is 629 MB and measured 4-5x faster on this project's sample lines, with
 equivalent output. The conversion reads the checkpoint once and never needs it
-again - see `README`, "What the conversion actually costs".
+again - see `docs/install.md`, "What the conversion actually costs".
 
     python -m lintranslator.convert --model facebook/nllb-200-distilled-600M \
         --out data/ct2/nllb-600m-int8

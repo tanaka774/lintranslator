@@ -69,7 +69,7 @@ def main() -> int:
     # grabbing the screen. The default (the live screen) is fine for looking at
     # layout while working, but it captures whatever else is open - terminals,
     # browsers, someone's actual desktop - so it must never be the frame that ends
-    # up in the README.
+    # up in the README, or anywhere else that gets published.
     supplied = os.environ.get("LINTRANSLATOR_RENDER_SOURCE")
     if supplied:
         raw = Path(supplied).read_bytes()

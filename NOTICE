@@ -58,9 +58,9 @@ Two caveats, both real:
     NLLB was trained on; m2m100 wants `en` / `ja`. Until the language table
     carries per-model codes, swapping the model means also handling that.
   * Quality is not equal. This project measured `opus-mt-en-jap` producing
-    output unrelated to its input on its own reference line (see README,
-    "NLLB, never opus-mt-en-jap"), and NLLB-600M was chosen over it on measured
-    quality.
+    output unrelated to its input on its own reference line (see
+    `docs/design.md`, "NLLB, never opus-mt-en-jap"), and NLLB-600M was chosen
+    over it on measured quality.
 
 For commercial use without any of this, use a hosted backend (OpenRouter,
 OpenAI, DeepL, or your own OpenAI-compatible endpoint): then no local model is

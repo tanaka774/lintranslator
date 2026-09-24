@@ -978,7 +978,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         # unexplained card that sinks behind the game reads as broken.
         self._show_notice(
             "Not always-on-top. On Wayland add a KWin window rule for 'LinTranslator', "
-            "or launch with GDK_BACKEND=x11 (see README)."
+            "or launch with GDK_BACKEND=x11 (see docs/guide.md, 'Always on top')."
             + (f" [{detail}]" if detail else "")
         )
 

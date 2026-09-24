@@ -91,7 +91,7 @@ def main() -> int:
                 "keep-above warning",
                 lambda: panel.status_label.set_text(
                     "not always-on-top — on Wayland add a KWin window rule for "
-                    "'lintranslator', or launch with GDK_BACKEND=x11 (see README) "
+                    "'lintranslator', or launch with GDK_BACKEND=x11 (see docs/guide.md) "
                     "[native Wayland]"
                 ),
             ),
