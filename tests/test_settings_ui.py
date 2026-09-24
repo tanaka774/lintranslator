@@ -852,3 +852,42 @@ def test_things_that_are_meant_to_scroll_still_do(dialog):
     assert Gtk.PropagationPhase.CAPTURE not in phases, (
         "the prompt editor was guarded; it is meant to scroll"
     )
+
+
+# --------------------------------------------------------------------------- #
+# What this dialog deliberately does not edit
+# --------------------------------------------------------------------------- #
+def _labels(widget):
+    """Every label inside `widget`, in no particular order."""
+    stack = [widget]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, Gtk.Label):
+            yield node.get_label() or ""
+        child = node.get_first_child()
+        while child is not None:
+            stack.append(child)
+            child = child.get_next_sibling()
+
+
+def test_the_dialog_offers_no_way_to_edit_the_capture_region(dialog):
+    """The region belongs to the picker; this dialog is not a second editor.
+
+    It used to carry a pixel readout with Smaller/Larger and 8 px move buttons -
+    a correction made blind, since this window sits on neither the screen it
+    reads nor the crop that comes back. The picker shows both, and
+    `lintranslator region` sets the box without a GUI at all. Either half coming
+    back here would leave two windows disagreeing about what gets OCR'd, so the
+    controls and the value Save writes are both checked.
+    """
+    labels = list(_labels(dialog))
+    assert not [text for text in labels if text.startswith("Capture area")], labels
+    assert not [text for text in labels if text.startswith(("Smaller ", "Larger "))], labels
+
+    region = dialog.config.capture.region
+    before = (region.x, region.y, region.w, region.h, region.mode)
+    dialog._on_save(_save_button(dialog))
+    region = dialog.config.capture.region
+    assert (region.x, region.y, region.w, region.h, region.mode) == before, (
+        "Save moved the capture region"
+    )

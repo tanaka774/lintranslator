@@ -12,9 +12,9 @@ lintranslator/
   portal.py      xdg-desktop-portal D-Bus clients (Screenshot, ScreenCast)
   capture.py     full-screen grab -> crop to region
   detect.py      change detector, text settler, empty guard
-  geometry.py    region arithmetic + prompt templates (pure, tested)
+  geometry.py    prompt templates (pure, tested)
   languages.py   the 202 FLORES-200 codes + each backend's code for them (data)
-  settings.py    GTK settings dialog (backend, model, language pair, prompt, both areas)
+  settings.py    GTK settings dialog (backend, model, language pair, prompt, card)
   ocr.py         tesseract wrapper + tessdata bootstrap + preprocessing
   translate.py   NLLB (ct2, local) / DeepL / OpenRouter / OpenAI / custom endpoint + cache
   glossary.py    term overrides, pre- and post-translation
@@ -32,7 +32,7 @@ lintranslator/
   cli.py         check / grab / read / run / region / gui / convert / models / reread / status /
                  shortcut / remove / languages / install-desktop
   data/          the `.desktop` entry and its launcher, installed by `install-desktop`
-tests/           429 tests: core, geometry, pipeline, glossary, backends, languages,
+tests/           430 tests: core, geometry, pipeline, glossary, backends, languages,
                  OCR languages, paths/permissions, the desktop install, the CLI default
 probe/           spike scripts, raw measurements, per-phase results
 docs/            this documentation, and the picker render in the README
@@ -108,7 +108,7 @@ pip-only environment still runs everything that does not draw a window.
 * `tests/test_local_backends.py` - the `ct2` and `local` translator construction,
   and tokenizer naming
 * `tests/test_remote_backends.py` - request shaping, key resolution, failures
-* `tests/test_geometry.py` - region arithmetic, prompt templating
+* `tests/test_geometry.py` - prompt templating: placeholders, stray braces, presets
 * `tests/test_cli.py` - what a bare `lintranslator` means, and that a flag with no
   subcommand still reaches the GUI rather than a usage error
 * `tests/test_calibrate.py` - dialogue detection, including the `near` anchoring

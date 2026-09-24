@@ -30,14 +30,26 @@ from there rather than keeping a second copy.
   sliders above it, "Use the picker for a big change" pointed at the window the
   user came from, and the prompt hint's "biggest quality lever" was selling a
   field that is only shown to the backends that read it.
-- Two hints are gone outright rather than trimmed: the capture area's "Too tall
-  and OCR picks up the nameplate or HUD; too short and it silently drops the
-  second line of dialogue.", and the display area's "The translation scrolls
-  after 4 lines…" - the second one taking its widget and its four slider
-  callbacks with it, because a readout whose whole content is the two sliders
-  above it has nothing left to say. What stays is what a user cannot see for
-  themselves: the codes NLLB and DeepL decode with, the licence the local weights
-  carry, what an empty field means, and every warning.
+- One hint is gone outright rather than trimmed: the display area's "The
+  translation scrolls after 4 lines…" - and it took its widget and its four
+  slider callbacks with it, because a readout whose whole content is the two
+  sliders above it has nothing left to say. What stays is what a user cannot see
+  for themselves: the codes NLLB and DeepL decode with, the licence the local
+  weights carry, what an empty field means, and every warning.
+- Settings no longer edits the capture area - hint, readout and all. Its
+  Smaller/Larger and 8 px move buttons were a correction made blind: this window
+  is on neither the screen it reads nor the crop that comes back from it, so the
+  one thing that says whether the box is right was never on screen. The picker
+  shows the box, the crop and the OCR text side by side, and
+  `lintranslator region --x --y --w --h` sets the region from a shell, so both
+  ways of deciding it remain. The display area stays, because nothing else sets
+  the card's font size, width or line budgets. The arithmetic that only those
+  buttons called - `scaled_region`, `nudge_region`, `region_to_fraction` - went
+  with them, along with their tests; `region_to_fraction` was already written out
+  longhand in the picker. The dialog also sizes itself from the column it built
+  instead of a fixed 940 px, because that number was tuned for a column that
+  included this section: it left a band of dead space under the toolbar, and it
+  would have gone stale again the next time a section moved.
 - The picker no longer opens the translation card. It was presented when the
   picker was built, so `lintranslator` put two windows on screen before a region
   had even been chosen - and, being mapped while the picker grabbed the screen

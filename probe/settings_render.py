@@ -56,7 +56,9 @@ def main() -> int:
     # The real app installs this in gui.on_activate, before any window.
     theme.install_for(cfg)
     dlg = SettingsDialog(None, cfg)
-    dlg.set_default_size(780, 1080)
+    # Deliberately not resized: the dialog now measures its own column, and a
+    # fixed frame here would hide the thing worth eyeballing - whether the
+    # toolbar sits under the content or in a band of dead space.
     dlg.present()
 
     steps = list(RENDER)

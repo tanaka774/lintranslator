@@ -1,12 +1,10 @@
-"""Settings dialog: backend, model, language pair, prompt, and the two areas.
+"""Settings dialog: backend, model, language pair, prompt, and the display area.
 
-Two "areas" matter to a user and they are different things:
-
-* the **capture area** is the screen rectangle that gets OCR'd
-* the **display area** is the translation card's font size and width
-
-Both are adjustable here, and capture-area edits are shown as pixel dimensions so
-it is obvious what is being read.
+The capture area is not here. The region belongs to the region picker, which is
+the only place it can be drawn and the only place the crop it produces is visible:
+nudging a box by pixels in a dialog that shows neither the screen nor the text it
+reads is a correction made blind. The display area - the card's font size, width
+and line budgets - stays, because nothing else sets those.
 
 The language pair is here rather than in `config.json` only because the codes are
 not interchangeable strings: each backend is given a different form of the same
@@ -25,13 +23,7 @@ from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from . import paths  # noqa: E402
 from .config import Config  # noqa: E402
-from .geometry import (  # noqa: E402
-    DEFAULT_PROMPT,
-    PROMPT_PRESETS,
-    nudge_region,
-    region_to_fraction,
-    scaled_region,
-)
+from .geometry import DEFAULT_PROMPT, PROMPT_PRESETS  # noqa: E402
 from .languages import (  # noqa: E402
     CODES,
     LANGUAGES,
@@ -554,11 +546,6 @@ class SettingsDialog(Gtk.Window):
         # (system tessdata, `--langs` on the command line), so the field edits
         # this copy and it is written once, with everything else.
         self._ocr_langs: str = config.ocr.langs
-        # Tall enough that Save stays visible without scrolling on a 1080p+
-        # screen; the scroller covers smaller displays.
-        monitor = self.get_display().get_monitors().get_item(0)
-        available = monitor.get_geometry().height if monitor else 1080
-        self.set_default_size(740, max(560, min(940, available - 120)))
 
         # This window is large and lands wherever the compositor likes, so while
         # it is open the pipeline must not read the screen: it would capture the
@@ -588,8 +575,6 @@ class SettingsDialog(Gtk.Window):
 
         box.append(self._build_translation_section())
         box.append(Gtk.Separator())
-        box.append(self._build_capture_section())
-        box.append(Gtk.Separator())
         box.append(self._build_display_section())
 
         # A toolbar rather than a bare right-aligned pair: the primary action
@@ -618,6 +603,18 @@ class SettingsDialog(Gtk.Window):
             self.source_lines,
         ):
             self._ignore_wheel(slider)
+
+        # Tall enough that Save stays visible without scrolling on a 1080p+
+        # screen; the scroller covers smaller displays and the taller backends.
+        # Measured rather than a constant, because the column's height depends on
+        # which backend is configured - the model row, the API key and the prompt
+        # box come and go with it - so one number is dead space under the toolbar
+        # for some backends and a scrollbar for others. It also went stale the
+        # moment a section was dropped from the column.
+        monitor = self.get_display().get_monitors().get_item(0)
+        available = monitor.get_geometry().height if monitor else 1080
+        _, natural = box.get_preferred_size()
+        self.set_default_size(740, max(560, min(natural.height, available - 120)))
 
     # -- the wheel over a slider ------------------------------------------- #
     def _ignore_wheel(self, widget: Gtk.Widget) -> None:
@@ -1370,69 +1367,6 @@ class SettingsDialog(Gtk.Window):
         else:
             self.status.set_text("the provider returned an empty model list")
         return False
-
-    # -- capture area ------------------------------------------------------ #
-    def _build_capture_section(self) -> Gtk.Widget:
-        frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        capture_head = Gtk.Label(label="Capture area — what gets read", xalign=0)
-        capture_head.add_css_class("lintranslator-section")
-        frame.append(capture_head)
-
-        self.capture_label = Gtk.Label(label="", xalign=0)
-        frame.append(self.capture_label)
-
-        for label, factor in (("Smaller", 0.9), ("Larger", 1.1)):
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-            row.append(Gtk.Label(label=label, xalign=0, width_chars=8))
-            for axis, scale in (("width", (1.0, factor)), ("height", (factor, 1.0))):
-                button = Gtk.Button(label=f"{label} {axis}")
-                button.connect("clicked", self._on_scale_region, scale)
-                row.append(button)
-            frame.append(row)
-
-        move = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        move.append(Gtk.Label(label="Move", xalign=0, width_chars=8))
-        for label, delta in (("↑", (0, -8)), ("↓", (0, 8)), ("←", (-8, 0)), ("→", (8, 0))):
-            button = Gtk.Button(label=label)
-            button.set_size_request(44, -1)
-            button.connect("clicked", self._on_nudge, delta)
-            move.append(button)
-        frame.append(move)
-
-        self._refresh_capture_label()
-        return frame
-
-    def _screen_size(self) -> tuple[int, int]:
-        monitor = self.get_display().get_monitors().get_item(0)
-        if monitor is None:
-            return (1920, 1080)
-        geo = monitor.get_geometry()
-        return (geo.width, geo.height)
-
-    def _current_region(self) -> tuple[int, int, int, int]:
-        return self.config.capture.region.to_pixels(*self._screen_size())
-
-    def _set_region(self, region: tuple[int, int, int, int]) -> None:
-        self.config.capture.region = region_to_fraction(region, self._screen_size())
-        self._refresh_capture_label()
-
-    def _refresh_capture_label(self) -> None:
-        x, y, w, h = self._current_region()
-        screen_w, screen_h = self._screen_size()
-        self.capture_label.set_text(
-            f"x={x} y={y}  size {w}×{h} px   (screen {screen_w}×{screen_h})"
-        )
-
-    def _on_scale_region(self, _button: Gtk.Button, scale: tuple[float, float]) -> None:
-        sx, sy = scale
-        region = self._current_region()
-        x, y, w, h = region
-        # Scale one axis only, keeping the other.
-        scaled = scaled_region((x, y, int(w * sx), int(h * sy)), self._screen_size(), 1.0)
-        self._set_region(scaled)
-
-    def _on_nudge(self, _button: Gtk.Button, delta: tuple[int, int]) -> None:
-        self._set_region(nudge_region(self._current_region(), self._screen_size(), *delta))
 
     # -- display area ------------------------------------------------------ #
     def _build_display_section(self) -> Gtk.Widget:

@@ -1,100 +1,18 @@
-"""Tests for region arithmetic and prompt templating.
+"""Tests for prompt templating.
 
-A region that silently grows past the screen edge, or shrinks to nothing, shows
-up only as bad OCR much later, so the arithmetic is pinned here.
+A user-written prompt with a stray brace in it must not raise at translate time,
+and a preset that forgets a placeholder would silently ask the model to translate
+"{source}" - both are pinned here.
 """
 from __future__ import annotations
 
-import pytest
-
 from lintranslator.geometry import (
     DEFAULT_PROMPT,
-    MIN_SIZE,
     PROMPT_PRESETS,
     fill_prompt,
-    nudge_region,
-    region_to_fraction,
-    scaled_region,
 )
 
-SCREEN = (2560, 1440)
-REGION = (1000, 700, 400, 100)
 
-
-# --------------------------------------------------------------------------- #
-# Scaling
-# --------------------------------------------------------------------------- #
-def test_scaling_grows_about_the_centre():
-    x, y, w, h = scaled_region(REGION, SCREEN, 1.2)
-    assert w > 400 and h > 100
-    # Centre should be roughly preserved.
-    assert abs((x + w / 2) - (1000 + 200)) <= 8
-    assert abs((y + h / 2) - (700 + 50)) <= 8
-
-
-def test_scaling_shrinks_about_the_centre():
-    x, y, w, h = scaled_region(REGION, SCREEN, 0.8)
-    assert w < 400 and h < 100
-    assert abs((x + w / 2) - 1200) <= 8
-
-
-def test_scaling_never_goes_below_the_minimum():
-    """A zero-height region would crop to an empty image and break OCR."""
-    _, _, w, h = scaled_region((100, 100, 30, 30), SCREEN, 0.1)
-    assert w >= MIN_SIZE and h >= MIN_SIZE
-
-
-def test_scaling_never_exceeds_the_screen():
-    x, y, w, h = scaled_region(REGION, SCREEN, 10.0)
-    assert x >= 0 and y >= 0
-    assert x + w <= SCREEN[0] and y + h <= SCREEN[1]
-
-
-def test_scaling_a_region_at_the_edge_stays_on_screen():
-    """A region hugging the bottom-right must not overflow when grown."""
-    edge = (SCREEN[0] - 200, SCREEN[1] - 80, 200, 80)
-    x, y, w, h = scaled_region(edge, SCREEN, 1.5)
-    assert x + w <= SCREEN[0], "grew past the right edge"
-    assert y + h <= SCREEN[1], "grew past the bottom edge"
-
-
-def test_scaling_is_idempotent_for_factor_one():
-    assert scaled_region(REGION, SCREEN, 1.0) == REGION
-
-
-# --------------------------------------------------------------------------- #
-# Nudging
-# --------------------------------------------------------------------------- #
-def test_nudge_moves_without_resizing():
-    got = nudge_region(REGION, SCREEN, 8, -8)
-    assert got == (1008, 692, 400, 100)
-
-
-def test_nudge_clamps_at_the_edges():
-    assert nudge_region((0, 0, 400, 100), SCREEN, -50, -50)[:2] == (0, 0)
-    x, y, _, _ = nudge_region(REGION, SCREEN, 99999, 99999)
-    assert x == SCREEN[0] - 400
-    assert y == SCREEN[1] - 100
-
-
-# --------------------------------------------------------------------------- #
-# Fractions
-# --------------------------------------------------------------------------- #
-def test_region_to_fraction_round_trips():
-    region = region_to_fraction(REGION, SCREEN)
-    assert region.mode == "fraction"
-    assert region.to_pixels(*SCREEN) == REGION
-
-
-def test_region_to_fraction_is_resolution_independent():
-    """The same fraction must land proportionally at a different resolution."""
-    region = region_to_fraction((640, 360, 1280, 360), (2560, 1440))
-    assert region.to_pixels(1280, 720) == (320, 180, 640, 180)
-
-
-# --------------------------------------------------------------------------- #
-# Prompts
-# --------------------------------------------------------------------------- #
 def test_fill_prompt_substitutes_both_placeholders():
     got = fill_prompt("translate {source} into {target}", "English", "Japanese")
     assert got == "translate English into Japanese"
