@@ -5,7 +5,7 @@ Two questions, measured rather than reasoned about:
 1. **Start of capturing.** From `Pipeline.start()` (what the panel's worker
    calls) to the *first completed grab*, and to the first OCR result. At 2 fps
    the poll loop itself can add up to `1/fps` before anything is captured, and
-   warmup happens first on the worker thread - so "pressed Watch live" and
+   warmup happens first on the worker thread - so "pressed Start" and
    "first pixel read" are not the same instant.
 
 2. **Area fidelity.** Does the crop the pipeline reads correspond exactly to the

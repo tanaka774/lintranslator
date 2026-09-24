@@ -1215,10 +1215,11 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.status_label.set_text("paused — press Start to resume")
 
     def show_idle(self) -> None:
-        """Present the card without running the pipeline.
+        """Say that the card is up but nothing is reading yet.
 
-        Used so the panel is on screen and can be dragged into place before
-        translation starts, rather than appearing mid-session already working.
+        The state of a card opened with `--no-start`: it is on screen and can be
+        dragged into place, and Start begins. The picker's card is not shown
+        until Start, so it never sits in this state.
         """
         self.toggle_btn.set_label("Start")
         self.status_label.set_text("press Start to begin translating")

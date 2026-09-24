@@ -259,7 +259,7 @@ class Pipeline:
         self.stats.polls += 1
 
         # Never read the screen while one of our own windows is on it. Measured
-        # on a live screen: the first capture after "Watch live" contained the
+        # on a live screen: the first capture after Start contained the
         # picker's status line at 93% confidence while the dialogue under it fell
         # below the confidence gate and was dropped.
         reason = self.gate() if self.gate is not None else None

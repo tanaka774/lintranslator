@@ -470,7 +470,7 @@ def test_timed_refresh_re_reads_a_held_line():
 def test_our_own_window_on_screen_stops_capture_entirely():
     """The measured regression.
 
-    The first capture after "Watch live" happened 10 ms after the click, with the
+    The first capture after Start happened 10 ms after the click, with the
     picker still over the box. It read the picker's own status line -
     "captured 2560x1440 — drag over the dialogue text" - at 93% confidence, while
     the dialogue line the picker covered fell to 54.7% and was dropped by
@@ -554,7 +554,7 @@ def test_a_pause_does_not_release_the_text_it_was_holding():
 def test_the_region_can_be_changed_while_the_loop_runs():
     """A new selection re-points the running loop instead of being ignored.
 
-    Measured before this: dragging a new box and pressing Watch live again left
+    Measured before this: dragging a new box and pressing Start again left
     the pipeline reading the OLD area while the picker showed the new one as
     live - only Save applied it, and that restarted (and re-positioned) the panel.
     """

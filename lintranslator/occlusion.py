@@ -2,7 +2,7 @@
 
 The pipeline reads pixels off the screen, so any lintranslator window over the selected
 area is captured along with the game. That is not hypothetical: measured on a live
-screen, the frame captured 10 ms after "Watch live" was pressed contained the
+screen, the frame captured 10 ms after Start was pressed contained the
 picker's own status line -
 
     'Watcning... captured 2560x1440 — dra without letting them in on all

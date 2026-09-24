@@ -117,8 +117,8 @@ def main() -> int:
 
     def on_activate(_app) -> None:
         picker = picker_mod.RegionPicker(app, cfg, screenshot_png=png())
-        picker._panel.present = lambda: None
-        picker._panel.set_visible(False)
+        # The picker opens no card until Start, so there is nothing else on
+        # screen to hide while the columns are measured.
 
         print("-- requests, before any window exists --")
         for name, widget in (

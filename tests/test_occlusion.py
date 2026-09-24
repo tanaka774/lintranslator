@@ -94,16 +94,15 @@ def test_panel_and_picker_chrome_is_recognised():
         "Preview: OCR input",
         "Preview: threshold",
         "(no text found in this region)",
-        "Cover the whole text block. A region that is slightly too short…",
+        "A box that is slightly too short still produces plausible OCR…",
         "not always-on-top — on Wayland add a KWin window rule",
-        "This window is a still screenshot, so it will not follow the game.",
     ):
         assert looks_like_own_ui(text) is True, text
 
 
 def test_control_labels_count_only_as_a_whole_read():
     """A lone button label is ours; the same word inside a sentence is not."""
-    for label in ("Pause", "Quit", "no selection", "Watch live", "Apply box"):
+    for label in ("Pause", "Quit", "no selection", "Start", "Apply box"):
         assert looks_like_own_ui(label) is True, label
         assert looks_like_own_ui(f"  {label}.  ") is True, label
 

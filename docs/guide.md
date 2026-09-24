@@ -37,15 +37,20 @@ backend, a language pair, a glossary and a custom endpoint.
 
 ## The GUI
 
-**Region picker** (the first window of `lintranslator gui`) shows a frozen screenshot and
+**Region picker** (the window `lintranslator gui` opens) shows a frozen screenshot and
 lets you drag a rectangle over the dialogue text. The box can be resized from any
 edge or corner: grips sit at every corner and at the middle of every edge, the
 pointer changes shape over them, and the edge you grabbed travels with the pointer
 instead of snapping under it. The controls are one toolbar row: **Capture**,
-**Save**, **Settings** and **Close** grouped on the right, with **Watch live** —
+**Save**, **Settings** and **Close** grouped on the right, with **Start** —
 the action the window exists for — carrying the accent. It used to be two rows of
 equal-width buttons with no primary action, which made the one button that matters
 look like its four neighbours.
+
+The picker is the only window on screen at launch. The translation card is not one
+of its controls: it would be a second window in the way while you are still framing
+the box, and being mapped while the picker grabs the screen it would end up in the
+picker's own screenshot. **Start** is what opens it.
 
 The sidebar is a 340 px control column and the canvas takes everything else —
 1160 px of a 1500 px window, against 840 px before. The culprit was one
@@ -56,7 +61,7 @@ and its scroller and split the surplus evenly with the canvas — the sidebar's 
 340 px request was ignored. `probe/picker_sidebar_check.py` measures both columns
 and prints them.
 
-**Watch live** saves the region, starts the panel, and then **takes itself off the
+**Start** saves the region, opens the card, and then **takes itself off the
 screen** — minimise where the compositor honours it, hide where it does not
 (measured: kwin_wayland 6.7.4 + GTK4 ignores `minimize()` outright, so the hide is
 what usually runs; see `probe/minimise_check.py`). That is not politeness: the
@@ -436,15 +441,15 @@ is prepended to the tokens and the target is the decoder prefix. Anything else i
 scored as `<unk>` — NLLB answers with fluent text in the wrong language and
 nothing raises. A picker is the only shape that cannot produce that.
 
-Every backend is derived from the same pair, and the hint under the pickers says
-what the selected backend is actually sent:
+Every backend is derived from the same pair. Where that derivation is invisible —
+a code that never appears in the pickers — the hint under them names it:
 
-| backend | source/target become | example |
+| backend | source/target become | shown in the dialog as |
 |---|---|---|
-| `ct2`, `local` | the FLORES code, unchanged | `eng_Latn` → `jpn_Jpan` |
-| `openrouter`, `openai`, `chat` | the name, in the prompt | "English" → "Japanese" |
-| `deepl` | DeepL's code (33 languages) | `EN` → `JA` |
-| `none` | unused | — |
+| `ct2`, `local` | the FLORES code, unchanged | `NLLB decodes with eng_Latn → jpn_Jpan.` |
+| `openrouter`, `openai`, `chat` | the name, inside the prompt | the **Prompt** box itself (`translate from english to japanese`) |
+| `deepl` | DeepL's code (33 languages) | `DeepL gets EN → JA.` |
+| `none` | unused | a line saying so |
 
 Two consequences are shown rather than implied:
 

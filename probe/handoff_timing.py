@@ -1,4 +1,4 @@
-"""What does the pipeline see in the seconds after "Watch live" is pressed?
+"""What does the pipeline see in the seconds after Start is pressed?
 
 The panel's worker starts capturing the instant `_on_start` runs, while the
 picker window (the one that was just clicked) and the freshly-presented panel are
@@ -125,8 +125,8 @@ class Probe:
         return True
 
     def _press_watch(self):
-        """Exactly what the 'Watch live' button runs."""
-        print("\n--- pressing Watch live (picker._on_start) ---", flush=True)
+        """Exactly what the Start button runs."""
+        print("\n--- pressing Start (picker._on_start) ---", flush=True)
         STATE["t0"] = mono()
         self.picker._on_start()
         print(
@@ -184,7 +184,7 @@ class Probe:
             print(f"  first grab starts at t={first - t0:5.2f}s")
 
         print("\n" + "=" * 96)
-        print("GRABS AFTER THE CLICK  (t = seconds after pressing Watch live)")
+        print("GRABS AFTER THE CLICK  (t = seconds after pressing Start)")
         print("=" * 96)
         ocr = TesseractOcr(
             langs=cfg.ocr.langs,

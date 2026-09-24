@@ -26,15 +26,13 @@ import re
 # the read, so they survive OCR noise around them.
 SELF_PHRASES = (
     "drag over the dialogue text",
-    "cover the whole text block",
+    "still produces plausible ocr",
     # The picker's Preview dropdown. One phrase per entry rather than the bare
     # word: "raw" or "threshold" alone are words a game line can contain, while
     # the label as drawn ("Preview: raw") is not.
     "preview: raw",
     "preview: ocr input",
     "preview: threshold",
-    "press watch live to translate this box",
-    "this window is a still screenshot",
     "no text found in this region",
     "press start to begin translating",
     "press start to resume",
@@ -54,7 +52,6 @@ SELF_PHRASES = (
 SELF_LABELS = frozenset(
     {
         "no selection",
-        "watch live",
         "apply box",
         "watching",
         "watching...",

@@ -6,7 +6,7 @@
     lintranslator run                     full pipeline: capture -> OCR -> translate
     lintranslator region --x ... --w ...  update the stored region
     lintranslator gui --pick              pick the region visually
-    lintranslator gui                     pick a region, then translate live
+    lintranslator gui                     pick a region, then Start the panel
     lintranslator reread                  re-read the box now (bind this to a hotkey)
     lintranslator status                  what the running GUI is doing
     lintranslator shortcut                how to bind a global Re-read hotkey
@@ -789,12 +789,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser(
         "gui",
-        help="launch the GUI: pick the region, then watch (default)",
+        help="launch the GUI: pick the region, then Start watching (default)",
     )
     sp.add_argument(
         "--pick",
         action="store_true",
-        help="region picker only, then exit (default is picker then panel)",
+        help="region picker on its own; the default launch is this picker, "
+        "whose Start button opens the panel",
     )
     sp.add_argument(
         "--panel",

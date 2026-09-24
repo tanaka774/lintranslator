@@ -25,7 +25,7 @@ from lintranslator.config import Config  # noqa: E402
 from lintranslator.settings import BACKENDS, SettingsDialog  # noqa: E402
 
 OUT = APP_DIR / ".cache"
-RENDER = ["ct2", "local", "openrouter", "deepl", "none"]
+RENDER = ["ct2", "local", "openrouter", "openai", "deepl", "chat", "none"]
 TIMEOUT_MS = 30_000  # hard stop so a stuck render can never hang the shell
 
 

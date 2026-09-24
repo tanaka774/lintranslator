@@ -2,7 +2,7 @@
 
 Both bugs this covers were measured on a live screen, not imagined:
 
-* pressing "Watch live" again after moving the box left the running pipeline on
+* pressing Start again after moving the box left the running pipeline on
   the OLD area, while the picker showed the new box as live;
 * reading started 10 ms after the click, with the picker still over the box, so
   the first capture contained the picker's own status line and the dialogue line
@@ -115,8 +115,12 @@ def clean_guard():
 def picker(tmp_path, monkeypatch):
     monkeypatch.setattr(panel_mod, "PipelineThread", RecordingWorker)
     # Never put a window on the real screen, and never run tesseract on a
-    # synthetic screenshot: this test is about wiring, not pixels.
-    monkeypatch.setattr(panel_mod.TranslatorPanel, "present", lambda self: None)
+    # synthetic screenshot: this test is about wiring, not pixels. Presentations
+    # are recorded rather than dropped, so a test can ask what was on screen.
+    presented: list = []
+    monkeypatch.setattr(
+        panel_mod.TranslatorPanel, "present", lambda self: presented.append(self)
+    )
     monkeypatch.setattr(picker_mod.RegionPicker, "_refresh_preview", lambda self: None)
 
     cfg = Config()
@@ -128,6 +132,7 @@ def picker(tmp_path, monkeypatch):
     window._panel.hotkey_enabled = False
     window.minimised = []
     window.minimize = lambda: window.minimised.append(True)  # type: ignore[method-assign]
+    window.presented = presented
     yield window
     window._shutdown_panel()
     window.destroy()
@@ -148,7 +153,7 @@ def _drag_to(window, x, y, w, h) -> None:
 
 
 # --------------------------------------------------------------------------- #
-def test_watch_live_saves_the_box_and_starts_the_pipeline(picker):
+def test_start_saves_the_box_and_starts_the_pipeline(picker):
     x, y, w, h = picker.sel
     picker._on_start()
 
@@ -166,7 +171,7 @@ def test_watch_live_saves_the_box_and_starts_the_pipeline(picker):
     assert worker.region is region
 
 
-def test_watch_live_gets_the_picker_off_the_screen(picker):
+def test_start_gets_the_picker_off_the_screen(picker):
     """The window must leave before reading starts - that is the whole fix."""
     picker._on_start()
     assert picker.minimised == [True], "the picker stayed on screen while watching"
@@ -224,7 +229,7 @@ def test_the_card_says_when_nothing_is_being_translated(picker):
     assert "gemini-2.5-flash-lite" in panel.backend_label.get_text()
 
 
-def test_pressing_watch_live_again_re_points_the_running_pipeline(picker):
+def test_pressing_start_again_re_points_the_running_pipeline(picker):
     """Regression: the second press used to be ignored entirely.
 
     The picker would show the new box as the live one while the pipeline kept
@@ -316,10 +321,22 @@ def test_the_panel_is_given_the_pause_reason_and_a_way_back(picker):
 def test_the_watch_button_says_what_it_will_do(picker):
     """Idle it starts watching; while watching it applies the box and gets out of
     the way. A button still reading "Watching…" would be a dead control."""
-    assert picker.watch_btn.get_label() == "Watch live"
+    assert picker.watch_btn.get_label() == "Start"
     picker._on_start()
     assert picker.watch_btn.get_label() == "Apply box"
     assert "LIVE" in picker.watch_status.get_text()
+
+
+def test_the_picker_opens_without_the_card(picker):
+    """Picking a region is one window's job.
+
+    The card used to be presented at launch, so `lintranslator` put two windows
+    on screen at once - and the card, being mapped while the picker grabbed the
+    screen, landed in the picker's own screenshot. Start is what opens it.
+    """
+    assert picker.presented == [], "the card was on screen before Start"
+    picker._on_start()
+    assert picker.presented == [picker._panel], "Start did not open the card"
 
 
 def test_the_region_button_asks_the_picker_to_come_back(picker, monkeypatch):
@@ -420,7 +437,7 @@ def test_closing_the_panel_brings_the_picker_back(picker, monkeypatch):
 
     assert picker._panel is None
     assert restored == [True], "the picker stayed hidden with nothing on screen"
-    assert picker.watch_btn.get_label() == "Watch live"
+    assert picker.watch_btn.get_label() == "Start"
 
 
 def test_the_panel_keeps_the_configured_width(picker):

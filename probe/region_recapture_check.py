@@ -1,7 +1,7 @@
 """Does the panel's Region button come back on a *fresh* screenshot?
 
 The behaviour being checked: pressing Region used to re-show the picker on the
-screenshot taken when "Watch live" was pressed - so the box was framed against a
+screenshot taken when Start was pressed - so the box was framed against a
 screen the game had long since moved on from. It now re-grabs the screen on the
 way back, and does so immediately when the window is already off screen (which
 is what watching means), rather than paying the Capture button's 1 s countdown.

@@ -2,8 +2,14 @@
 
 Two windows, one process:
 
-    lintranslator gui --pick     region picker (capture, drag a box, preview OCR)
-    lintranslator gui            translation panel (always-on-top, runs the pipeline)
+    lintranslator gui            region picker (capture, drag a box, preview OCR);
+                                 its Start button opens the panel below
+    lintranslator gui --panel    translation panel (always-on-top, runs the pipeline)
+
+The picker never opens the panel by itself: a second window while a region is
+still being chosen is in the way, and it would land in the picker's own
+screenshot of the screen. `lintranslator gui --panel --no-start` is the way to
+put the card up early and place it by hand.
 
 The panel is a normal keep-above window rather than a layer-shell surface: the
 `gtk4-layer-shell` binding is not installable here, and Wayland forbids clients
@@ -91,6 +97,10 @@ class LinTranslatorApp:
                 window.present()
                 if self.autostart:
                     window.start_pipeline()
+                else:
+                    # `--no-start`: the card is up, nothing is reading, and the
+                    # status line has to say so rather than "starting…" forever.
+                    window.show_idle()
                 self._window = window
 
             if self.screenshot_to:

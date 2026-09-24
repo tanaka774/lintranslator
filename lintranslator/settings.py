@@ -70,9 +70,13 @@ MODEL_LABELS = {
     "chat": "Model id",
 }
 MODEL_PLACEHOLDERS = {
+    # ct2/local: an empty field means the default repo, and on a config whose
+    # backend is a chat one the field opens empty - so this one is the only
+    # place the default is named. The chat backends get an example because the
+    # format is theirs to choose; openrouter gets nothing, because "pick a model
+    # below" described the two buttons that sit beside the field.
     "ct2": f"{DEFAULT_NLLB_MODEL} (default)",
     "local": f"{DEFAULT_NLLB_MODEL} (default)",
-    "openrouter": "pick a model below, or type any id",
     "openai": "e.g. gpt-4o-mini",
     "chat": "e.g. llama3.1:8b",
 }
@@ -101,9 +105,9 @@ BASE_URL_PLACEHOLDERS = {
 
 # Which backends read `translate.prompt`. The Model and Base URL rows already
 # hide themselves for the backends that ignore them; the prompt did not, so the
-# dialog called it "the biggest quality lever" over a field the default backend
-# (ct2) never reads - NLLB is given a language code, not an instruction, and
-# DeepL has no prompt parameter at all.
+# dialog used to sell it as "the biggest quality lever" over a field the default
+# backend (ct2) never reads - NLLB is given a language code, not an instruction,
+# and DeepL has no prompt parameter at all.
 BACKENDS_WITH_PROMPT = ("openrouter", "openai", "chat")
 
 # Curated shortlist, ordered cheapest-first inside each group. Not exhaustive on
@@ -167,7 +171,7 @@ class ModelPicker(Gtk.MenuButton):
         box.set_margin_end(8)
 
         self.search = Gtk.SearchEntry()
-        self.search.set_placeholder_text("filter…")
+        # No placeholder: it is a search entry, sitting above the list it filters.
         # Filter as you type: the default 150 ms delay makes the list feel laggy
         # when the whole point is narrowing 400+ ids down quickly.
         self.search.set_search_delay(0)
@@ -781,7 +785,6 @@ class SettingsDialog(Gtk.Window):
         self.key_entry = Gtk.Entry()
         self.key_entry.set_visibility(False)
         self.key_entry.set_hexpand(True)
-        self.key_entry.set_placeholder_text("paste API key here")
         self.key_entry.set_tooltip_text(
             "Stored in config.json next to this app. Leave empty to use the "
             "OPENROUTER_API_KEY / OPENAI_API_KEY environment variables instead."
@@ -810,6 +813,12 @@ class SettingsDialog(Gtk.Window):
         key_box.append(self.key_row)
         key_box.append(self.key_label)
         grid.attach(key_box, 1, 5, 1, 1)
+        # The row gets a label like every other one. It used to be labelled by
+        # the entry's placeholder, which disappears the moment a key is typed -
+        # leaving a masked box with Show and Clear next to it and nothing saying
+        # what it is.
+        self.api_key_label = Gtk.Label(label="API key", xalign=0)
+        grid.attach(self.api_key_label, 0, 5, 1, 1)
 
         # Contextual help under the model row: model meaning, a browse link, and
         # a warning when the chosen model is known to fail this pipeline.
@@ -863,8 +872,7 @@ class SettingsDialog(Gtk.Window):
 
         hint = Gtk.Label(
             label=(
-                "This is sent to the model before every line. Telling it which game "
-                "it is translating is the biggest quality lever. "
+                "Sent to the model before every line. "
                 "{source} and {target} are filled in automatically."
             ),
             xalign=0,
@@ -918,7 +926,9 @@ class SettingsDialog(Gtk.Window):
         self.fetch_btn.set_visible(key in ("openrouter", "openai"))
         self.key_entry.set_sensitive(key_row_wanted)
         self.key_row.set_visible(key_row_wanted)
-        self.key_label.set_visible(key_row_wanted)
+        self.api_key_label.set_visible(key_row_wanted)
+        # `key_label` is not set here: `_refresh_key_label`, called below, shows it
+        # only when it has something the field cannot show.
 
         # Rebuild the Model row for this backend.
         self.model_label.set_visible(uses_model)
@@ -928,7 +938,7 @@ class SettingsDialog(Gtk.Window):
         self.model_picker.set_history(self.config.translate.recent_models or [])
         if uses_model:
             self.model_label.set_text(MODEL_LABELS[key])
-            self.model_entry.set_placeholder_text(MODEL_PLACEHOLDERS[key])
+            self.model_entry.set_placeholder_text(MODEL_PLACEHOLDERS.get(key, ""))
             self.model_entry.set_tooltip_text(MODEL_TOOLTIPS[key])
             remembered = self._model_memory.get(key)
             if remembered is None:
@@ -958,8 +968,8 @@ class SettingsDialog(Gtk.Window):
             )
 
         # The prompt is an instruction to a chat model. Nothing else reads it, and
-        # a field that describes itself as the biggest quality lever while doing
-        # nothing is worse than no field at all.
+        # a field that looks like it matters while doing nothing is worse than no
+        # field at all.
         self.prompt_section.set_visible(key in BACKENDS_WITH_PROMPT)
 
         # The local weights are non-commercial (CC-BY-NC-4.0). Saying so here is
@@ -992,17 +1002,17 @@ class SettingsDialog(Gtk.Window):
     def _refresh_language(self) -> None:
         """Spell out what this pair becomes for the selected backend.
 
-        The same two codes mean different strings everywhere: NLLB decodes with
-        `jpn_Jpan`, a chat model is told "Japanese" in the prompt, DeepL wants
-        `JA`, Google wants `ja`, and tesseract needs `jpn.traineddata` to read
-        the source at all. Each of those is invisible in config.json and each
-        fails as "the translation is bad" rather than as an error, so the dialog
-        says which one is in play.
+        A pair is not the same string everywhere: NLLB decodes with `jpn_Jpan`,
+        DeepL wants `JA`, and tesseract needs `jpn.traineddata` to read the
+        source at all. Each of those is invisible in config.json and each fails
+        as "the translation is bad" rather than as an error, so the dialog says
+        which one is in play. The chat backends get the pair as words inside the
+        prompt itself, where it is already visible.
         """
         source = self.source_picker.get_code()
         target = self.target_picker.get_code()
         backend = BACKENDS[self.backend_dd.get_selected()][0]
-        source_name, target_name = language_name(source), language_name(target)
+        target_name = language_name(target)
 
         parts: list[str] = []
         unknown = [code for code in (source, target) if code and code not in CODES]
@@ -1017,17 +1027,6 @@ class SettingsDialog(Gtk.Window):
 
         if backend in ("ct2", "local"):
             parts.append(f"NLLB decodes with {source} → {target}.")
-        elif backend in ("openrouter", "openai", "chat"):
-            parts.append(f'The prompt says "{source_name}" → "{target_name}".')
-            if backend == "chat":
-                base = self.base_entry.get_text().strip()
-                if base:
-                    parts.append(f"Requests go to {base}/chat/completions.")
-                else:
-                    parts.append(
-                        "⚠ no Base URL yet — set the endpoint (e.g. "
-                        "http://localhost:11434/v1) or this backend cannot run."
-                    )
         elif backend == "deepl":
             if deepl_code(target) is None:
                 parts.append(
@@ -1041,7 +1040,12 @@ class SettingsDialog(Gtk.Window):
                     else f"DeepL gets {deepl_code(source)}"
                 )
                 parts.append(f"{source_part} → {deepl_code(target)}.")
-        else:
+        elif backend not in ("openrouter", "openai", "chat"):
+            # That leaves `none`, which passes the text through, so the pair
+            # changes nothing. The chat backends are not named here because
+            # there is nothing left to say about the pair for them: it reaches
+            # the model as words inside the prompt, and the endpoint is named
+            # under the model row.
             parts.append("This backend passes text through, so the pair is unused.")
 
         self.language_hint.set_text("  ".join(parts))
@@ -1209,10 +1213,6 @@ class SettingsDialog(Gtk.Window):
             self.model_link.set_visible(False)
 
         parts: list[str] = []
-        if backend in ("ct2", "local"):
-            parts.append(
-                "Local NLLB: the model field is the HF repo the tokenizer comes from."
-            )
         if backend == "chat":
             base = self.base_entry.get_text().strip()
             if base:
@@ -1238,8 +1238,19 @@ class SettingsDialog(Gtk.Window):
         self.model_hint.set_visible(bool(parts))
 
     def _refresh_key_label(self, backend: str | None = None) -> None:
-        """Say exactly which key will be used, and where it came from."""
+        """Say which key will be used, and where it came from.
+
+        Silent while a key is typed into the field above: the field is the
+        indicator, and the buttons beside it are the controls. The one thing the
+        line used to add there - that the key is written into config.json in
+        plain text - is on the field's own tooltip. What is left is the case the
+        field cannot show: a key coming from the environment, or none at all.
+        """
         import os
+
+        def note(text: str, visible: bool = True) -> None:
+            self.key_label.set_text(text)
+            self.key_label.set_visible(visible)
 
         backend = backend or BACKENDS[self.backend_dd.get_selected()][0]
         if backend == "chat":
@@ -1252,17 +1263,14 @@ class SettingsDialog(Gtk.Window):
 
             env = resolve_api_key(None, "LINTRANSLATOR_API_KEY")
             if typed:
-                self.key_label.set_text(
-                    f"Using the key entered above ({typed[:6]}…{typed[-4:]}). "
-                    "It is saved in config.json in plain text when you press Save."
-                )
+                note("", visible=False)
             elif env:
-                self.key_label.set_text(
+                note(
                     f"No key entered here, so LINTRANSLATOR_API_KEY from the environment "
                     f"is used ({env[:6]}…{env[-4:]})."
                 )
             else:
-                self.key_label.set_text(
+                note(
                     "No key set. A server on this machine usually needs none; a "
                     "hosted endpoint needs one (paste it above or set "
                     "LINTRANSLATOR_API_KEY)."
@@ -1276,27 +1284,25 @@ class SettingsDialog(Gtk.Window):
             "deepl": ("DEEPL_API_KEY",),
         }.get(backend)
         if not envs:
-            self.key_label.set_text("No key needed for this backend.")
+            # The row is hidden for these backends, so this text is never on
+            # screen; it is what `lintranslator check`-style introspection and
+            # the tests read.
+            note("No key needed for this backend.", visible=False)
             return
 
         typed = self.key_entry.get_text().strip()
         if typed:
-            self.key_label.set_text(
-                f"Using the key entered above ({typed[:6]}…{typed[-4:]}). "
-                "It is saved in config.json in plain text when you press Save."
-            )
+            note("", visible=False)
             return
         for name in envs:
             if os.environ.get(name):
                 value = os.environ[name]
-                self.key_label.set_text(
+                note(
                     f"No key entered here, so {name} from the environment is used "
                     f"({value[:6]}…{value[-4:]})."
                 )
                 return
-        self.key_label.set_text(
-            f"No key yet. Paste one above, or set {envs[0]} in the environment."
-        )
+        note(f"No key yet. Paste one above, or set {envs[0]} in the environment.")
 
     def _on_reveal_key(self, button: Gtk.ToggleButton) -> None:
         hidden = not button.get_active()
@@ -1375,19 +1381,6 @@ class SettingsDialog(Gtk.Window):
         self.capture_label = Gtk.Label(label="", xalign=0)
         frame.append(self.capture_label)
 
-        hint = Gtk.Label(
-            label=(
-                "Too tall and OCR picks up the nameplate or HUD; too short and it "
-                "silently drops the second line of dialogue. Use the picker for a "
-                "big change."
-            ),
-            xalign=0,
-            wrap=True,
-            max_width_chars=70,
-        )
-        hint.add_css_class("lintranslator-hint")
-        frame.append(hint)
-
         for label, factor in (("Smaller", 0.9), ("Larger", 1.1)):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
             row.append(Gtk.Label(label=label, xalign=0, width_chars=8))
@@ -1456,7 +1449,6 @@ class SettingsDialog(Gtk.Window):
         self.font_scale.set_value(self.config.display.font_scale)
         self.font_scale.set_draw_value(True)
         self.font_scale.set_hexpand(True)
-        self.font_scale.connect("value-changed", lambda *_: self._preview_display())
         grid.attach(self.font_scale, 1, 0, 1, 1)
 
         grid.attach(Gtk.Label(label="Card width", xalign=0), 0, 1, 1, 1)
@@ -1464,7 +1456,6 @@ class SettingsDialog(Gtk.Window):
         self.width_scale.set_value(self.config.display.width)
         self.width_scale.set_draw_value(True)
         self.width_scale.set_hexpand(True)
-        self.width_scale.connect("value-changed", lambda *_: self._preview_display())
         grid.attach(self.width_scale, 1, 1, 1, 1)
 
         # The card's height budget. Expressed in lines rather than pixels because
@@ -1476,7 +1467,6 @@ class SettingsDialog(Gtk.Window):
         self.target_lines.set_value(self.config.display.target_lines)
         self.target_lines.set_draw_value(True)
         self.target_lines.set_hexpand(True)
-        self.target_lines.connect("value-changed", lambda *_: self._preview_display())
         grid.attach(self.target_lines, 1, 2, 1, 1)
 
         grid.attach(Gtk.Label(label="Original text lines", xalign=0), 0, 3, 1, 1)
@@ -1484,54 +1474,14 @@ class SettingsDialog(Gtk.Window):
         self.source_lines.set_value(self.config.display.source_lines)
         self.source_lines.set_draw_value(True)
         self.source_lines.set_hexpand(True)
-        self.source_lines.connect("value-changed", lambda *_: self._preview_display())
         grid.attach(self.source_lines, 1, 3, 1, 1)
 
         self.show_source = Gtk.CheckButton(
             label="Show the original text below the translation"
         )
         self.show_source.set_active(self.config.display.show_source)
-        self.show_source.connect("toggled", lambda *_: self._preview_display())
         frame.append(self.show_source)
-
-        self.display_preview = Gtk.Label(label="", xalign=0, wrap=True)
-        self.display_preview.add_css_class("lintranslator-hint")
-        frame.append(self.display_preview)
-        self._preview_display()
         return frame
-
-    def _preview_display(self) -> None:
-        """Say what these numbers add up to.
-
-        The card's height is the sum of two reserves, and text past them scrolls
-        rather than resizing the card. Spelling that out is the difference
-        between "my translation got cut off" and a setting that is understood.
-        """
-        lines = int(self.target_lines.get_value())
-        source_lines = int(self.source_lines.get_value())
-        show = self.show_source.get_active()
-        over = (
-            f"the translation scrolls after {lines} "
-            f"line{'s' if lines != 1 else ''}"
-        )
-        if show:
-            over += (
-                f", the original after {source_lines} "
-                f"line{'s' if source_lines != 1 else ''}"
-            )
-        size = f"a {int(self.width_scale.get_value())} px card"
-        if self.config.display.height:
-            # Dragged to a size of its own. Say so, and say what undoes it, or
-            # the two line-budget sliders look as if they do nothing.
-            size += (
-                f" {self.config.display.height} px tall, as dragged "
-                "(changing either line budget gives that back to the budgets)"
-            )
-        self.display_preview.set_text(
-            f"Translation renders at "
-            f"{self.config.display.base_font_size * self.font_scale.get_value():.0f} pt "
-            f"in {size} — {over}."
-        )
 
     # -- save -------------------------------------------------------------- #
     def _on_save(self, _button: Gtk.Button) -> None:

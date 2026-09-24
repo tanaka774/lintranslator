@@ -9,6 +9,59 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+- Settings has less text in it. The entry placeholders went first, because most
+  of them named a control that already names itself: "pick a model below, or type
+  any id" (the picker and Fetch list are the two buttons beside that field, and
+  the list is not below it), "filter…" over the model list, and "eng" on the OCR
+  languages field - where an empty box means "leave the list alone", not `eng`.
+  "paste API key here" was the exception: it was the only thing labelling that
+  row, so it is now a real **API key** label, since a placeholder is gone the
+  moment a key is in the field.
+- Then the lines that restated something already on screen. "Saved in config.json
+  in plain text when you press Save." and "Using the key entered above
+  (sk-or…a7d8)" both described the field they sat under - the tooltip on that
+  field still says where the key is stored. 'The prompt says "English" →
+  "Japanese".' said what the prompt box two rows down says itself, and it took
+  the endpoint line under the pickers with it: the model row was already printing
+  the same sentence, so the custom endpoint's warning appeared twice. "Local
+  NLLB: the model field is the HF repo the tokenizer comes from" named what the
+  row label already said (HF tokenizer / HF model) and was not even true for
+  `local`. "Translation renders at 23 pt in a 867 px card" repeated the two
+  sliders above it, "Use the picker for a big change" pointed at the window the
+  user came from, and the prompt hint's "biggest quality lever" was selling a
+  field that is only shown to the backends that read it.
+- Two hints are gone outright rather than trimmed: the capture area's "Too tall
+  and OCR picks up the nameplate or HUD; too short and it silently drops the
+  second line of dialogue.", and the display area's "The translation scrolls
+  after 4 lines…" - the second one taking its widget and its four slider
+  callbacks with it, because a readout whose whole content is the two sliders
+  above it has nothing left to say. What stays is what a user cannot see for
+  themselves: the codes NLLB and DeepL decode with, the licence the local weights
+  carry, what an empty field means, and every warning.
+- The picker no longer opens the translation card. It was presented when the
+  picker was built, so `lintranslator` put two windows on screen before a region
+  had even been chosen - and, being mapped while the picker grabbed the screen
+  for its canvas, the card was in the picker's own screenshot of the game it was
+  supposed to be translating. The card is now opened by **Start**, which is also
+  what the picker's primary button says: "Watch live" described the mode rather
+  than the thing the button does, and the card's own button has read Start all
+  along.
+- The picker's sidebar says less. The caption under the translation - "This
+  window is a still screenshot, so it will not follow the game. Press Watch live
+  to translate continuously." - repeated the status line directly above it, and
+  that status line itself only told the user to press the button they were
+  looking at. The status line now stays empty until it has something to say that
+  the window cannot show by itself (that the box is live, or why reading is
+  paused).
+- The picker's sidebar has no heading, because it was the third copy of the same
+  sentence: "Drag over the dialogue text" was a title there, "cover the whole
+  text block" was the line under it, and the toolbar's status line already says
+  "captured 1500x980 — drag over the dialogue text" - with the capture size,
+  which the title did not have. That title's tooltip also still pointed at a
+  "Find box" button that no longer exists. What is left is the one line a user
+  cannot arrive at by looking: a box that is slightly too short still reads
+  plausibly while silently dropping a line, so the recognized text looks right
+  and only the crop shows what was missed.
 - The install instructions no longer build the venv on a uv-managed Python. They
   said `uv venv --python 3.12 --system-site-packages`, which produces a uv-managed
   3.12 whose "system" site-packages is uv's own - so the flag that existed for

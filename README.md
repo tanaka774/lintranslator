@@ -53,13 +53,13 @@ per-game setup.
 ## Quick start
 
 ```bash
-.venv/bin/python -m lintranslator gui     # picks a region, then starts translating
+.venv/bin/python -m lintranslator gui     # pick a region, then press Start
 ```
 
 Everything after that is inside the GUI: **Capture** the screen, drag a box over
 the dialogue text, **Settings** to choose a backend, paste an API key, pick a model
-and set the prompt, then **Start translating**. No shell commands, no environment
-variables required.
+and set the prompt, then **Start** — the card opens and follows the dialogue from
+there. No shell commands, no environment variables required.
 
 The picker also shows the translation of the current selection as you adjust the
 region, which is the quickest way to judge a model or prompt without launching the

@@ -8,12 +8,16 @@ way back to a picker that now minimises itself) without the control row
 overflowing, and that the picker's own chrome - sidebar and toolbar - reads
 correctly both idle and while watching.
 
-`render_picker_watching.png` is the second state: "Watch live" has become
+`render_picker_watching.png` is the second state: **Start** has become
 "Apply box", the picker has taken itself off the screen, and the sidebar says
 why it is paused. The picker is brought back on screen for that shot (a hidden
 window has no render node at all), in a timer slot of its own - changing a
 label and snapshotting it in the *same* slot gives "not paintable", because the
 cached node is invalidated and the compositor has not drawn the replacement.
+
+The picker no longer opens the card itself, so the probe opens it, in the state
+`gui --panel --no-start` leaves it in - which is why the idle shot is a slot of
+its own rather than part of the picker's.
 """
 import os
 import sys
@@ -64,6 +68,10 @@ def main() -> int:
     cfg = Config.load()
     cfg.path = CONFIG
     cfg.translate.backend = "none"  # no network calls in a render probe
+    # And pin the model name, for the same reason the frame below is synthetic:
+    # both the card's header and the picker's backend line print it, so a render
+    # meant to be published would otherwise drift with the developer's own config.
+    cfg.translate.model = "facebook/nllb-200-distilled-600M"
 
     # `LINTRANSLATOR_RENDER_SOURCE=<png>` renders over a supplied frame instead of
     # grabbing the screen. The default (the live screen) is fine for looking at
@@ -100,6 +108,15 @@ def main() -> int:
 
         def step_idle():
             shoot(picker, "render_picker_idle")
+            # The picker does not open the card, so the probe does: the state a
+            # card opened without `--start` is in. In its own slot below, because
+            # a window presented and snapshotted in the same slot is not painted.
+            panel.show_idle()
+            panel.present()
+            GLib.timeout_add(400, step_idle_panel)
+            return False
+
+        def step_idle_panel():
             shoot(panel, "render_panel_idle")
             # Now watch: the picker minimises itself and the panel takes over.
             picker._on_start()
@@ -122,7 +139,7 @@ def main() -> int:
 
         def step_watching():
             print(
-                f"  after Watch live: picker mapped={picker.get_mapped()} "
+                f"  after Start: picker mapped={picker.get_mapped()} "
                 f"visible={picker.get_visible()}",
                 flush=True,
             )

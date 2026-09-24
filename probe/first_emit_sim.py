@@ -1,6 +1,6 @@
 """What the panel translates first, and when, if the first frame is polluted.
 
-Takes the frame the pipeline really captured 10 ms after "Watch live" was pressed
+Takes the frame the pipeline really captured 10 ms after Start was pressed
 (`data/probe_first_crop.png`, which contains the picker's own widgets) and runs it
 through the real `Pipeline` on a virtual clock, with real tesseract and the
 echoing `none` backend. Deterministic - no screen, no network.
@@ -76,7 +76,7 @@ def main():
           f"refresh_interval={cfg.detect.refresh_interval}s "
           f"fps={cfg.capture.fps}  min_confidence={cfg.ocr.min_confidence}")
     print(f"polls={pipe.stats.polls} ocr_runs={pipe.stats.ocr_runs} emits={len(emitted)}")
-    print(f"first emission at t={first_at}s after Watch live (frame captured at t=0.01s)")
+    print(f"first emission at t={first_at}s after Start (frame captured at t=0.01s)")
     for ev in emitted:
         print(f"\n  conf={ev.confidence:.1f}  source={ev.source!r}")
         print(f"  target={ev.target!r}")

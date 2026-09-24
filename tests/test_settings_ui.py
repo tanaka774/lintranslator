@@ -109,9 +109,9 @@ def test_the_custom_endpoint_row_says_which_protocol_it_wants(dialog):
 def test_the_prompt_row_is_only_for_the_backends_that_read_it(dialog):
     """ct2/local decode a language code, and DeepL has no prompt parameter.
 
-    The hint above the field calls the prompt "the biggest quality lever", so
-    showing it over a backend that ignores it is a control that silently does
-    nothing - which is what the default backend (ct2) did on a fresh install.
+    The field is only meaningful for the backends that send it, so showing it
+    over a backend that ignores it is a control that silently does nothing -
+    which is what the default backend (ct2) did on a fresh install.
     """
     for backend in ("openrouter", "openai", "chat"):
         select(dialog, backend)
@@ -175,8 +175,8 @@ def test_saving_the_custom_endpoint_writes_the_base_url(dialog):
 def test_the_custom_endpoint_warns_while_it_has_no_url(dialog):
     select(dialog, "chat")
     dialog.base_entry.set_text("")
-    dialog._refresh_language()
-    assert "Base URL" in dialog.language_hint.get_text()
+    dialog._refresh_model_hint()
+    assert "Base URL" in dialog.model_hint.get_text()
 
 
 def test_the_local_backend_states_the_model_licence(dialog):
@@ -409,23 +409,6 @@ def _save_button(dialog):
     raise AssertionError("no Save button found in the settings dialog")
 
 
-def test_the_preview_says_text_scrolls_rather_than_resizing(dialog):
-    """The one thing a fixed-height card must explain, or text looks cut off."""
-    dlg = dialog
-    dlg.target_lines.set_value(4)
-    dlg.source_lines.set_value(1)
-    dlg.show_source.set_active(True)
-    dlg._preview_display()
-    text = dlg.display_preview.get_text()
-    assert "4 lines" in text
-    assert "1 line" in text and "1 lines" not in text
-    assert "scrolls" in text
-
-    dlg.show_source.set_active(False)
-    dlg._preview_display()
-    assert "original" not in dlg.display_preview.get_text()
-
-
 def test_hiding_the_source_says_below_not_above(dialog):
     """The original text moved below the translation; the checkbox must agree."""
     assert "below the translation" in dialog.show_source.get_label()
@@ -450,20 +433,6 @@ def test_changing_a_line_budget_releases_a_dragged_height(dialog):
     dlg.source_lines.set_value(dlg.config.display.source_lines)
     dlg._on_save(_save_button(dlg))
     assert dlg.config.display.height == 400
-
-
-def test_the_preview_explains_a_dragged_height(dialog):
-    """A pinned height has to be visible, and so does what undoes it."""
-    dlg = dialog
-    dlg.config.display.height = 0
-    dlg._preview_display()
-    assert "as dragged" not in dlg.display_preview.get_text()
-
-    dlg.config.display.height = 380
-    dlg._preview_display()
-    text = dlg.display_preview.get_text()
-    assert "380 px tall, as dragged" in text
-    assert "line budget" in text, "the way back to budget sizing has to be named"
 
 
 # --------------------------------------------------------------------------- #
@@ -537,24 +506,22 @@ def test_choosing_a_language_updates_the_pair_and_the_hint(dialog):
     assert "kor_Hang" in dialog.language_hint.get_text()
 
 
-def test_the_hint_names_what_each_backend_receives(dialog):
-    """The same pair is a code, a name and an ISO code depending on backend."""
+def test_the_hint_names_the_code_each_backend_decodes_with(dialog):
+    """NLLB takes the FLORES code verbatim; DeepL wants an ISO code of its own.
+
+    The chat backends are deliberately not named here: the pair reaches them as
+    words inside the prompt, and that prompt is on screen for them. A line
+    repeating it under the pickers was the same sentence twice.
+    """
     select(dialog, "ct2")
     assert "eng_Latn → jpn_Jpan" in dialog.language_hint.get_text()
-
-    select(dialog, "openrouter")
-    hint = dialog.language_hint.get_text()
-    assert '"English"' in hint and '"Japanese"' in hint
 
     select(dialog, "deepl")
     assert "EN → JA" in dialog.language_hint.get_text()
 
-    select(dialog, "chat")
-    dialog.base_entry.set_text("http://localhost:11434/v1")
-    dialog._refresh_language()
-    hint = dialog.language_hint.get_text()
-    assert '"English"' in hint and '"Japanese"' in hint
-    assert "localhost:11434" in hint
+    for backend in ("openrouter", "openai", "chat"):
+        select(dialog, backend)
+        assert dialog.language_hint.get_text() == "", backend
 
 
 def test_the_hint_says_when_the_pair_is_unused(dialog):

@@ -121,6 +121,8 @@ class RegionPicker(Gtk.ApplicationWindow):
 
         self._build()
         self._set_watching(False)
+        # Built here, opened by Start: this wires the card to this window
+        # without putting it on screen while a region is still being picked.
         self._prepare_panel()
         if from_file:
             # Useful for re-framing from an existing screenshot, and for testing
@@ -162,7 +164,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         #
         # The buttons used to live at the bottom of the sidebar in two
         # homogeneous rows of full-width buttons - five controls of equal width
-        # and therefore equal weight, so the primary action ("Watch live")
+        # and therefore equal weight, so the primary action ("Start")
         # looked exactly like "Close", and the split between the rows (capture
         # and save, then watch, settings and close) said nothing. Five buttons
         # do not fit one row in a 340px sidebar, so the row spans the window
@@ -288,10 +290,9 @@ class RegionPicker(Gtk.ApplicationWindow):
 
         bar.append(self._rule())
 
-        self.watch_btn = Gtk.Button(label="Watch live")
+        self.watch_btn = Gtk.Button(label="Start")
         self.watch_btn.set_tooltip_text(
-            "Save this region and open the panel that follows the game and "
-            "translates each new line"
+            "Save this region, open the panel and translate each new line"
         )
         self.watch_btn.connect("clicked", lambda *_: self._on_start())
         bar.append(self.watch_btn)
@@ -323,18 +324,17 @@ class RegionPicker(Gtk.ApplicationWindow):
         side.set_size_request(340, -1)
         side.set_valign(Gtk.Align.FILL)
 
-        title = Gtk.Label(label="Drag over the dialogue text", xalign=0)
-        title.add_css_class("lintranslator-title")
-        title.set_tooltip_text(
-            "Drag a box, or press Find box to snap it to the nearest text"
-        )
-        side.append(title)
-
+        # One line, and only the part that cannot be seen. "Drag over the dialogue
+        # text" was written three times in this window - as a title here, again as
+        # "cover the whole text block" below it, and a third time in the toolbar's
+        # status line, which also says how big the capture is - and its tooltip
+        # still pointed at a "Find box" button that no longer exists. What is left
+        # is the trap: a box that cuts a line still reads plausibly, so the OCR
+        # text below looks right and only the crop shows what was missed.
         hint = Gtk.Label(
             label=(
-                "Cover the whole text block. A region that is slightly too short "
-                "still produces plausible OCR while silently dropping a line, so "
-                "check the preview below."
+                "A box that is slightly too short still produces plausible OCR "
+                "while silently dropping a line."
             ),
             xalign=0,
             wrap=True,
@@ -457,24 +457,13 @@ class RegionPicker(Gtk.ApplicationWindow):
         side.append(self.backend_label)
         self._refresh_backend_label()
 
-        # A visible explanation, because a still screenshot that never updates
-        # looks exactly like a broken live translator.
+        # The state readout. It stays empty while nothing is being read - the
+        # button below is the instruction - and speaks up only when the box is
+        # being read, or when it is not and the reason is not the user's to guess.
         self.watch_status = Gtk.Label(label="", xalign=0, wrap=True)
         self.watch_status.add_css_class("lintranslator-hint")
         self.watch_status.set_max_width_chars(34)
         side.append(self.watch_status)
-
-        self.snapshot_note = Gtk.Label(
-            label=(
-                "This window is a still screenshot, so it will not follow the "
-                "game. Press Watch live to translate continuously."
-            ),
-            xalign=0,
-            wrap=True,
-        )
-        self.snapshot_note.add_css_class("lintranslator-caption")
-        self.snapshot_note.set_max_width_chars(34)
-        side.append(self.snapshot_note)
 
         self.trans_label = Gtk.Label(label="", xalign=0, wrap=True)
         self.trans_label.set_selectable(True)
@@ -926,7 +915,7 @@ class RegionPicker(Gtk.ApplicationWindow):
 
     # -- start watching ---------------------------------------------------- #
     def _on_start(self) -> None:
-        """Save the region, start (or re-point) the panel, and get out of the way.
+        """Save the region, open (or re-point) the panel, and get out of the way.
 
         Deliberately in-process: the panel is another window of the same
         application rather than a second `lintranslator gui` run. That keeps the
@@ -952,7 +941,8 @@ class RegionPicker(Gtk.ApplicationWindow):
         self.config.capture.region = region
         self.config.save()
 
-        # The panel already exists (shown idle at startup); just start it.
+        # The panel was built with this window but kept off screen; this is what
+        # opens it. Only the first Start builds it.
         if getattr(self, "_panel", None) is None:
             self._prepare_panel()
         panel = self._panel
@@ -1074,11 +1064,13 @@ class RegionPicker(Gtk.ApplicationWindow):
         return False  # let the panel actually close
 
     def _prepare_panel(self) -> None:
-        """Put the translation card on screen straight away, not yet running.
+        """Build the translation card, wired to this window but not shown.
 
-        The panel is where translations appear, so showing it up front means it
-        can be dragged clear of the captured area before translation begins -
-        otherwise it tends to sit right over the text and get captured itself.
+        Picking a region does not need the card - a second window on screen at
+        launch is one more thing in the way, and it lands in this window's own
+        screenshot of the screen - so it stays hidden until `_on_start` opens it.
+        Building it here rather than there keeps the control socket behind
+        `lintranslator status` alive for the whole session.
         """
         from .panel import TranslatorPanel
 
@@ -1087,8 +1079,6 @@ class RegionPicker(Gtk.ApplicationWindow):
         # Give the panel the pause reason and a way back to this window.
         self._panel.gate = GUARD.reason
         self._panel.enable_region_button(self.restore)
-        self._panel.show_idle()
-        self._panel.present()
 
     def _set_watching(self, watching: bool) -> None:
         """Reflect whether the panel is running, so the two windows agree."""
@@ -1096,15 +1086,14 @@ class RegionPicker(Gtk.ApplicationWindow):
         if watching:
             self.watch_btn.set_label("Apply box")
         else:
-            self.watch_btn.set_label("Watch live")
+            self.watch_btn.set_label("Start")
         self._refresh_watch_status()
 
     def _refresh_watch_status(self) -> None:
         """Say whether the box is being read, and why not when it is not."""
         if not getattr(self, "_watching", False):
-            self.watch_status.set_text(
-                "Press Watch live to translate this box continuously."
-            )
+            # Nothing to say before Start: the button says it.
+            self.watch_status.set_text("")
             return
         if self.get_mapped():
             self.watch_status.set_text(

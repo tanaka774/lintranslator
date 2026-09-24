@@ -1,6 +1,6 @@
 """Does the captured area follow the selected box?
 
-The regression this guards: pressing "Watch live" again after moving the box wrote
+The regression this guards: pressing Start again after moving the box wrote
 the new region into the config but left the running pipeline on the old one, and
 only Save applied it - by tearing the panel down and rebuilding it, which reloaded
 the model and let the compositor move the card.

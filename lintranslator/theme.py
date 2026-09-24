@@ -53,7 +53,6 @@ RADIUS_CONTROL = 6
 FONT_CAPTION = 10
 FONT_SMALL = 11
 FONT_BODY = 13
-FONT_TITLE = 14
 
 # The panel's control row is a fixed height by design (see display lines below),
 # so the buttons in it are sized to sit inside it rather than to pad it out.
@@ -74,7 +73,6 @@ def build_css(*, target_px: int, source_px: int) -> str:
   border-radius: {RADIUS_CARD}px;
   padding: {SPACE_MD}px {SPACE_MD + 2}px;
 }}
-.lintranslator-title    {{ color: {TEXT};       font-weight: 700; font-size: {FONT_TITLE}px; }}
 .lintranslator-section  {{ color: {TEXT};       font-weight: 700; font-size: {FONT_BODY}px; }}
 .lintranslator-body     {{ color: {TEXT};       font-size: {FONT_BODY}px; }}
 .lintranslator-dim      {{ color: {TEXT_DIM};   font-size: {FONT_SMALL}px; }}
@@ -248,7 +246,6 @@ window.lintranslator-app {{ background-color: {SURFACE_SOLID}; }}
    The panel is `window.lintranslator-panel`, not `.lintranslator-app`, so none of this touches
    it; the picker's hand-drawn cairo area is not a widget and is not matched. */
 window.lintranslator-app label {{ color: {TEXT}; }}
-window.lintranslator-app .lintranslator-title {{ color: {TEXT}; font-weight: 700; }}
 window.lintranslator-app .lintranslator-section {{ color: {TEXT}; font-weight: 700; }}
 window.lintranslator-app .lintranslator-dim {{ color: {TEXT_DIM}; }}
 window.lintranslator-app .lintranslator-hint {{ color: {TEXT_DIM}; }}
