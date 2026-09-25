@@ -14,11 +14,13 @@ lintranslator/
   detect.py      change detector, text settler, empty guard
   geometry.py    prompt templates (pure, tested)
   languages.py   the 202 FLORES-200 codes + each backend's code for them (data)
+  ocr_languages.py  the 124 OCR models tessdata_fast ships, for the Settings chooser (data)
   settings.py    GTK settings dialog (backend, model, language pair, prompt, card)
   ocr.py         tesseract wrapper + tessdata bootstrap + preprocessing
   translate.py   NLLB (ct2, local) / DeepL / OpenRouter / OpenAI / custom endpoint + cache
   glossary.py    term overrides, pre- and post-translation
   convert.py     HuggingFace -> CTranslate2 int8 conversion
+  cleanup.py     what `remove` reports and deletes, and what it refuses to touch
   calibrate.py   automatic dialogue-box detection
   selection.py   picker coordinate mapping and drag geometry (pure, tested)
   occlusion.py   which LinTranslator windows are on screen (the capture gate)
@@ -27,16 +29,17 @@ lintranslator/
   hotkey.py      global shortcut via the compositor's GlobalShortcuts portal
   picker.py      GTK4 region picker window
   panel.py       GTK4 always-on-top translation panel + worker thread
+  theme.py       the one stylesheet all three windows share (visual source of truth)
   gui.py         GTK application entry point
   pipeline.py    the capture -> OCR -> translate loop
   cli.py         check / grab / read / run / region / gui / convert / models / reread / status /
                  shortcut / remove / languages / install-desktop
   data/          the `.desktop` entry and its launcher, installed by `install-desktop`
-tests/           430 tests: core, geometry, pipeline, glossary, backends, languages,
-                 OCR languages, paths/permissions, the desktop install, the CLI default
+tests/           464 tests (433 functions): core, geometry, pipeline, glossary, backends,
+                 languages, OCR languages, paths/permissions, downloads, the desktop
+                 install, the CLI default
 probe/           spike scripts, raw measurements, per-phase results
 docs/            this documentation, and the picker render in the README
-PLAN.md          feasibility study with the full benchmark tables
 CHANGELOG.md     what changed, per release
 MANIFEST.in      what the source distribution has to carry (see the sdist CI job)
 .github/         the test matrix and the sdist build
@@ -65,7 +68,8 @@ MANIFEST.in      what the source distribution has to carry (see the sdist CI job
   `ct2` backend runs on CPU threads. ROCm acceleration is expected to work but is
   unverified.
 - The panel cannot position itself under the dialogue box on native Wayland (see
-  the positioning caveat above); drag it into place or use XWayland.
+  [always on top](guide.md#always-on-top-read-this-first)); drag it into place or
+  use XWayland.
 - Only KDE Plasma 6 / Wayland has been run. X11/XWayland, GNOME and other
   compositors are analysed in "Compatibility" but not exercised: the risks are
   the hotkey (portal missing outside KDE) and stacking.
@@ -123,6 +127,11 @@ pip-only environment still runs everything that does not draw a window.
   `+` form `-l` actually receives, and what the tessdata directories hold
 * `tests/test_ocr_languages.py` - the chooser's generated list of models: every
   stem is one `-l` accepts, and nothing the app can download is missing from it
+* `tests/test_downloads.py` - that nothing fetches model weights unasked: `convert`
+  and the `local` backend both refuse, and the tessdata download is the announced,
+  checksum-pinned exception
+* `tests/test_desktop.py` - `install-desktop`: the menu entry and launcher, the
+  application id the global hotkey needs
 * `tests/test_settings_ui.py` - the backend-dependent rows, and the language
   pickers: only real codes are offered, an unknown one in the config is shown and
   warned about rather than replaced, and the OCR languages are a set that can be

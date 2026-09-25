@@ -12,8 +12,10 @@ backend, a language pair, a glossary and a custom endpoint.
 # --- GUI ---
 .venv/bin/python -m lintranslator gui                 # pick a region, then watch (default)
 .venv/bin/python -m lintranslator gui --panel         # skip the picker, straight to the panel
-.venv/bin/python -m lintranslator gui --pick          # region picker only, then exit
-.venv/bin/python -m lintranslator gui --demo          # panel with a sample line (no model)
+.venv/bin/python -m lintranslator gui --pick          # the picker on its own (what the default
+                                                      # launch opens); Start still opens the panel
+.venv/bin/python -m lintranslator gui --panel --demo  # panel with a sample line (no model)
+.venv/bin/python -m lintranslator gui --screenshot /tmp/win.png  # render the window, then exit
 
 # --- while it is running ---
 .venv/bin/python -m lintranslator reread              # read the box again, now (bind a hotkey to this)
@@ -411,8 +413,16 @@ suggestion and confirm by looking at the crop.
 
 ## Switching translation backend
 
+A fresh config uses a hosted backend, so nothing has to be downloaded to
+translate a first line. `openrouter` is the default; the local backends are opt-in
+and cost disk (see [what the conversion costs](install.md#what-the-conversion-actually-costs)).
+
 ```bash
-# int8 CTranslate2 (default)
+# the default in a fresh config - needs a key and a model id
+.venv/bin/python -m lintranslator run --backend openrouter
+
+# int8 CTranslate2, offline. Needs `lintranslator convert` first, and the
+# `ct2` extra (see install).
 .venv/bin/python -m lintranslator run --backend ct2
 
 # transformers fallback
@@ -424,9 +434,9 @@ suggestion and confirm by looking at the crop.
 
 | backend | latency | notes |
 |---|---|---|
-| `ct2` | **~0.2-0.35 s/line** | int8 NLLB via CTranslate2, ~630 MB, offline. **Default.** |
+| `openrouter` | network-bound | **many models, one key**; needs a key + model id; prompt-tunable. **Default.** |
+| `ct2` | **~0.2-0.35 s/line** | int8 NLLB via CTranslate2, ~630 MB, offline |
 | `local` | ~0.8-1.7 s/line | the same 2.5 GB checkpoint through transformers; needs torch |
-| `openrouter` | network-bound | **many models, one key**; needs a key + model id; prompt-tunable |
 | `deepl` | network-bound | best fluency for JA; needs a key |
 | `openai` | network-bound | prompt-tunable, needs a key |
 | `chat` | network-bound | any OpenAI-compatible server (llama.cpp, Ollama, vLLM, Groq, Together); needs `api_base`; key optional; prompt-tunable |
