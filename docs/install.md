@@ -2,17 +2,15 @@
 
 Everything between a fresh Linux desktop and a translated dialogue box: the
 system packages, the one-time model conversion and what it costs in disk, where
-state is kept, and the licences the models come under. The three-command
-version is in the [README](../README.md#install).
-
-See also [using LinTranslator](guide.md) once it is running, and
-[why it works this way](design.md) for the reasoning behind the choices.
+state is kept, and the licences the models come under. The short version is in the
+[README](../README.md#install), which is also where the command line, the backends
+and the keep-above recipes live.
 
 ## Compatibility
 
 | target | status | why |
 |---|---|---|
-| **Linux + KDE Plasma 6 / Wayland** | **verified** | the environment every measurement in the [design notes](design.md) was taken on |
+| **Linux + KDE Plasma 6 / Wayland** | **verified** | the environment every measurement in [`probe/`](../probe/) was taken on |
 | **Linux + X11 / XWayland** | works | and window placement and keep-above genuinely work here, unlike native Wayland |
 | **Linux + Wayland, other compositors** | depends on the portal backend | the parts that are not KDE are the hotkey and the keep-above workaround |
 | **Linux + GNOME** | core expected to work, untested here | `xdg-desktop-portal-gnome` implements Screenshot and ScreenCast, so capture should be fine; the automatic hotkey will not bind |
@@ -23,8 +21,7 @@ them has a fallback:
 
 * **Capture** is `org.freedesktop.portal.Screenshot` / `ScreenCast` over D-Bus
   (`portal.py`). There is no other grabber in the tree, because on Wayland
-  `mss`, `import` and X11 grabs return black - see
-  [why it works this way](design.md#why-it-works-this-way).
+  `mss`, `import` and X11 grabs return black.
   No portal, no pixels.
 * **The global hotkey** is `org.freedesktop.portal.GlobalShortcuts` (`hotkey.py`).
   KDE implements it; the compositor shows its own binding dialog and then sends
@@ -45,7 +42,7 @@ as a portability shim. Nothing was written with another OS in mind.
 The GUI itself is plain GTK4, so it is not a KDE application: it runs on any
 Wayland or X11 desktop with PyGObject. What is KDE-specific is the shortcut
 portal, plus the KWin window rule recommended for keep-above under native Wayland
-(see [Always on top](guide.md#always-on-top-read-this-first)). Under GNOME, expect
+(see [Always on top](../README.md#always-on-top)). Under GNOME, expect
 to bind the shortcut by hand and to manage stacking yourself.
 
 In this documentation, "verified" and "measured" mean this machine: KDE Plasma 6,
@@ -144,7 +141,8 @@ distro, and 4.1 MB of language data. Not three gigabytes.
 The commands in this document are then written as `.venv/bin/python -m
 lintranslator ...`; with the venv above, use its `lintranslator` script instead.
 Either way, `lintranslator install-desktop` is what puts the app in the
-application menu - see [the hotkey section](guide.md#re-read-when-a-line-comes-out-wrong).
+application menu, which is what gives it the application id the global Re-read
+hotkey needs. `lintranslator shortcut` prints the setup.
 
 `.[ct2]` is the fast path. `.[local]` is the older transformers route: the same
 2.5 GB checkpoint, loaded through torch instead of CTranslate2, which is slower

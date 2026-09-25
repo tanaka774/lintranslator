@@ -684,7 +684,7 @@ def test_native_wayland_says_nothing_about_always_on_top(picker, monkeypatch):
     launch of every native Wayland session, and stayed until the first
     translation - telling users who had already added the KWin window rule to go
     and add it, and clearable only by a translation. Nothing was attempted here,
-    so the card says nothing; the fix is in docs/guide.md.
+    so the card says nothing; the fix is in the README.
     """
     panel = picker._panel
     monkeypatch.setattr(panel, "get_display", lambda: _FakeWaylandDisplay())
@@ -719,8 +719,8 @@ def test_an_x11_failure_still_reports_on_the_card(picker, monkeypatch):
     assert "no DISPLAY" in text, "why it failed is part of the fix"
     # One line, not the three the instructions used to take.
     assert "\n" not in text
-    # The steps are in the guide, and the notice names it.
-    assert "docs/guide.md" in text
+    # The steps are in the README, and the notice names it.
+    assert "the README" in text
 
 
 # --------------------------------------------------------------------------- #

@@ -14,10 +14,10 @@ from there rather than keeping a second copy.
   not always-on-top and how to fix it - three lines of instructions in the area
   the translation goes. Native Wayland cannot do it at all, the fix is a KWin
   window rule the card cannot detect, and so the notice was wrong for anyone who
-  had already added one and unclearable by anyone who had not. The section in
-  `docs/guide.md` covers both options. A failure the user *can* fix - the X11 path
-  with `python-xlib` missing, or the window not found - still reports, in one line
-  instead of three, with the steps in the guide.
+  had already added one and unclearable by anyone who had not. The README's
+  "Always on top" section covers both options. A failure the user *can* fix - the
+  X11 path with `python-xlib` missing, or the window not found - still reports, in
+  one line instead of three, with the steps in the README.
 - The default backend is OpenRouter, not the local int8 model. A fresh install
   could not translate a word until 2.5 GB had been downloaded and converted, which
   is an odd thing to ask of a first run; it now needs an API key and a model id,

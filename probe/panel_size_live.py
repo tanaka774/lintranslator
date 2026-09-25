@@ -23,7 +23,7 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from lintranslator.config import Config  # noqa: E402
-from lintranslator.panel import TranslatorPanel  # noqa: E402
+from lintranslator.panel import KEEP_ABOVE_SHORT, TranslatorPanel  # noqa: E402
 from lintranslator.pipeline import Event  # noqa: E402
 
 LONG_SOURCE = (
@@ -90,11 +90,10 @@ def main() -> int:
             (
                 "keep-above notice",
                 # The one-liner the card shows when the X11 request could not be
-                # made; the instructions themselves are in docs/guide.md. Native
-                # Wayland shows nothing here, so this is the longest it gets.
-                lambda: panel.status_label.set_text(
-                    "Not always-on-top in this session — see docs/guide.md"
-                ),
+                # made; the instructions themselves are in the README. Taken from
+                # the panel rather than copied, so this stays the real longest
+                # case. Native Wayland shows nothing here.
+                lambda: panel.status_label.set_text(KEEP_ABOVE_SHORT),
             ),
         ]
         delay = 700

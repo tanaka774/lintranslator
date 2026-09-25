@@ -56,10 +56,10 @@ class UiMessage:
 
 # What the card says when the keep-above request could not be made. One line, not
 # three: it fires on the X11 path when something is genuinely wrong, and the fix
-# it names is in docs/guide.md, under "Always on top". Native Wayland says nothing
+# it names is in the README, under "Always on top". Native Wayland says nothing
 # at all - there the request is impossible rather than failed, and a notice that
 # can never be cleared by fixing anything is noise on every launch.
-KEEP_ABOVE_SHORT = "Not always-on-top in this session — see docs/guide.md"
+KEEP_ABOVE_SHORT = "Not always-on-top in this session — see the README, 'Always on top'"
 
 
 class LabelButton(Gtk.Button):
@@ -923,7 +923,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             # session and stay on the card until the first translation, telling
             # users who already have the window rule to go and add it - a message
             # that no action of theirs can clear, in the place the translation
-            # goes. The fix is in docs/guide.md, under "Always on top".
+            # goes. The fix is in the README, under "Always on top".
             return False
         display_name = os.environ.get("DISPLAY")
         if not display_name:
@@ -991,7 +991,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         # A window rule is the fix, and saying so is the whole point: an
         # unexplained card that sinks behind the game reads as broken. One line,
         # not the instructions: the translation area is where translations go, and
-        # the steps themselves are in docs/guide.md.
+        # the steps themselves are in the README.
         self._show_notice(
             KEEP_ABOVE_SHORT + (f" [{detail}]" if detail else "")
         )

@@ -19,15 +19,16 @@ artwork and the desktop it was taken on.*
 
 ## Documentation
 
-| | |
-|---|---|
-| **[Install](docs/install.md)** | system packages, the one-time model conversion and what it costs in disk, where state is kept, model licences |
-| **[Using it](docs/guide.md)** | the picker and the panel, hotkeys, the command line, backends, language pairs, glossary, custom endpoints |
-| **[Why it works this way](docs/design.md)** | the measurements behind the capture, OCR and translation choices, and the pipeline's behaviour |
-| **[Development](docs/development.md)** | code layout, the test suite, the roadmap, the full list of limitations |
+**[Install](docs/install.md)** - system packages, the one-time model conversion
+and what it costs in disk, where state is kept, model licences. The rest of this
+page is the short version: what it is, how to get it running, and what it does not
+do yet. [CHANGELOG.md](CHANGELOG.md) is what changed, per release, and the
+measurements behind the choices are in [`probe/`](probe/).
 
-The rest of this page is the short version: what it is, how to get it running,
-and what it does not do yet.
+The test suite covers 3.12 to 3.14: `uv pip install --python .venv/bin/python -e
+'.[test]'`, then `.venv/bin/python -m pytest tests/`. Without PyGObject the three
+GTK modules skip rather than fail, so a headless run still tests everything that
+does not draw a window.
 
 ## How this differs from LunaTranslator
 
@@ -68,9 +69,41 @@ panel.
 For the global Re-read hotkey — the one that works while the game has focus — run
 `lintranslator install-desktop` once and start the app from the application menu
 rather than a terminal. That launch is what gives it the application id the
-compositor's shortcut portal demands; [the hotkey
-section](docs/guide.md#re-read-when-a-line-comes-out-wrong) covers what to do when
-that is not available.
+compositor's shortcut portal demands; `lintranslator shortcut` prints the exact
+setup for when that is not available.
+
+## Always on top
+
+**On native Wayland no application can raise itself above other windows.** Stacking
+belongs to the compositor, and GTK4 removed the `keep_above` API that GTK3 had.
+The card says nothing about it there on purpose: nothing inside the app can fix it,
+so a warning would sit in the translation area on every launch, telling people who
+already added a window rule to go and add one. Two options do work.
+
+**Launch under XWayland** — no setup. The standard `_NET_WM_STATE_ABOVE` hint still
+functions there, and LinTranslator applies it itself:
+
+```bash
+GDK_BACKEND=x11 .venv/bin/python -m lintranslator gui
+```
+
+**Or add a KWin window rule** (native Wayland, permanent): *System Settings →
+Window Management → Window Rules → New*
+
+| field | value |
+|---|---|
+| Window title | `Substring match` → `LinTranslator` |
+| Keep above other windows | **Force** → **Yes** |
+
+> Add rules through System Settings, not by editing `kwinrulesrc` directly: KWin
+> rewrites that file from its own configuration state, so a rule written behind its
+> back is discarded on the next reload.
+
+> An always-on-top window also takes clicks over its area, so a card lying over the
+> game blocks input there. Keep it clear of anything you need to click.
+
+The one case the card does report is an X11 failure it can name — `python-xlib`
+missing, or the window not found — because that one the user can fix.
 
 ## Install
 
@@ -162,10 +195,14 @@ Wayland or X11 desktop with PyGObject.
   the `portal-screenshot` path is the default and is fast enough at 2 fps.
 - The panel cannot position itself under the dialogue box on native Wayland, where
   stacking belongs to the compositor. Drag it into place, or use XWayland.
+- While the picker is on screen, reading pauses on purpose. Self-capture is
+  prevented by *not capturing*, because Wayland gives no way to test whether one of
+  our own windows overlaps the box, so a picker parked over the game costs
+  translation time until it is minimised.
+- The GUI was verified by rendering it offscreen and driving the real drag handlers
+  with synthetic gesture events - `probe/region_resize_check.py` resizes from all
+  eight edges and corners - but no automated check moves a real mouse.
 - Screen reading only: no memory reading, no injection, no game file patching.
-
-[The full list](docs/development.md#known-limitations) also covers what is
-verified offscreen and how, and what happens while the picker is open.
 
 ## Licence
 
