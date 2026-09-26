@@ -28,6 +28,7 @@ from .languages import (  # noqa: E402
     CODES,
     LANGUAGES,
     deepl_code,
+    google_code,
     language_name,
     search,
     tesseract_lang,
@@ -60,6 +61,7 @@ BACKENDS = [
     ("openrouter", "OpenRouter (many models, needs key)"),
     ("openai", "OpenAI (needs key)"),
     ("deepl", "DeepL (needs key)"),
+    ("google", "Google Translate (needs key)"),
     ("chat", "Custom · any OpenAI-compatible endpoint"),
 ]
 
@@ -144,7 +146,7 @@ REASONING_CAUTION = {
 }
 
 # Ordered so the first entry a backend supports is the recommended default.
-BACKENDS_NEEDING_KEY = ("openrouter", "openai", "deepl")
+BACKENDS_NEEDING_KEY = ("openrouter", "openai", "deepl", "google")
 
 
 class ModelPicker(Gtk.MenuButton):
@@ -461,6 +463,11 @@ class LanguagePicker(Gtk.MenuButton):
         """What the current backend receives, when it is not the code itself."""
         if self._backend == "deepl":
             return language.deepl or "not supported"
+        if self._backend == "google":
+            # Through `google_code`, not `language.iso`: the two Chinese scripts
+            # share an ISO code and Google does not, so showing `zh` for both
+            # would hide the one case where the two answers differ.
+            return google_code(language.code) or "not supported"
         return ""
 
     def _language_row(self, language) -> Gtk.ListBoxRow:
@@ -492,6 +499,8 @@ class LanguagePicker(Gtk.MenuButton):
         if language.iso:
             parts.append(f"ISO {language.iso}")
         parts.append(f"DeepL {language.deepl}" if language.deepl else "DeepL: not supported")
+        google = google_code(language.code)
+        parts.append(f"Google {google}" if google else "Google: not supported")
         parts.append(
             f"OCR reads it with {language.tesseract}"
             if language.tesseract
@@ -1343,6 +1352,20 @@ class SettingsDialog(Gtk.Window):
                     else f"DeepL gets {deepl_code(source)}"
                 )
                 parts.append(f"{source_part} → {deepl_code(target)}.")
+        elif backend == "google":
+            if google_code(target) is None:
+                parts.append(
+                    f"⚠ Google cannot translate into {target_name or target}: it "
+                    "takes ISO 639-1 codes and this language has none. Pick "
+                    "another target, or use another backend for this pair."
+                )
+            else:
+                source_part = (
+                    "Google detects the source"
+                    if google_code(source) is None
+                    else f"Google gets {google_code(source)}"
+                )
+                parts.append(f"{source_part} → {google_code(target)}.")
         elif backend not in ("openrouter", "openai", "chat"):
             # That leaves `none`, which passes the text through, so the pair
             # changes nothing. The chat backends are not named here because
@@ -1547,6 +1570,9 @@ class SettingsDialog(Gtk.Window):
             # DeepL's own variable, as the translator reads it. Without this the
             # row was visible but the label claimed no key was needed.
             "deepl": ("DEEPL_API_KEY",),
+            # A Google Cloud API key, so the variable is Google's own name for
+            # it rather than one this app invented.
+            "google": ("GOOGLE_API_KEY", "LINTRANSLATOR_API_KEY"),
         }.get(backend)
         if not envs:
             # The row is hidden for these backends, so this text is never on

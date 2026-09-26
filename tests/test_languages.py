@@ -90,6 +90,23 @@ def test_languages_deepl_cannot_do_have_no_code():
     assert L.deepl_code("kat_Geor") is None
 
 
+def test_the_google_column_is_iso_639_1_plus_the_script_override():
+    """Google takes ISO 639-1, which the table already carries - except for the
+    one pair of languages that share a code and are not the same language."""
+    for code in L.LANGUAGES:
+        google = L.google_code(code)
+        if google is None:
+            continue
+        assert re.fullmatch(r"[a-z]{2}(-TW)?", google), (code, google)
+    assert L.google_code("zho_Hans") == "zh"
+    assert L.google_code("zho_Hant") == "zh-TW"
+    assert L.google_code("ceb_Latn") is None
+    # Serbian has an ISO code and DeepL does not support it: the two columns are
+    # answering different questions, which is why both exist.
+    assert L.google_code("srp_Cyrl") == "sr"
+    assert L.google_code("yue_Hant") is None
+
+
 def test_the_tesseract_column_holds_tessdata_stems():
     for code, language in L.LANGUAGES.items():
         if language.tesseract is not None:

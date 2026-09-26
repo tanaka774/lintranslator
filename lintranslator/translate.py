@@ -19,6 +19,7 @@ import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from html import unescape as unescape_html
 from pathlib import Path
 
 from . import paths
@@ -29,6 +30,7 @@ from .languages import (
     LANGUAGES,
     Language,
     deepl_code,
+    google_code,
     language_name,
 )
 
@@ -601,6 +603,52 @@ class DeepLTranslator(HttpTranslator):
             raise TranslatorError(f"unexpected DeepL response: {detail}") from exc
 
 
+class GoogleTranslator(HttpTranslator):
+    """Google Cloud Translation - Basic (v2).
+
+    v2 rather than v3 on purpose: v2 authenticates with one API key, and v3 wants
+    a project id and an OAuth token - that is the tier the Translation LLM lives
+    in, and neither is a thing to ask of somebody who wants a dialogue box
+    translated.
+
+    The key travels in `X-goog-api-key` rather than the `?key=` form the REST
+    examples use. A URL ends up in logs and in error text, and this app redacts
+    response bodies, not URLs.
+    """
+
+    name = "google"
+    endpoint = "https://translation.googleapis.com/language/translate/v2"
+
+    def __init__(self, api_key: str | None, target: str, source: str | None = None, **kw):
+        super().__init__(api_key, **kw)
+        if not api_key:
+            raise TranslatorError("the google backend needs an api_key")
+        self.target = target
+        # None means "let Google detect it", which is what an unsupported source
+        # is reduced to rather than being sent as a guess.
+        self.source = source
+
+    def translate(self, text: str) -> str:
+        payload: dict = {"q": [text], "target": self.target, "format": "text"}
+        if self.source:
+            payload["source"] = self.source
+        data = self._post_json(
+            self.endpoint,
+            payload,
+            {"X-goog-api-key": self.api_key, "Content-Type": "application/json"},
+        )
+        try:
+            translated = data["data"]["translations"][0]["translatedText"]
+        except (KeyError, IndexError, TypeError) as exc:
+            detail = shorten(redact(str(data), self.api_key), 200)
+            raise TranslatorError(f"unexpected Google response: {detail}") from exc
+        # v2 escapes its output whether or not the input was HTML: an apostrophe
+        # comes back as `&#39;`. The card draws text, so it would be shown as
+        # written - and `format: "text"` above says the *input* is plain text, it
+        # does not turn the escaping off.
+        return unescape_html(translated).strip()
+
+
 class ChatCompletionsTranslator(HttpTranslator):
     """Shared implementation for any OpenAI-compatible /chat/completions API.
 
@@ -864,6 +912,29 @@ def build_translator(cfg) -> Translator:
             source=deepl_code(cfg.source_lang),
             timeout=cfg.timeout,
         )
+    if backend == "google":
+        # The same class of check as DeepL's, in a different code space: Google's
+        # is ISO 639-1, which 153 of the 202 languages have and 49 do not. A code
+        # it does not know comes back as an HTTP 400 naming `target` - true, and
+        # no help at all in finding the setting that produced it.
+        target = google_code(cfg.target_lang)
+        if target is None:
+            raise TranslatorError(
+                f"Google cannot translate into {cfg.target_lang!r}"
+                f"{_as_name(cfg.target_lang)}: it takes ISO 639-1 codes, and this "
+                "language has none.\n"
+                "  the language list marks the ones it accepts with `ISO xx`.\n"
+                "  pick one of those as the target language, or use another "
+                "backend for this pair."
+            )
+        # An unsupported source is not an error here either: Google detects it,
+        # and `google_code` returns None for exactly that case.
+        return GoogleTranslator(
+            resolve_api_key(cfg, "GOOGLE_API_KEY", "LINTRANSLATOR_API_KEY"),
+            target=target,
+            source=google_code(cfg.source_lang),
+            timeout=cfg.timeout,
+        )
     # Chat-completions family: same protocol, different base URL and key.
     if backend in ("openrouter", "openai", "chat"):
         if backend == "chat" and not (cfg.api_base or "").strip():
@@ -904,7 +975,7 @@ def build_translator(cfg) -> Translator:
 
     raise TranslatorError(
         f"unknown translation backend: {backend!r}\n"
-        "  choose from: ct2, local, deepl, openrouter, openai, chat, none"
+        "  choose from: ct2, local, deepl, google, openrouter, openai, chat, none"
     )
 
 

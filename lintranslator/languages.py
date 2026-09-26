@@ -366,6 +366,26 @@ def deepl_code(code: str) -> str | None:
     return language.deepl if language is not None else None
 
 
+# Google takes ISO 639-1 as well, but it tells the two Chinese scripts apart and
+# this table does not: `zho_Hans` and `zho_Hant` both carry "zh", so a Traditional
+# target sent as "zh" comes back Simplified with nothing on the card to show it.
+# Google accepts zh-TW as a source too, so the one table covers both sides.
+GOOGLE_CODES = {"zho_Hant": "zh-TW"}
+
+
+def google_code(code: str) -> str | None:
+    """Google's code for a language, or None where Google cannot do it.
+
+    153 of the 202 have an ISO 639-1 code, which is what the Basic v2 endpoint
+    takes; the rest have none and cannot be asked for at all. None is a real
+    answer - `build_translator` turns it into a sentence naming the setting,
+    where sending a guess would come back as an HTTP 400 naming the parameter.
+    """
+    if code in GOOGLE_CODES:
+        return GOOGLE_CODES[code]
+    return iso_code(code)
+
+
 def tesseract_lang(code: str) -> str | None:
     """The tessdata file stem to read this language with, or None.
 

@@ -19,6 +19,7 @@ from lintranslator.translate import (
     DATA_NOT_INSTRUCTIONS,
     DEFAULT_PROMPT,
     ChatCompletionsTranslator,
+    GoogleTranslator,
     OpenAITranslator,
     OpenRouterTranslator,
     TranslatorError,
@@ -366,6 +367,67 @@ def test_deepl_lets_an_unsupported_source_be_detected():
     )
     t = build_translator(cfg)
     assert t.source is None and t.target == "JA"
+
+
+def test_google_gets_iso_639_1_codes():
+    cfg = TranslateConfig(
+        backend="google", api_key="k", source_lang="eng_Latn", target_lang="jpn_Jpan"
+    )
+    t = build_translator(cfg)
+    assert (t.source, t.target) == ("en", "ja")
+    assert t.endpoint == "https://translation.googleapis.com/language/translate/v2"
+
+
+def test_google_tells_the_two_chinese_scripts_apart():
+    """`zho_Hant` and `zho_Hans` share an ISO code and Google does not.
+
+    Sending "zh" for a Traditional target returns Simplified with nothing on the
+    card to show it, which is the failure mode this table exists to prevent.
+    """
+    cfg = TranslateConfig(backend="google", api_key="k", target_lang="zho_Hant")
+    assert build_translator(cfg).target == "zh-TW"
+    cfg = TranslateConfig(backend="google", api_key="k", target_lang="zho_Hans")
+    assert build_translator(cfg).target == "zh"
+
+
+def test_google_refuses_a_target_with_no_iso_code():
+    """49 of the 202 have no 639-1 code, and the API answers a bad one with a
+    bare HTTP 400 that names the parameter, not the setting."""
+    cfg = TranslateConfig(backend="google", api_key="k", target_lang="ceb_Latn")
+    with pytest.raises(TranslatorError) as exc:
+        build_translator(cfg)
+    message = str(exc.value)
+    assert "cannot translate into 'ceb_Latn' (Cebuano)" in message
+    assert "ISO 639-1" in message
+
+
+def test_google_lets_an_unsupported_source_be_detected():
+    cfg = TranslateConfig(
+        backend="google", api_key="k", source_lang="ceb_Latn", target_lang="jpn_Jpan"
+    )
+    assert build_translator(cfg).source is None
+
+
+def test_google_sends_the_key_in_a_header_and_unescapes_the_reply():
+    """The key must not travel in the URL, and v2 escapes its output."""
+    seen: dict = {}
+
+    class Recording(GoogleTranslator):
+        def _post_json(self, url, payload, headers):
+            seen.update(url=url, payload=payload, headers=headers)
+            return {"data": {"translations": [{"translatedText": "It&#39;s 8 &amp; up"}]}}
+
+    t = Recording("secret", target="ja", source="en", timeout=20.0)
+    assert t.translate("It's 8 & up") == "It's 8 & up"
+    assert seen["headers"]["X-goog-api-key"] == "secret"
+    assert "secret" not in seen["url"]
+    assert seen["payload"] == {"q": ["It's 8 & up"], "target": "ja", "format": "text", "source": "en"}
+
+
+def test_google_needs_a_key():
+    with pytest.raises(TranslatorError) as exc:
+        build_translator(TranslateConfig(backend="google", target_lang="jpn_Jpan"))
+    assert "google backend needs an api_key" in str(exc.value)
 
 
 def test_the_custom_endpoint_needs_a_base_url():

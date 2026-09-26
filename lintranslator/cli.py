@@ -26,7 +26,7 @@ from pathlib import Path
 
 from . import paths
 from .config import Config, Region
-from .languages import CODES, deepl_code, ordered
+from .languages import CODES, deepl_code, google_code, ordered
 from .pipeline import Event, Pipeline
 
 
@@ -190,6 +190,40 @@ def cmd_check(args) -> int:
             print(f"  api key: MISSING -> export {env_names[0]}=...")
             if backend == "openrouter":
                 print("           get one at https://openrouter.ai/keys")
+    elif backend in ("deepl", "google"):
+        # The endpoints that need a key and no model. DeepL used to print nothing
+        # at all here, which left `check` silent about the one thing that stops
+        # that backend from working.
+        from .languages import language_name
+        from .translate import resolve_api_key
+
+        env_names = {
+            "deepl": ("DEEPL_API_KEY",),
+            "google": ("GOOGLE_API_KEY", "LINTRANSLATOR_API_KEY"),
+        }[backend]
+        print(
+            f" ({language_name(cfg.translate.source_lang)}"
+            f"->{language_name(cfg.translate.target_lang)})"
+        )
+        key = resolve_api_key(cfg.translate, *env_names)
+        if key:
+            source = (
+                "config.json"
+                if cfg.translate.api_key
+                else next((n for n in env_names if os.environ.get(n)), "unknown")
+            )
+            print(f"  api key: set via {source} ({len(key)} chars)")
+        else:
+            ok = False
+            print(f"  api key: MISSING -> export {env_names[0]}=...")
+            if backend == "google":
+                # The free tier is real but the project still has to have billing
+                # enabled, which is the step people miss after the scrape-era
+                # habit of "Google Translate just works".
+                print("           Cloud Translation is billed, with a free monthly allowance")
+                print("           -> the key needs a Google Cloud project with billing enabled")
+            else:
+                print("           get one at https://www.deepl.com/pro-api")
     elif backend == "local":
         print(f" ({cfg.translate.model}, {cfg.translate.source_lang}->{cfg.translate.target_lang})")
         try:
@@ -220,6 +254,13 @@ def cmd_check(args) -> int:
         ok = False
         print(
             f"  target: DeepL cannot translate into {cfg.translate.target_lang!r}"
+            " -> pick another language, or another backend"
+        )
+    if backend == "google" and google_code(cfg.translate.target_lang) is None:
+        ok = False
+        print(
+            f"  target: Google cannot translate into {cfg.translate.target_lang!r}"
+            " (it takes ISO 639-1 codes)"
             " -> pick another language, or another backend"
         )
 
@@ -678,6 +719,7 @@ def cmd_languages(args) -> int:
         if language.iso:
             notes.append(f"iso:{language.iso}")
         notes.append(f"deepl:{language.deepl}" if language.deepl else "deepl:-")
+        notes.append(f"google:{google_code(language.code) or '-'}")
         ocr = tesseract_lang(language.code) or short_code(language.code)
         notes.append(f"ocr:{ocr}")
         print(f"{language.code:<10} {language.name:<34} {'  '.join(notes)}")
@@ -755,7 +797,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--fps", type=float, help="polls per second")
         sp.add_argument(
             "--backend",
-            help="ct2 | local | deepl | openrouter | openai | chat | none",
+            help="ct2 | local | deepl | google | openrouter | openai | chat | none",
         )
         sp.add_argument("--model", help="model name for the local backend")
         sp.add_argument("--langs", help="tesseract languages, e.g. eng or eng+jpn")

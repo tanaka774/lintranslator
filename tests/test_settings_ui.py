@@ -520,6 +520,10 @@ def test_the_hint_names_the_code_each_backend_decodes_with(dialog):
     select(dialog, "deepl")
     assert "EN → JA" in dialog.language_hint.get_text()
 
+    # Google's code space is ISO 639-1 as well, and lowercase.
+    select(dialog, "google")
+    assert "en → ja" in dialog.language_hint.get_text()
+
     for backend in ("openrouter", "openai", "chat"):
         select(dialog, backend)
         assert dialog.language_hint.get_text() == "", backend
@@ -533,6 +537,27 @@ def test_the_hint_says_when_the_pair_is_unused(dialog):
 def test_deepl_warns_when_it_cannot_translate_the_target(dialog):
     dialog.target_picker.set_code("ceb_Latn")
     select(dialog, "deepl")
+    hint = dialog.language_hint.get_text()
+    assert "cannot translate into Cebuano" in hint
+    assert "another backend" in hint
+
+
+def test_google_gets_iso_codes_and_the_traditional_chinese_override(dialog):
+    """The hint has to name the code Google is actually sent.
+
+    `zho_Hant` is the one language where that is not the table's ISO column: it
+    carries "zh", and asking Google for "zh" returns Simplified.
+    """
+    dialog.target_picker.set_code("zho_Hant")
+    select(dialog, "google")
+    hint = dialog.language_hint.get_text()
+    assert "zh-TW" in hint
+    assert "en → zh-TW" in hint
+
+
+def test_google_warns_when_it_cannot_translate_the_target(dialog):
+    dialog.target_picker.set_code("ceb_Latn")
+    select(dialog, "google")
     hint = dialog.language_hint.get_text()
     assert "cannot translate into Cebuano" in hint
     assert "another backend" in hint

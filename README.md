@@ -116,7 +116,7 @@ a model id in the picker's **Settings**. It starts on **None**, which reads the
 region and translates nothing - the card names the backend so that reads as a
 choice rather than a failure. The only thing fetched along the way is the
 tesseract language data: 4.1 MB for `eng`, on first use, pinned and
-checksum-verified, no root needed. DeepL, OpenRouter, OpenAI and any
+checksum-verified, no root needed. DeepL, Google, OpenRouter, OpenAI and any
 OpenAI-compatible endpoint load none of the local machinery.
 
 **Running the model on your own machine instead?** That is an opt-in, and it is
@@ -196,7 +196,7 @@ The models are not all the same, and one of them matters:
 non-commercial use only.** Nothing is bundled or redistributed: `lintranslator
 convert` downloads the weights onto your machine, so the licence binds whoever
 runs the local backend rather than whoever distributes this source. For commercial
-use, pick a hosted backend (DeepL, OpenRouter, OpenAI, or your own endpoint) or a
+use, pick a hosted backend (DeepL, Google, OpenRouter, OpenAI, or your own endpoint) or a
 permissive model such as `facebook/m2m100_418M` (MIT). [NOTICE](NOTICE) has the
 third-party terms in full, and
 [the install notes](docs/install.md#model-licences) explain the trade-offs.

@@ -119,7 +119,7 @@ large enough to be worth choosing deliberately.
 | backend | what is fetched | when |
 |---|---|---|
 | **`none`, the default in a fresh config** | **nothing at all** - and nothing is sent anywhere either | - |
-| OpenRouter, DeepL, OpenAI, your own endpoint | **nothing from HuggingFace** - no ctranslate2, no torch, no weights | - |
+| OpenRouter, DeepL, Google, OpenAI, your own endpoint | **nothing from HuggingFace** - no ctranslate2, no torch, no weights | - |
 | `ct2`, opt-in | the converted int8 weights, 629 MB, plus ~22 MB of tokenizer | the weights when *you* run `lintranslator convert`, which asks first; the tokenizer on first use |
 | `local`, opt-in | the fp32 checkpoint, 2.46 GB, plus the same tokenizer | only when `translate.allow_model_download` is set - the backend refuses otherwise |
 

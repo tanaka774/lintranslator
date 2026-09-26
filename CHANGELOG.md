@@ -9,6 +9,26 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+- A `google` backend: Cloud Translation - Basic (v2), one API key, no model id.
+  v2 rather than v3 because v3 wants a project id and an OAuth token, and that is
+  the tier the Translation LLM lives in - more setup than a dialogue box is worth.
+  The key travels in `X-goog-api-key` instead of the `?key=` form the REST
+  examples use, because a URL ends up in logs and error text and this app redacts
+  response bodies, not URLs. The reply is unescaped: v2 answers `&#39;` for an
+  apostrophe whether or not the input was HTML, and the card draws text.
+  Its language codes are the ISO 639-1 column the table already carried for
+  exactly this, with one exception - `zho_Hans` and `zho_Hant` both carry "zh" and
+  Google tells the two scripts apart, so a Traditional target goes out as `zh-TW`
+  rather than coming back Simplified with nothing on the card to say so. 153 of
+  the 202 languages have an ISO code; the other 49 are refused by name, in the
+  dialog and in `check`, instead of being sent as a guess and answered with an
+  HTTP 400 that names the parameter rather than the setting.
+- `lintranslator check` reports the API key for `deepl` and `google`. DeepL
+  printed nothing there at all, so the one command whose job is to say what is
+  missing was quiet about the one thing that stops that backend from working, and
+  the Google row says what the key needs - a project with billing enabled - since
+  the free allowance is the part people expect and the billing is the part they
+  do not.
 - Nothing is shown on the card about always-on-top on a native Wayland session. It
   used to say, on every launch and until the first translation, that the card was
   not always-on-top and how to fix it - three lines of instructions in the area
