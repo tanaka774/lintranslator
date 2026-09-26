@@ -87,8 +87,9 @@ setup for when that is not available.
 ## Install
 
 There is no package yet - no AUR, Flatpak or PyPI entry - so this starts from the
-source. Four commands, and nothing large is downloaded: a fresh config translates
-through a hosted backend, so no model is involved until you ask for one.
+source. Four commands, and nothing large is downloaded: a fresh config has no
+translation backend selected at all, so nothing is sent anywhere and no model is
+involved until you choose one in Settings.
 
 ```bash
 # 1. the code
@@ -110,8 +111,10 @@ uv pip install --python .venv/bin/python -e .
 .venv/bin/python -m lintranslator check
 ```
 
-Then run `.venv/bin/python -m lintranslator gui` and put an API key and a model
-id in the picker's **Settings**. The only thing fetched along the way is the
+Then run `.venv/bin/python -m lintranslator gui` and pick a backend, an API key and
+a model id in the picker's **Settings**. It starts on **None**, which reads the
+region and translates nothing - the card names the backend so that reads as a
+choice rather than a failure. The only thing fetched along the way is the
 tesseract language data: 4.1 MB for `eng`, on first use, pinned and
 checksum-verified, no root needed. DeepL, OpenRouter, OpenAI and any
 OpenAI-compatible endpoint load none of the local machinery.

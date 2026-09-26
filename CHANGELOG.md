@@ -18,10 +18,16 @@ from there rather than keeping a second copy.
   "Always on top" section covers both options. A failure the user *can* fix - the
   X11 path with `python-xlib` missing, or the window not found - still reports, in
   one line instead of three, with the steps in the README.
-- The default backend is OpenRouter, not the local int8 model. A fresh install
-  could not translate a word until 2.5 GB had been downloaded and converted, which
-  is an odd thing to ask of a first run; it now needs an API key and a model id,
-  both of which live in Settings. Nothing about the hosted path downloads a model.
+- The default backend is None, not OpenRouter and not the local int8 model. A
+  fresh install can now avoid both of the things a first run should not do
+  unasked: download 2.5 GB before it can say a word, and send the text it reads
+  off the screen to a provider the user never chose. It reads the region and shows
+  the OCR text, which is what `none` always did, and naming the backend on the
+  card is what keeps that from reading as a translator that failed. The dropdown
+  lists `none` first for the same reason: the first entry is the default, and it
+  used to be `ct2` while the default was OpenRouter. OpenRouter, DeepL, OpenAI and
+  any OpenAI-compatible endpoint are one Settings change away, and none of them
+  downloads a model.
 - `lintranslator convert` says what it will fetch - the fp32 checkpoint into the
   shared HuggingFace cache, and the converted weights beside it - and waits for a
   yes. Without a terminal there is nobody to ask, so it refuses unless `--yes` is

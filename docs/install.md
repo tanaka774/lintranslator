@@ -55,8 +55,8 @@ Requires Linux with a Wayland session (or X11), Python 3.12-3.14, and tesseract
 (see [Compatibility](#compatibility) above).
 
 There is no package yet - no AUR, Flatpak or PyPI entry - so this begins with the
-source. Four commands, and no model download: a fresh config translates through a
-hosted backend, so the local weights are opt-in.
+source. Four commands, and no model download: a fresh config has no translation
+backend selected, so nothing is sent anywhere and the local weights are opt-in.
 
 ```bash
 # 1. the code
@@ -81,9 +81,9 @@ uv pip install --python .venv/bin/python -e .
 .venv/bin/python -m lintranslator check
 ```
 
-Then `.venv/bin/python -m lintranslator gui`, and put an API key and a model id
-in the picker's **Settings**. The only fetch along the way is the tesseract
-language data, 4.1 MB for `eng`.
+Then `.venv/bin/python -m lintranslator gui`, and choose a backend, an API key and
+a model id in the picker's **Settings**. The only fetch along the way is the
+tesseract language data, 4.1 MB for `eng`.
 
 Running the model locally instead adds two steps, and they are the ones with the
 downloads in them:
@@ -111,14 +111,15 @@ uv pip install --python ~/.venvs/lintranslator/bin/python \
 ## What is downloaded, and when
 
 Nothing is downloaded at install time, and the default configuration does not
-need anything downloaded afterwards either: a fresh config translates through a
-hosted backend. Which backend you use decides the rest, and the difference is
+need anything downloaded afterwards either: a fresh config has no translation
+backend selected, so it reads the region and translates nothing until one is
+chosen in Settings. Which backend you use decides the rest, and the difference is
 large enough to be worth choosing deliberately.
 
 | backend | what is fetched | when |
 |---|---|---|
-| **OpenRouter, the default in a fresh config** | **nothing from HuggingFace** - no ctranslate2, no torch, no weights | - |
-| DeepL, OpenAI, your own endpoint | the same nothing | - |
+| **`none`, the default in a fresh config** | **nothing at all** - and nothing is sent anywhere either | - |
+| OpenRouter, DeepL, OpenAI, your own endpoint | **nothing from HuggingFace** - no ctranslate2, no torch, no weights | - |
 | `ct2`, opt-in | the converted int8 weights, 629 MB, plus ~22 MB of tokenizer | the weights when *you* run `lintranslator convert`, which asks first; the tokenizer on first use |
 | `local`, opt-in | the fp32 checkpoint, 2.46 GB, plus the same tokenizer | only when `translate.allow_model_download` is set - the backend refuses otherwise |
 

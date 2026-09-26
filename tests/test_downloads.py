@@ -30,10 +30,17 @@ REPO = "models--facebook--nllb-200-distilled-600M"
 # --------------------------------------------------------------------------- #
 # The default configuration
 # --------------------------------------------------------------------------- #
-def test_a_fresh_config_does_not_default_to_a_local_model():
-    """The default backend must not need gigabytes before it can say a word."""
+def test_a_fresh_config_defaults_to_no_backend():
+    """The default must not download gigabytes, or pick a provider for the user.
+
+    Every other backend does one of the two: `ct2`/`local` need 2.5 GB before they
+    can say a word, and `deepl`/`openrouter`/`openai`/`chat` send the text read off
+    the screen to somebody. OpenRouter was the default until "needs a key and a
+    model id before it works" was judged a broken first run of its own, and
+    choosing a provider for the user the part that cannot be taken back.
+    """
     cfg = Config()
-    assert cfg.translate.backend == "openrouter"
+    assert cfg.translate.backend == "none"
     assert cfg.translate.model == ""  # the backend's own default, if it has one
     assert cfg.translate.allow_model_download is False
 

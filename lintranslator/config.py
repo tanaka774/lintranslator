@@ -74,12 +74,17 @@ class OcrConfig:
 
 @dataclass
 class TranslateConfig:
-    # Hosted by default, on purpose. The local backends cannot translate a line
-    # until 2.5 GB of weights have been downloaded, which is a strange thing for a
-    # first run to do unasked; OpenRouter is the widest of the hosted options and
-    # reaches a working setup with one key. Switching to a local backend is a
-    # Settings change either way - see `allow_model_download` below.
-    backend: str = "openrouter"  # "ct2" | "local" | "deepl" | "openrouter" | "openai" | "chat" | "none"
+    # Nothing, by default: every other backend either spends gigabytes before it
+    # can say a word (ct2, local) or sends the text read off the screen to somebody
+    # (deepl, openrouter, openai, chat), and a first run should do neither
+    # unasked. It used to be OpenRouter, chosen because the local backends could
+    # not translate until 2.5 GB had been downloaded - but "needs a key and a model
+    # id before it works" is its own kind of broken first run, and picking a
+    # provider on the user's behalf is the part that cannot be undone afterwards.
+    # `none` still reads the screen and shows the OCR text, so the app is visibly
+    # alive while the backend is chosen in Settings - see `allow_model_download`
+    # below for the local ones.
+    backend: str = "none"  # "ct2" | "local" | "deepl" | "openrouter" | "openai" | "chat" | "none"
     # Where the int8-converted CTranslate2 model lives (ct2 backend). The user
     # data dir, unless an older install left the weights in the source tree.
     ct2_model_dir: str = field(default_factory=lambda: str(paths.default_ct2_dir()))

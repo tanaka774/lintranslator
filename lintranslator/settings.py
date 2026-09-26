@@ -52,13 +52,15 @@ from .translate import DEFAULT_NLLB_MODEL  # noqa: E402
 DEFAULT_CT2_DIR = str(paths.default_ct2_dir())
 
 BACKENDS = [
+    # First because it is the default in a fresh config: a list whose first entry
+    # is not the default reads as a default that does not match what is selected.
+    ("none", "None (read only, no translation)"),
     ("ct2", "Local · int8 CTranslate2 (fast, offline)"),
     ("local", "Local · transformers (slow, offline)"),
     ("openrouter", "OpenRouter (many models, needs key)"),
     ("openai", "OpenAI (needs key)"),
     ("deepl", "DeepL (needs key)"),
     ("chat", "Custom · any OpenAI-compatible endpoint"),
-    ("none", "None (pass-through, for testing)"),
 ]
 
 # Which backends actually read `translate.model`, and what the field means for
