@@ -9,6 +9,20 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+- API keys are stored per backend: `translate.api_keys: {"deepl": "...",
+  "openrouter": "..."}` instead of one `translate.api_key` for all of them. The
+  old field is migrated on load - under the backend that was configured when it
+  was written, which is the only backend the file records and the right answer for
+  every config Settings ever wrote - and dropped on the next save. It was not a
+  cosmetic problem: the key was refilled into the same masked field whichever
+  backend was selected, so a DeepL key sat behind OpenRouter's box looking as if
+  it belonged there, and Save wrote it as OpenRouter's. The next translation sent
+  it to `openrouter.ai` as a bearer token. The request failed, so nothing was
+  silently mis-translated, but the key had left the machine by then - and pasting
+  the right key over it destroyed the DeepL one. The field now swaps with the
+  backend, exactly like the model field, keeps a key typed but not yet saved when
+  the backend changes, clears only its own backend, and is never written from a
+  backend that has no key field at all.
 - A local model that is slow is no longer reported as unreachable, and one that
   thinks is no longer reported as empty. Both were one line away from working:
   `qwen3.5:4b` through Ollama took 10.3 s for a single short line and answered

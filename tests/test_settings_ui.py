@@ -326,6 +326,67 @@ def test_the_custom_endpoint_offers_a_key_without_demanding_one(dialog, monkeypa
     assert "LINTRANSLATOR_API_KEY" in text
 
 
+def test_the_key_field_belongs_to_one_backend_at_a_time(tmp_path):
+    """The bug: one value for every backend, refilled from the same field.
+
+    A DeepL key sat behind OpenRouter's masked box looking as if it belonged
+    there, and Save wrote it as OpenRouter's - so the key left the machine on the
+    next translation, as a bearer token sent to a provider it was never issued for.
+    """
+    cfg = Config()
+    cfg.translate.backend = "deepl"
+    cfg.translate.api_keys = {"deepl": "deepl-key", "openrouter": "or-key"}
+    dlg = SettingsDialog(None, cfg)
+    try:
+        assert dlg.key_entry.get_text() == "deepl-key"
+        select(dlg, "openrouter")
+        assert dlg.key_entry.get_text() == "or-key"
+        select(dlg, "google")
+        assert dlg.key_entry.get_text() == "", "no key stored for this one"
+    finally:
+        dlg.destroy()
+
+
+def test_a_key_typed_for_one_backend_is_not_saved_for_another(dialog):
+    select(dialog, "deepl")
+    dialog.key_entry.set_text("deepl-key")
+    select(dialog, "openai")
+    dialog.key_entry.set_text("openai-key")
+    dialog._on_save(None)
+    assert dialog.config.translate.api_keys == {
+        "deepl": "deepl-key",
+        "openai": "openai-key",
+    }
+
+
+def test_switching_away_and_back_keeps_a_key_that_is_not_saved_yet(dialog):
+    select(dialog, "deepl")
+    dialog.key_entry.set_text("typed-but-not-saved")
+    select(dialog, "openai")
+    assert dialog.key_entry.get_text() == ""
+    select(dialog, "deepl")
+    assert dialog.key_entry.get_text() == "typed-but-not-saved"
+
+
+def test_a_backend_with_no_key_field_never_gets_one(dialog):
+    select(dialog, "deepl")
+    dialog.key_entry.set_text("deepl-key")
+    # ct2 takes no key at all, so the field is hidden - and a hidden field must
+    # not be the place a key gets stored from. The key stays with the backend it
+    # was typed for.
+    select(dialog, "ct2")
+    dialog._on_save(None)
+    assert dialog.config.translate.api_keys == {"deepl": "deepl-key"}
+
+
+def test_clearing_the_key_clears_only_this_backend(dialog):
+    dialog.config.translate.api_keys = {"deepl": "d", "openrouter": "o"}
+    select(dialog, "deepl")
+    dialog._on_clear_key(None)
+    assert dialog.config.translate.api_keys == {"openrouter": "o"}
+    assert "deepl" in dialog.status.get_text()
+
+
 # -- picker ---------------------------------------------------------------- #
 def test_picker_filters_and_reports_counts(dialog):
     select(dialog, "openrouter")

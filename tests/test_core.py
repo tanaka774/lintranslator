@@ -8,9 +8,12 @@ Run:  .venv-gi/bin/python -m pytest tests/ -v
 """
 from __future__ import annotations
 
+import json
+
+import pytest
 from PIL import Image, ImageDraw
 
-from lintranslator.config import Config, Region
+from lintranslator.config import Config, Region, TranslateConfig
 from lintranslator.detect import (
     ChangeDetector,
     EmptyGuard,
@@ -393,6 +396,58 @@ def test_config_roundtrip_preserves_nested_region(tmp_path):
     assert loaded.capture.region.mode == "fraction"
     assert loaded.capture.region.w == 0.3
     assert loaded.ocr.langs == "eng+jpn"
+
+
+def test_an_old_single_api_key_migrates_to_the_configured_backend(tmp_path):
+    """The old field recorded no backend, so the configured one is the answer.
+
+    It is also the right answer for every config Settings wrote: the field was
+    filled in while that backend was selected. Without this the key would sit
+    there meaning "for all of them", which is the bug being fixed.
+    """
+    path = tmp_path / "config.json"
+    path.write_text(
+        '{"translate": {"backend": "deepl", "api_key": "deepl-legacy"}}'
+    )
+    cfg = Config.load(path)
+    assert cfg.translate.api_keys == {"deepl": "deepl-legacy"}
+    assert cfg.translate.api_key is None, "the shared field must not survive the load"
+    assert cfg.warnings == [], "a working config must not warn about anything"
+
+
+def test_saving_drops_the_old_single_api_key_field(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"translate": {"backend": "openrouter", "api_key": "sk-or-x"}}')
+    Config.load(path).save()
+    raw = json.loads(path.read_text())
+    assert raw["translate"]["api_keys"] == {"openrouter": "sk-or-x"}
+    assert "api_key" not in raw["translate"], (
+        "a field with no backend attached is what leaked the key in the first place"
+    )
+
+
+def test_a_key_stored_for_another_backend_is_not_a_key_for_this_one():
+    """The leak: a DeepL key was offered to whichever backend was selected."""
+    from lintranslator.translate import TranslatorError, build_translator
+
+    cfg = TranslateConfig(backend="google", target_lang="jpn_Jpan", api_keys={"deepl": "d"})
+    with pytest.raises(TranslatorError) as exc:
+        build_translator(cfg)
+    assert "needs an api_key" in str(exc.value)
+
+
+def test_each_backend_resolves_its_own_key(monkeypatch):
+    from lintranslator.translate import resolve_api_key
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    cfg = TranslateConfig(
+        backend="deepl", api_keys={"deepl": "d-key", "openrouter": "or-key"}
+    )
+    assert resolve_api_key(cfg, "DEEPL_API_KEY") == "d-key"
+    cfg.backend = "openrouter"
+    assert resolve_api_key(cfg, "OPENROUTER_API_KEY") == "or-key"
+    cfg.backend = "openai"
+    assert resolve_api_key(cfg, "OPENAI_API_KEY") is None
 
 
 def test_preprocess_upscales_and_grayscales():

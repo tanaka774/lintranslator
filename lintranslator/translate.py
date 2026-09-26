@@ -723,8 +723,8 @@ class ChatCompletionsTranslator(HttpTranslator):
         if not api_key and key_required:
             raise TranslatorError(
                 f"the {self.name} backend needs an API key.\n"
-                f"  Put it in config.json as translate.api_key, or export "
-                f"{self.key_env}."
+                f'  put it in config.json as translate.api_keys: {{"{self.name}": "..."}},\n'
+                f"  or export {self.key_env}."
             )
         self.model = model or self.default_model
         base = (base_url or self.default_base).rstrip("/")
@@ -906,13 +906,27 @@ class OpenRouterTranslator(ChatCompletionsTranslator):
 # Factory + cached facade
 # --------------------------------------------------------------------------- #
 def resolve_api_key(cfg, *env_names: str) -> str | None:
-    """Find an API key: config first, then environment.
+    """Find an API key: this backend's config entry first, then the environment.
 
     Environment fallback matters because config.json is a file people share,
     commit and screenshot. A key sitting in it leaks easily.
+
+    The config lookup is per backend. It used to be one `api_key` for all of
+    them, which sent the key stored for DeepL to OpenRouter as a bearer token as
+    soon as the backend was switched - the request failed, so it was not a silent
+    leak, but the key had left the machine by then.
     """
-    if getattr(cfg, "api_key", None):
-        return str(cfg.api_key)
+    if cfg is not None:
+        backend = getattr(cfg, "backend", "") or ""
+        stored = (getattr(cfg, "api_keys", None) or {}).get(backend)
+        if stored:
+            return str(stored)
+        # A config loaded by `Config.load` has already had the old single field
+        # moved into the map; this is the same rule for a TranslateConfig built
+        # in code, where the old field means "the key for the backend in hand".
+        legacy = getattr(cfg, "api_key", None)
+        if legacy:
+            return str(legacy)
     for name in env_names:
         value = os.environ.get(name)
         if value:

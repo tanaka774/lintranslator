@@ -110,10 +110,23 @@ class TranslateConfig:
     # Built-in Limbus Company terms, layered *under* the user's entries.
     use_builtin_glossary: bool = True
 
-    # --- remote backends (openrouter / openai / chat) ---
-    # Prefer the environment over this field: config.json is a file people share,
-    # commit and screenshot, and a key in it leaks easily.
-    #   OPENROUTER_API_KEY / OPENAI_API_KEY / LINTRANSLATOR_API_KEY
+    # --- remote backends (deepl / google / openrouter / openai / chat) ---
+    # One key per backend, keyed by backend name. Prefer the environment over
+    # these: config.json is a file people share, commit and screenshot, and a key
+    # in it leaks easily.
+    #   OPENROUTER_API_KEY / OPENAI_API_KEY / DEEPL_API_KEY / GOOGLE_API_KEY /
+    #   LINTRANSLATOR_API_KEY
+    #
+    # This was one `api_key` for every backend, which meant the key stored for
+    # DeepL was offered to OpenRouter and sent to it as a bearer token: the field
+    # was refilled from that single value whichever backend was selected, and the
+    # key hidden behind a masked box looked like it belonged there. `Config.load`
+    # moves an old value into this map, under the backend that was configured when
+    # it was written, which is the only answer the file holds.
+    api_keys: dict = field(default_factory=dict)
+    # The field `api_keys` replaced. Kept so an existing config.json still loads
+    # and still works: `resolve_api_key` reads it only when the map has nothing
+    # for the backend in hand, and the next save drops it.
     api_key: str | None = None
     # Override the provider's base URL. Empty means the backend's default, and
     # also lets any OpenAI-compatible endpoint be used via backend "chat".
@@ -303,6 +316,9 @@ class Config:
         if path is None and p.exists():
             if paths.tighten(p):
                 cfg.warnings.append(f"config permissions tightened to 0600 ({p})")
+        # Not a warning: the old value keeps working, it just belongs to one
+        # backend now instead of to all of them.
+        _migrate_api_keys(cfg)
         return cfg
 
     @classmethod
@@ -335,10 +351,34 @@ class Config:
         data = asdict(self)
         data.pop("warnings", None)  # transient, never persisted
         data.pop("path", None)  # where it came from, not a setting
+        # The map is the setting now. Writing `api_key: null` would leave a field
+        # in the file whose whole problem was that it had no backend attached.
+        translate = data.get("translate")
+        if isinstance(translate, dict) and not translate.get("api_key"):
+            translate.pop("api_key", None)
         # 0600: this file can hold an API key in plain text, and it used to be
         # written with the process umask - 0644 on a normal desktop.
         paths.write_private(p, json.dumps(data, indent=2) + "\n")
         return p
+
+
+def _migrate_api_keys(cfg: "Config") -> None:
+    """Move a single old `api_key` into the per-backend map.
+
+    The old field recorded no backend - that was the bug - so the configured one
+    is the only answer the file holds, and it is right for every config Settings
+    ever wrote: the field was filled in while that backend was selected. A config
+    that already has the map keeps it; a leftover legacy value does not overwrite
+    an entry that is already there.
+    """
+    translate = cfg.translate
+    legacy = translate.api_key
+    if not legacy:
+        return
+    keys = dict(translate.api_keys or {})
+    keys.setdefault(translate.backend, legacy)
+    translate.api_keys = keys
+    translate.api_key = None
 
 
 def _unknown_keys(raw: dict[str, Any], cls: type = Config) -> set[str]:

@@ -176,9 +176,10 @@ def cmd_check(args) -> int:
             print(f"  ⚠ {exc}")
         key = resolve_api_key(cfg.translate, *env_names)
         if key:
+            stored = bool((cfg.translate.api_keys or {}).get(backend))
             source = (
                 "config.json"
-                if cfg.translate.api_key
+                if stored
                 else next((n for n in env_names if os.environ.get(n)), "unknown")
             )
             print(f"  api key: set via {source} ({len(key)} chars)")
@@ -207,9 +208,10 @@ def cmd_check(args) -> int:
         )
         key = resolve_api_key(cfg.translate, *env_names)
         if key:
+            stored = bool((cfg.translate.api_keys or {}).get(backend))
             source = (
                 "config.json"
-                if cfg.translate.api_key
+                if stored
                 else next((n for n in env_names if os.environ.get(n)), "unknown")
             )
             print(f"  api key: set via {source} ({len(key)} chars)")
@@ -555,7 +557,7 @@ def cmd_models(args) -> int:
         print(
             "no OpenRouter key found.\n"
             "  export OPENROUTER_API_KEY=sk-or-...   (preferred)\n"
-            "  or set translate.api_key in config.json\n\n"
+            '  or set translate.api_keys: {"openrouter": "sk-or-..."} in config.json\n\n'
             "Get a key at https://openrouter.ai/keys",
             file=sys.stderr,
         )

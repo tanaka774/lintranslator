@@ -861,6 +861,9 @@ class SettingsDialog(Gtk.Window):
         # Per-backend memory for the shared Model field, so switching backend
         # does not drag one backend's value (an NLLB repo, say) into another's.
         self._model_memory: dict[str, str] = {}
+        # Same, for the API key field: a key typed here belongs to the backend it
+        # was typed for, and switching away must not carry it to the next one.
+        self._key_memory: dict[str, str] = {}
         self._last_backend: str | None = None
         # The OCR languages as edited here, which is not `config.ocr.langs`
         # until Save: `ocr.langs` is a tesseract setting with its own life
@@ -1117,11 +1120,13 @@ class SettingsDialog(Gtk.Window):
         self.key_entry.set_visibility(False)
         self.key_entry.set_hexpand(True)
         self.key_entry.set_tooltip_text(
-            "Stored in config.json next to this app. Leave empty to use the "
-            "OPENROUTER_API_KEY / OPENAI_API_KEY environment variables instead."
+            "Stored in config.json next to this app, for this backend only.\n"
+            "Leave empty to use the matching environment variable instead:\n"
+            "OPENROUTER_API_KEY, OPENAI_API_KEY, DEEPL_API_KEY, GOOGLE_API_KEY\n"
+            "or LINTRANSLATOR_API_KEY."
         )
-        if self.config.translate.api_key:
-            self.key_entry.set_text(self.config.translate.api_key)
+        # Filled by `_on_backend_changed` at the end of __init__, from this
+        # backend's own entry in `translate.api_keys`.
         self.key_row.append(self.key_entry)
 
         self.reveal_btn = Gtk.ToggleButton(label="Show")
@@ -1301,6 +1306,20 @@ class SettingsDialog(Gtk.Window):
         # gateway needs it, so the row is shown and the label explains.
         key_row_wanted = needs_key or key == "chat"
         uses_model = key in MODEL_LABELS
+
+        # The key field belongs to one backend at a time, exactly like the model
+        # field. It used to be one value for all of them: the entry was filled
+        # once from the single `api_key` and never swapped, so a DeepL key sat
+        # behind OpenRouter's masked box and `Save` wrote it as OpenRouter's.
+        if previous and previous != key and previous in BACKENDS_NEEDING_KEY + ("chat",):
+            self._key_memory[previous] = self.key_entry.get_text().strip()
+        if key_row_wanted:
+            stored = (self.config.translate.api_keys or {}).get(key, "")
+            self.key_entry.set_text(self._key_memory.get(key, stored))
+        else:
+            # Hidden, and never written back: clearing it here is what keeps a
+            # key out of a backend that has no field to show it in.
+            self.key_entry.set_text("")
 
         self.fetch_btn.set_sensitive(key in ("openrouter", "openai"))
         self.fetch_btn.set_visible(key in ("openrouter", "openai"))
@@ -1680,11 +1699,16 @@ class SettingsDialog(Gtk.Window):
         button.set_label("Hide" if not hidden else "Show")
 
     def _on_clear_key(self, _button: Gtk.Button) -> None:
+        backend = BACKENDS[self.backend_dd.get_selected()][0]
         self.key_entry.set_text("")
-        self.config.translate.api_key = None
+        # Only this backend's entry: the button sits in its row, next to its key.
+        keys = dict(self.config.translate.api_keys or {})
+        keys.pop(backend, None)
+        self.config.translate.api_keys = keys
+        self._key_memory.pop(backend, None)
         self.config.save()
         self._refresh_key_label()
-        self.status.set_text("key cleared from config.json")
+        self.status.set_text(f"key cleared for {backend}")
 
     def _on_model_picked(self, model: str) -> None:
         self.model_entry.set_text(model)
@@ -1830,7 +1854,29 @@ class SettingsDialog(Gtk.Window):
             ]
 
         # An empty field means "use the environment", not "store an empty key".
-        self.config.translate.api_key = self.key_entry.get_text().strip() or None
+        # Every key typed in this session is written, not only the one on screen:
+        # pasting a key and then changing your mind about the backend should not
+        # throw the key away. `_key_memory` holds "" for a field the user cleared,
+        # which removes that backend's entry rather than storing an empty one.
+        keys = dict(self.config.translate.api_keys or {})
+        for name in (*BACKENDS_NEEDING_KEY, "chat"):
+            if name in self._key_memory:
+                remembered = self._key_memory[name].strip()
+                if remembered:
+                    keys[name] = remembered
+                else:
+                    keys.pop(name, None)
+        # The field on screen has not been through a backend switch, so it is not
+        # in `_key_memory` yet - and it is the one the user is looking at.
+        if backend in BACKENDS_NEEDING_KEY + ("chat",):
+            typed_key = self.key_entry.get_text().strip()
+            if typed_key:
+                keys[backend] = typed_key
+                self._key_memory[backend] = typed_key
+            else:
+                keys.pop(backend, None)
+                self._key_memory.pop(backend, None)
+        self.config.translate.api_keys = keys
         self.config.translate.prompt = text.strip()
 
         # Language pair. Written back exactly as the pickers hold it, including a
