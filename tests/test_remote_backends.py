@@ -18,6 +18,8 @@ from lintranslator.config import TranslateConfig
 from lintranslator.translate import (
     DATA_NOT_INSTRUCTIONS,
     DEFAULT_PROMPT,
+    DEFAULT_TIMEOUT,
+    LOCAL_TIMEOUT,
     ChatCompletionsTranslator,
     GoogleTranslator,
     OpenAITranslator,
@@ -329,6 +331,93 @@ def test_the_chat_prompt_keeps_a_hand_written_language_understandable(monkeypatc
     cfg = TranslateConfig(backend="openrouter", model="m", source_lang="jpn")
     t = build_translator(cfg)
     assert "Japanese" in t.system_prompt()
+
+
+# --------------------------------------------------------------------------- #
+# Slow answers, and answers that are only thinking
+# --------------------------------------------------------------------------- #
+def test_a_server_on_this_machine_gets_the_longer_timeout():
+    """A local model is not late the way a server that never answers is late."""
+    local = build_translator(
+        TranslateConfig(
+            backend="chat", model="qwen3.5:4b", api_base="http://localhost:11434/v1"
+        )
+    )
+    hosted = build_translator(TranslateConfig(backend="openai", model="gpt-4o-mini", api_key="k"))
+    assert local.timeout == LOCAL_TIMEOUT
+    assert hosted.timeout == DEFAULT_TIMEOUT
+    assert LOCAL_TIMEOUT > DEFAULT_TIMEOUT
+
+
+def test_an_explicit_timeout_wins_over_the_default():
+    t = build_translator(
+        TranslateConfig(
+            backend="chat", model="m", api_base="http://localhost:11434/v1", timeout=45
+        )
+    )
+    assert t.timeout == 45.0
+
+
+def test_a_timeout_is_reported_as_a_timeout_and_not_as_unreachable(monkeypatch):
+    """The message that sent the user looking for a network problem."""
+
+    def fake_urlopen(request, timeout=None):
+        raise urllib.error.URLError(TimeoutError("timed out"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    t = ChatCompletionsTranslator(
+        None, model="qwen3.5:4b", base_url="http://localhost:11434/v1",
+        key_required=False, timeout=20.0,
+    )
+    with pytest.raises(TranslatorError) as exc:
+        t.translate("hello")
+    message = str(exc.value)
+    assert "did not answer within 20 s" in message
+    assert "unreachable" not in message
+    assert "Timeout" in message
+
+
+def test_reasoning_effort_is_sent_only_when_it_is_set():
+    class Recording(ChatCompletionsTranslator):
+        def __init__(self, **kw):
+            self.sent: dict = {}
+            super().__init__(
+                None, model="m", base_url="http://localhost:11434/v1", key_required=False, **kw
+            )
+
+        def _post_json(self, url, payload, headers):
+            self.sent = payload
+            return GOOD_RESPONSE
+
+    off = Recording()
+    off.translate("hi")
+    assert "reasoning_effort" not in off.sent, "a hosted provider must not be sent this"
+
+    on = Recording(reasoning_effort="none")
+    on.translate("hi")
+    assert on.sent["reasoning_effort"] == "none"
+
+
+def test_a_model_that_only_thinks_says_so_instead_of_looking_empty():
+    """Measured on qwen3.5:4b through Ollama: 3,544 characters of reasoning in a
+    field of its own, and an empty `content`.
+
+    "empty translation" was true and useless: it reads as a bug in the app rather
+    than a model that needs either more room or the thinking turned off.
+    """
+
+    class Thinking(ChatCompletionsTranslator):
+        def _post_json(self, url, payload, headers):
+            return {"choices": [{"message": {"content": "", "reasoning": "x" * 3544}}]}
+
+    t = Thinking(
+        None, model="qwen3.5:4b", base_url="http://localhost:11434/v1", key_required=False
+    )
+    with pytest.raises(TranslatorError) as exc:
+        t.translate("hello")
+    message = str(exc.value)
+    assert "3544 characters of hidden reasoning" in message
+    assert "reasoning_effort" in message
 
 
 # --------------------------------------------------------------------------- #

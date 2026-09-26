@@ -117,6 +117,25 @@ BASE_URL_PLACEHOLDERS = {
 # and DeepL has no prompt parameter at all.
 BACKENDS_WITH_PROMPT = ("openrouter", "openai", "chat")
 
+# Which backends read `translate.timeout`, and `translate.reasoning_effort`. Both
+# were config keys with no row in this dialog, which is how a local model that was
+# merely slow got reported as "unreachable" and a thinking model that answered
+# with 3,544 characters of reasoning and no translation looked like a broken app.
+# The timeout row is shown for every backend that waits on a socket; the thinking
+# row only for the chat ones, because it is a request field they send.
+BACKENDS_WITH_TIMEOUT = ("openrouter", "openai", "chat", "deepl", "google")
+
+# `reasoning_effort` as Ollama, vLLM and the hosted chat APIs spell it. Empty is
+# "send nothing", which is the only value that is safe on every provider.
+THINKING_CHOICES = ("", "none", "low", "medium", "high")
+THINKING_LABELS = {
+    "": "Default (send nothing)",
+    "none": "none — no hidden reasoning",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+}
+
 # Curated shortlist, ordered cheapest-first inside each group. Not exhaustive on
 # purpose: `Fetch list` loads every model the key can reach, and free-text entry
 # is always allowed because model ids churn faster than this list.
@@ -1162,6 +1181,55 @@ class SettingsDialog(Gtk.Window):
         grid.attach(self.base_label, 0, 8, 1, 1)
         grid.attach(self.base_row, 1, 8, 1, 1)
 
+        # How long to wait for an answer. 0 is not "no timeout": it is "pick one",
+        # and the two defaults differ by an order of magnitude, because a model on
+        # this machine is slow in a way a hosted API is not.
+        self.timeout_spin = Gtk.SpinButton.new_with_range(0, 600, 5)
+        self.timeout_spin.set_digits(0)
+        self.timeout_spin.set_value(max(0.0, float(self.config.translate.timeout or 0)))
+        self.timeout_spin.set_hexpand(True)
+        self.timeout_spin.set_tooltip_text(
+            "Seconds to wait for one answer.\n"
+            "0 picks a default: 20 s for a hosted endpoint, 120 s for a server\n"
+            "on this machine. Raise it for a large local model."
+        )
+        self.timeout_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.timeout_row.append(self.timeout_spin)
+        self.timeout_hint = Gtk.Label(
+            label="0 = auto: 20 s hosted, 120 s on this machine", xalign=0
+        )
+        self.timeout_hint.add_css_class("lintranslator-hint")
+        self.timeout_row.append(self.timeout_hint)
+        self.timeout_label = Gtk.Label(label="Timeout", xalign=0)
+        grid.attach(self.timeout_label, 0, 10, 1, 1)
+        grid.attach(self.timeout_row, 1, 10, 1, 1)
+
+        # Whether the model is allowed to think before it answers. A local
+        # thinking model needs `none`: without it the reasoning can consume the
+        # whole token budget and the translation comes back empty.
+        self._thinking_values = list(THINKING_CHOICES)
+        stored_thinking = (self.config.translate.reasoning_effort or "").strip()
+        if stored_thinking not in self._thinking_values:
+            # A hand-edited value is shown as it stands rather than rounded off to
+            # the nearest choice, the same rule the language pickers follow.
+            self._thinking_values.append(stored_thinking)
+        self.thinking_dd = Gtk.DropDown.new_from_strings(
+            [THINKING_LABELS.get(v, f"{v} (from config.json)") for v in self._thinking_values]
+        )
+        self.thinking_dd.set_selected(self._thinking_values.index(stored_thinking))
+        self.thinking_dd.set_hexpand(True)
+        self.thinking_dd.set_tooltip_text(
+            "Sent as `reasoning_effort` on each request.\n"
+            "A local thinking model needs none - otherwise it can spend the whole\n"
+            "answer on hidden reasoning and return an empty translation. Not every\n"
+            "provider accepts it, so the default sends nothing."
+        )
+        self.thinking_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.thinking_row.append(self.thinking_dd)
+        self.thinking_label = Gtk.Label(label="Thinking", xalign=0)
+        grid.attach(self.thinking_label, 0, 11, 1, 1)
+        grid.attach(self.thinking_row, 1, 11, 1, 1)
+
         # The licence of the weights the local backends download. It is not a
         # detail of this app - NLLB is non-commercial - so it is stated where the
         # backend is chosen, not only in the README.
@@ -1283,6 +1351,17 @@ class SettingsDialog(Gtk.Window):
         # a field that looks like it matters while doing nothing is worse than no
         # field at all.
         self.prompt_section.set_visible(key in BACKENDS_WITH_PROMPT)
+
+        # Both of these are read by the request itself, so they are hidden exactly
+        # where they would be decoration: the timeout for the backends that run
+        # without a socket (the two local ones, and `none`), the thinking row for
+        # the backends that never send a chat request.
+        uses_timeout = key in BACKENDS_WITH_TIMEOUT
+        self.timeout_label.set_visible(uses_timeout)
+        self.timeout_row.set_visible(uses_timeout)
+        uses_thinking = key in BACKENDS_WITH_PROMPT
+        self.thinking_label.set_visible(uses_thinking)
+        self.thinking_row.set_visible(uses_thinking)
 
         # The local weights are non-commercial (CC-BY-NC-4.0). Saying so here is
         # cheaper than a user finding out after shipping something with them.
@@ -1739,6 +1818,16 @@ class SettingsDialog(Gtk.Window):
 
         if backend in BACKENDS_WITH_BASE_URL:
             self.config.translate.api_base = self.base_entry.get_text().strip() or None
+
+        # 0 is "pick a default", which is what a fresh config holds; the spin
+        # button cannot produce anything unparseable, so there is nothing to
+        # validate here.
+        if backend in BACKENDS_WITH_TIMEOUT:
+            self.config.translate.timeout = float(self.timeout_spin.get_value())
+        if backend in BACKENDS_WITH_PROMPT:
+            self.config.translate.reasoning_effort = self._thinking_values[
+                self.thinking_dd.get_selected()
+            ]
 
         # An empty field means "use the environment", not "store an empty key".
         self.config.translate.api_key = self.key_entry.get_text().strip() or None

@@ -9,6 +9,21 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+- A local model that is slow is no longer reported as unreachable, and one that
+  thinks is no longer reported as empty. Both were one line away from working:
+  `qwen3.5:4b` through Ollama took 10.3 s for a single short line and answered
+  with 3,544 characters of hidden reasoning in a field of its own and an empty
+  `content` - so the card said "chat unreachable: timed out", and would have said
+  "returned an empty translation" had it waited. The timeout is now a row in
+  Settings (`translate.timeout`, where 0 means "pick one": 20 s hosted, 120 s for
+  a server on this machine, which is the case that has no way to know it should
+  wait), the timeout message names the limit and the setting rather than calling a
+  slow answer unreachable, and `translate.reasoning_effort` sends the request
+  field of that name - "none" is the difference between those 10.3 s of thinking
+  and 0.4 s of translation, measured on the same line. A model that answers with
+  reasoning and no translation now says so by name, with the two things that fix
+  it, instead of reading as a bug in the app. Empty by default: not every provider
+  accepts the field, and a hosted one has no use for it.
 - A `google` backend: Cloud Translation - Basic (v2), one API key, no model id.
   v2 rather than v3 because v3 wants a project id and an OAuth token, and that is
   the tier the Translation LLM lives in - more setup than a dialogue box is worth.

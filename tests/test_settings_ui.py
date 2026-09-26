@@ -180,6 +180,58 @@ def test_the_custom_endpoint_warns_while_it_has_no_url(dialog):
     assert "Base URL" in dialog.model_hint.get_text()
 
 
+def test_the_timeout_row_shows_where_a_socket_is_waited_on(dialog):
+    """The key existed in config.json and had no row here.
+
+    That is how a local model that was merely slow - 10.3 s for one line, measured
+    on qwen3.5:4b through Ollama - got reported as "unreachable", with the one
+    setting that would have fixed it unreachable too.
+    """
+    for backend in ("chat", "openai", "openrouter", "deepl", "google"):
+        select(dialog, backend)
+        assert dialog.timeout_row.get_visible(), backend
+    for backend in ("none", "ct2", "local"):
+        select(dialog, backend)
+        assert not dialog.timeout_row.get_visible(), backend
+
+
+def test_the_thinking_row_is_only_for_the_backends_that_send_a_chat_request(dialog):
+    for backend in ("openrouter", "openai", "chat"):
+        select(dialog, backend)
+        assert dialog.thinking_row.get_visible(), backend
+    for backend in ("none", "ct2", "local", "deepl", "google"):
+        select(dialog, backend)
+        assert not dialog.thinking_row.get_visible(), backend
+
+
+def test_saving_writes_the_timeout_and_the_thinking_choice(dialog):
+    select(dialog, "chat")
+    dialog.timeout_spin.set_value(300)
+    dialog.thinking_dd.set_selected(dialog._thinking_values.index("none"))
+    dialog._on_save(None)
+    assert dialog.config.translate.timeout == 300.0
+    assert dialog.config.translate.reasoning_effort == "none"
+
+
+def test_a_hand_edited_value_survives_the_dialog(tmp_path):
+    """Settings must show what the config holds, including a value it does not
+    offer - the rule the language pickers already follow."""
+    cfg = Config()
+    cfg.translate.backend = "chat"
+    cfg.translate.timeout = 45.0
+    cfg.translate.reasoning_effort = "minimal"
+    dlg = SettingsDialog(None, cfg)
+    try:
+        select(dlg, "chat")
+        assert dlg.timeout_spin.get_value() == 45.0
+        assert dlg._thinking_values[dlg.thinking_dd.get_selected()] == "minimal"
+        dlg._on_save(None)
+        assert dlg.config.translate.timeout == 45.0
+        assert dlg.config.translate.reasoning_effort == "minimal"
+    finally:
+        dlg.destroy()
+
+
 def test_the_local_backend_states_the_model_licence(dialog):
     """NLLB is CC-BY-NC-4.0: non-commercial, and worth saying where the backend
     is chosen rather than only in the README."""

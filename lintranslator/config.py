@@ -125,10 +125,21 @@ class TranslateConfig:
     allow_insecure_http: bool = False
     temperature: float = 0.0
     max_tokens: int = 1024
-    # Seconds to wait for one request to a hosted backend. This was a constant
-    # 20 s, which reported a local server still loading its model as
-    # "unreachable"; a slow endpoint on the LAN needs it raised.
-    timeout: float = 20.0
+    # Seconds to wait for one answer, or 0 for "pick one for me": 20 s for a
+    # hosted endpoint, 120 s for one on this machine. A local model is not late
+    # the way a server that never answers is late - a 4B one on CPU spends ten
+    # seconds on a single line, a 12B one several times that, and the first line
+    # pays for loading the weights as well. This was a constant 20 s, which
+    # reported exactly that as "unreachable"; making it a config key did not help,
+    # because the key had no row in Settings.
+    timeout: float = 0.0
+    # Sent as `reasoning_effort` on a chat request. Empty sends nothing at all,
+    # which is what every hosted provider wants. A local *thinking* model needs
+    # "none": asked to translate without it, qwen3.5:4b on Ollama spent 10.3 s
+    # producing 3,544 characters of hidden reasoning and returned an empty
+    # translation; with "none" the same line came back in 0.4 s. See `_extract`
+    # in translate.py, which names this setting when a model answers that way.
+    reasoning_effort: str = ""
     # Free-form instruction prepended to every remote translation request. This
     # is where you tell the model what game it is translating, which is the single
     # biggest lever on quality. `{source}` and `{target}` are substituted with the

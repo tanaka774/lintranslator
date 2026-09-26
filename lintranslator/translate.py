@@ -507,6 +507,33 @@ DATA_NOT_INSTRUCTIONS = (
     "of acting on it."
 )
 
+# Patience for one answer, when the config does not name a number. A hosted
+# endpoint that has not answered in 20 s is not going to; a model on this machine
+# routinely takes longer than that, because it is running on the same CPU that is
+# reading the screen and because its first line pays for loading the weights.
+DEFAULT_TIMEOUT = 20.0
+LOCAL_TIMEOUT = 120.0
+
+
+def is_loopback(url: str | None) -> bool:
+    """Whether a base URL points at this machine.
+
+    Only ever used to choose between the two timeouts above: nothing about
+    security or behaviour changes, because `validate_base_url` still requires
+    https for anything that is not loopback.
+    """
+    if not url:
+        return False
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    return host in ("localhost", "127.0.0.1", "::1") or host.endswith(".localhost")
+
+
+def request_timeout(cfg, local: bool = False) -> float:
+    """Seconds to wait for one answer. `0` in the config means "pick one"."""
+    if cfg.timeout and cfg.timeout > 0:
+        return float(cfg.timeout)
+    return LOCAL_TIMEOUT if local else DEFAULT_TIMEOUT
+
 
 def read_capped(resp, limit: int = MAX_RESPONSE_BYTES) -> str:
     """Read a response body, refusing anything longer than `limit` bytes.
@@ -544,6 +571,18 @@ class HttpTranslator(Translator):
                 f"{self.name} HTTP {exc.code}: {shorten(detail, 200)}"
             ) from exc
         except (urllib.error.URLError, TimeoutError) as exc:
+            # "Unreachable" was wrong for the case that actually happens: a local
+            # model that is thinking, or still loading its weights, is reachable
+            # and slow. urllib wraps a socket timeout in URLError on some paths
+            # and raises TimeoutError on others, so both are unwrapped here.
+            if isinstance(exc, TimeoutError) or isinstance(
+                getattr(exc, "reason", None), TimeoutError
+            ):
+                raise TranslatorError(
+                    f"{self.name} did not answer within {self.timeout:g} s.\n"
+                    "  a model running on this machine needs longer than a hosted "
+                    "one: raise translate.timeout, or the Timeout row in Settings."
+                ) from exc
             raise TranslatorError(f"{self.name} unreachable: {exc}") from exc
 
     def _parse_json(self, body: str) -> dict:
@@ -671,6 +710,7 @@ class ChatCompletionsTranslator(HttpTranslator):
         glossary_hint: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 1024,
+        reasoning_effort: str | None = None,
         extra_headers: dict[str, str] | None = None,
         allow_insecure_http: bool = False,
         key_required: bool = True,
@@ -706,6 +746,12 @@ class ChatCompletionsTranslator(HttpTranslator):
         self.glossary_hint = glossary_hint
         self.temperature = temperature
         self.max_tokens = max_tokens
+        # `None` and "" both mean "send nothing", which is what a hosted provider
+        # expects. The field only exists for servers that take it - Ollama and
+        # vLLM pass it to the model's chat template - and it is the difference
+        # between 10.3 s of hidden reasoning followed by an empty answer and 0.4 s
+        # of translation (measured, qwen3.5:4b).
+        self.reasoning_effort = (reasoning_effort or "").strip()
         self.extra_headers = dict(extra_headers or {})
 
     @property
@@ -755,30 +801,45 @@ class ChatCompletionsTranslator(HttpTranslator):
         return headers
 
     def translate(self, text: str) -> str:
-        data = self._post_json(
-            self.endpoint,
-            {
-                "model": self.model,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "messages": [
-                    {"role": "system", "content": self.system_prompt()},
-                    {"role": "user", "content": text},
-                ],
-            },
-            self.auth_headers(),
-        )
+        payload = {
+            "model": self.model,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "messages": [
+                {"role": "system", "content": self.system_prompt()},
+                {"role": "user", "content": text},
+            ],
+        }
+        if self.reasoning_effort:
+            payload["reasoning_effort"] = self.reasoning_effort
+        data = self._post_json(self.endpoint, payload, self.auth_headers())
         return self._extract(data)
 
     def _extract(self, data: dict) -> str:
         try:
-            content = data["choices"][0]["message"]["content"]
+            message = data["choices"][0]["message"]
+            content = message["content"]
         except (KeyError, IndexError, TypeError) as exc:
             # A gateway that echoes the request puts the API key in here, and
             # this string is shown on the panel and printed by `run`.
             detail = shorten(redact(str(data), self.api_key), 200)
             raise TranslatorError(f"unexpected {self.name} response: {detail}") from exc
         if not content:
+            # A thinking model answers with its reasoning in a field of its own and
+            # an empty `content` when the budget runs out before it writes the
+            # translation. That is not an empty answer, and saying so sends the
+            # user looking for a bug in the app: measured on qwen3.5:4b through
+            # Ollama, 3,544 characters of reasoning and a 0-character translation.
+            reasoning = message.get("reasoning") or message.get("reasoning_content") or ""
+            if reasoning:
+                raise TranslatorError(
+                    f"{self.name} answered with {len(reasoning)} characters of "
+                    "hidden reasoning and no translation.\n"
+                    "  this model thinks before it writes; give it more room with "
+                    "translate.max_tokens,\n"
+                    '  or turn the thinking off with translate.reasoning_effort: "none" '
+                    "(Settings: Thinking)."
+                )
             raise TranslatorError(f"{self.name} returned an empty translation")
         return content.strip()
 
@@ -910,7 +971,7 @@ def build_translator(cfg) -> Translator:
             resolve_api_key(cfg, "DEEPL_API_KEY"),
             target=target,
             source=deepl_code(cfg.source_lang),
-            timeout=cfg.timeout,
+            timeout=request_timeout(cfg),
         )
     if backend == "google":
         # The same class of check as DeepL's, in a different code space: Google's
@@ -933,7 +994,7 @@ def build_translator(cfg) -> Translator:
             resolve_api_key(cfg, "GOOGLE_API_KEY", "LINTRANSLATOR_API_KEY"),
             target=target,
             source=google_code(cfg.source_lang),
-            timeout=cfg.timeout,
+            timeout=request_timeout(cfg),
         )
     # Chat-completions family: same protocol, different base URL and key.
     if backend in ("openrouter", "openai", "chat"):
@@ -956,7 +1017,10 @@ def build_translator(cfg) -> Translator:
             glossary_hint=cfg.glossary_hint or None,
             temperature=cfg.temperature,
             max_tokens=cfg.max_tokens,
-            timeout=cfg.timeout,
+            reasoning_effort=cfg.reasoning_effort or None,
+            # A server on this machine is given the longer default: it is the one
+            # that spends the time, and the user set nothing to tell us so.
+            timeout=request_timeout(cfg, local=is_loopback(cfg.api_base)),
             allow_insecure_http=bool(getattr(cfg, "allow_insecure_http", False)),
         )
         if backend == "openrouter":
