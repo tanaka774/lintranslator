@@ -41,13 +41,13 @@ as a portability shim. Nothing was written with another OS in mind.
 
 The GUI itself is plain GTK4, so it is not a KDE application: it runs on any
 Wayland or X11 desktop with PyGObject. What is KDE-specific is the shortcut
-portal, plus the KWin window rule recommended for keep-above under native Wayland
-(see [Always on top](../README.md#always-on-top)). Under GNOME, expect
-to bind the shortcut by hand and to manage stacking yourself.
+portal, plus the KWin window rule recommended for keep-above under native Wayland.
+Under GNOME, expect to bind the shortcut by hand and to manage stacking yourself.
 
 In this documentation, "verified" and "measured" mean this machine: KDE Plasma 6,
-Wayland, CT2 on CPU. Every other row of the table above is reasoned from the code,
-not observed.
+Wayland, tesseract on CPU, and (for translation) the OCR and latency numbers in
+`probe/`. Every other row of the table above is reasoned from the code, not
+observed.
 
 ## Requirements
 
@@ -85,18 +85,10 @@ Then `.venv/bin/python -m lintranslator gui`, and choose a backend, an API key a
 a model id in the picker's **Settings**. The only fetch along the way is the
 tesseract language data, 4.1 MB for `eng`.
 
-Running the model locally instead adds two steps, and they are the ones with the
-downloads in them:
-
-```bash
-uv pip install --python .venv/bin/python -e '.[ct2]'   # int8 NLLB, no torch
-.venv/bin/python -m lintranslator convert              # asks first; ~3 GB
-```
-
-`convert` fetches ~2.5 GB of fp32 checkpoint into the HuggingFace cache and
-leaves ~630 MB of int8 weights in `~/.local/share/lintranslator/ct2/`; both stay
-on disk at once (see "What the conversion actually costs" below). It says so and
-waits for a yes, and takes `--yes` when there is no terminal to ask.
+Running a model locally is a server, not an extra: this app loads no model
+itself. [Local translation](../README.md#local-translation) in the README is the
+whole recipe - a 1.13 GB GGUF, a Modelfile, one `ollama create`, and the four
+fields to fill in Settings.
 
 It does not have to be a checkout. Installing from the repository works the same
 way and keeps no source tree around:
@@ -119,25 +111,16 @@ large enough to be worth choosing deliberately.
 | backend | what is fetched | when |
 |---|---|---|
 | **`none`, the default in a fresh config** | **nothing at all** - and nothing is sent anywhere either | - |
-| OpenRouter, DeepL, Google, OpenAI, your own endpoint | **nothing from HuggingFace** - no ctranslate2, no torch, no weights | - |
-| `ct2`, opt-in | the converted int8 weights, 629 MB, plus ~22 MB of tokenizer | the weights when *you* run `lintranslator convert`, which asks first; the tokenizer on first use |
-| `local`, opt-in | the fp32 checkpoint, 2.46 GB, plus the same tokenizer | only when `translate.allow_model_download` is set - the backend refuses otherwise |
+| DeepL, Google, OpenRouter, OpenAI | **nothing from disk** - no weights, no cache, no model | - |
+| `chat` - Ollama, llama.cpp, vLLM, a gateway | **nothing by this app**. The model is yours, fetched by your server | - |
 
-The two local backends are a settings change rather than a requirement, and both
-of them are explicit about the download: `lintranslator convert` prints what it
-will fetch and waits for a yes (`--yes` when there is no terminal to ask), and
-`local` will not fetch the checkpoint until `translate.allow_model_download: true`
-is set. So no path through this app starts a multi-gigabyte download without
-saying so first.
-
-In every one of those cases the OCR side fetches tesseract language data on first
-use - 4.1 MB for `eng`, pinned to a revision and checksum-verified. That one
-cannot be avoided, because OCR always runs locally: reading the screen is the
-part of the pipeline that has no remote equivalent. A language without a pinned
-checksum is not fetched automatically (see `ocr.allow_unverified_tessdata`).
+No path through this app starts a download of a translation model, because it has
+none to download. Tesseract language data is the only thing it fetches for
+itself, and it is described at the end of this section.
 
 So an API user installs: the base package, `tesseract`, PyGObject from the
-distro, and 4.1 MB of language data. Not three gigabytes.
+distro, and 4.1 MB of language data. A local-model user installs a model server
+and its weights, which are theirs to place and to delete.
 
 The commands in this document are then written as `.venv/bin/python -m
 lintranslator ...`; with the venv above, use its `lintranslator` script instead.
@@ -145,61 +128,12 @@ Either way, `lintranslator install-desktop` is what puts the app in the
 application menu, which is what gives it the application id the global Re-read
 hotkey needs. `lintranslator shortcut` prints the setup.
 
-`.[ct2]` is the fast path. `.[local]` is the older transformers route: the same
-2.5 GB checkpoint, loaded through torch instead of CTranslate2, which is slower
-and needs torch installed as well. It exists for models that cannot be converted
-and is no longer the default.
-
 The other extras are for things the app does not need to translate a line:
 `.[calibrate]` adds numpy for the region auto-detection helper, `.[x11]` adds
 python-xlib for keeping the panel above other windows under XWayland (without it
 the panel runs and says why it cannot stay on top), and `.[test]` is what the
-suite needs.
-
-## What the conversion actually costs
-
-`lintranslator convert` is the only step that downloads a *model* — the first OCR
-run separately fetches the language data described below, and a remote backend
-needs the network while it translates — and it moves more data than the "~600 MB"
-this project used to claim. Measured against the current `main` of the model repo:
-
-| | size | where it goes |
-|---|---|---|
-| fp32 checkpoint | **2.46 GB** — one `pytorch_model.bin` | `~/.cache/huggingface/hub/` (or `$HF_HOME`) |
-| tokenizer | 17 MB `tokenizer.json` + 4.9 MB `sentencepiece.bpe.model` | same cache |
-| **int8 weights** | **629 MB** — `model.bin` 623 MB + `shared_vocabulary.json` 5.9 MB | `~/.local/share/lintranslator/ct2/` |
-
-So budget **~3 GB** while a conversion runs, and **~630 MB** if you clean up
-afterwards. None of it applies to a hosted backend, which downloads neither.
-
-**Nothing deletes the checkpoint.** After the conversion only the tokenizer is
-still read — the `ct2` backend loads it once per run — so the 2.5 GB of fp32
-weights are dead weight, and re-converting a second model adds another 2.5 GB
-next to them. `remove` shows what is there and takes it back:
-
-```bash
-lintranslator remove                # what is on disk, and what each piece costs to get back
-lintranslator remove checkpoint     # the 2.5 GB, safe once convert has finished
-lintranslator remove model          # the converted weights (asks first)
-```
-
-The report names the exact paths, so nothing is deleted blindly, and it says how
-much of the HuggingFace cache belongs to *other* projects — the app shares that
-directory with whatever else you run, and only ever removes its own repository
-inside it. It also flags a config that points `ct2_model_dir` somewhere the
-weights are not, and says where they actually are.
-
-`remove checkpoint` is the same thing as `huggingface-cli delete-cache`, without
-the menu. It costs a
-22 MB re-download of the tokenizer the next time the model is loaded, which is
-the whole of what the `ct2` path fetches.
-
-If you ever find a HuggingFace cache twice the size of one checkpoint, it is two
-*revisions* of the same model rather than two formats: this one changed its
-weights file from `model.safetensors` to `pytorch_model.bin`, and both revisions
-got cached. A fresh install downloads one. The `.no_exist/` directory in the
-cache is what records the lookup that decides it — transformers asks for
-safetensors, is told 404 for the current revision, and falls back to the `.bin`.
+suite needs. There is no translation extra: the `ct2` and `local` extras were
+removed with the backends they installed.
 
 `eng.traineddata` / `jpn.traineddata` are downloaded on first use, so no root is
 needed — and the first run says so rather than going quiet: the panel's status
@@ -212,11 +146,6 @@ chi_sim, chi_tra, rus, deu, fra, spa, por, ita, pol, tur, vie, tha, ara; a
 language without a pinned checksum is not downloaded automatically — install it
 from the distro, or set `ocr.allow_unverified_tessdata: true` to fetch it anyway.
 
-The HuggingFace cache is used by the converter and by the `local` fallback
-backend. To share it with your other projects, export
-`HF_HOME=~/.cache/huggingface` before running; the `ct2` path only ever reads
-the tokenizer out of it.
-
 ## Where it keeps things
 
 State lives in the XDG directories, not next to the source:
@@ -224,7 +153,7 @@ State lives in the XDG directories, not next to the source:
 | what | where | mode |
 |---|---|---|
 | `config.json` | `~/.config/lintranslator/config.json` (`$XDG_CONFIG_HOME`) | **0600** |
-| converted weights, tessdata | `~/.local/share/lintranslator/` (`$XDG_DATA_HOME`) | — |
+| tessdata | `~/.local/share/lintranslator/` (`$XDG_DATA_HOME`) | — |
 | the optional translation cache, the control socket | `~/.cache/lintranslator/` (`$XDG_CACHE_HOME`); the socket prefers `$XDG_RUNTIME_DIR/lintranslator.sock` | — |
 
 `LINTRANSLATOR_HOME` puts all three under one directory instead, which is what a
@@ -256,12 +185,16 @@ PyGObject (GUI)  : installed
 RESULT: ready
 ```
 
-(`languages` shows the FLORES-200 pair the local backends would use; the hosted
-ones are handed names. The key is described rather than printed - ten characters
-of it would be ten characters too many.)
+A config left on a backend this version has no implementation for - `ct2` and
+`local` are the two such values - is reported and moved to `none`, rather than
+loading and then failing on every line.
 
-Anything wrong is named rather than implied: a missing tesseract, a model that has
-not been converted, a language pair NLLB cannot score, a missing PyGObject - the
+(`languages` shows the FLORES-200 pair the app works in; each backend is handed
+its own form of it. The key is described rather than printed - ten characters of
+it would be ten characters too many.)
+
+Anything wrong is named rather than implied: a missing tesseract, a language pair
+outside the FLORES-200 table, a missing PyGObject - the
 one dependency pip cannot install, so it is checked by name and the distro
 package is printed - and any config problem, including a key this version does
 not know (`config warning   : ignoring unknown config key(s): ocr.typo_key`) or a
@@ -271,15 +204,19 @@ usable from a packaging script.
 
 ## Model licences
 
-The default local model, `facebook/nllb-200-distilled-600M`, is **CC-BY-NC-4.0**,
-which permits non-commercial use only. LinTranslator does not bundle or redistribute the
-weights — `lintranslator convert` downloads them from HuggingFace on your machine — but
-anyone shipping this app with pre-converted weights, or using the local backend
-commercially, is bound by that licence. Settings states the licence next to the
-Local backends, and `NOTICE` — shipped with the package as well as kept in the
-repository root — lists the third-party terms, along with the permissive
-alternatives: `facebook/m2m100_418M` is MIT
-and `Helsinki-NLP/opus-mt-en-jap` is Apache-2.0, though a different model family
-expects its own language codes, not NLLB's FLORES-200 ones. The hosted backends
-have no local model licence at all. LinTranslator itself is MIT licensed, separate
-from every model and data licence above — see `LICENSE`.
+There are none to state, and that is deliberate. LinTranslator ships no model,
+downloads no model and converts no model: every backend talks to an endpoint,
+either a hosted API or a server you run yourself, so the only model licence in
+play is the one on whatever you choose to run.
+
+The model the README suggests for local translation, `tencent/Hy-MT2-1.8B`, is
+**Apache-2.0**, and it is fetched by *your* Ollama or llama.cpp, not by this app.
+Whatever you serve instead is your choice, under its own terms — including the
+language codes it expects, which is why the app's own picker is FLORES-200 and the
+prompt carries the language names.
+
+What remains third-party is data and libraries: tesseract language data
+(Apache-2.0), the Python dependencies, and the LGPL GUI bindings that come from
+the distribution. `NOTICE` — shipped with the package as well as kept in the
+repository root — lists all of it. LinTranslator itself is MIT licensed, separate
+from every data and library licence above — see `LICENSE`.

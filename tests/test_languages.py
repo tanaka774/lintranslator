@@ -1,11 +1,12 @@
 """The language table: the codes, and what each backend is told for them.
 
 The table is data generated from primary sources (`probe/gen_languages.py`), and
-the failure it exists to prevent is invisible: NLLB maps an unknown or mistyped
-language code to `<unk>` and returns plausible-looking garbage with no error at
-all. So these tests are about the *shape* of the data - every code is one the
-model can score, every backend gets a code it understands, and a language a
-backend cannot express says so instead of guessing.
+the failure it exists to prevent is invisible: a code no backend recognises is
+sent as a language name or an ISO code that means nothing, and what comes back is
+fluent text in the wrong language with no error at all. So these tests are about
+the *shape* of the data - every code is one the app offers, every backend gets a
+code it understands, and a language a backend cannot express says so instead of
+guessing.
 """
 from __future__ import annotations
 
@@ -33,11 +34,12 @@ DEEPL_MUST_HAVE = (
 # --------------------------------------------------------------------------- #
 # The table itself
 # --------------------------------------------------------------------------- #
-def test_the_table_holds_the_codes_nllb_was_trained_on():
-    """202 is the count the NLLB tokenizer's vocabulary produces.
+def test_the_table_holds_the_codes_the_app_knows():
+    """202 codes, and the table is the only source of that number.
 
-    A code that is not in that vocabulary is scored as `<unk>`, which is why the
-    picker offers this list and nothing else.
+    The picker offers exactly this list, so a code missing here is a language a
+    config cannot be set to, and a code added here is one every backend is
+    expected to be told about.
     """
     assert len(L.CODES) == 202
     assert len(L.LANGUAGES) == 202
@@ -59,13 +61,6 @@ def test_the_common_languages_are_all_real():
     for code in L.COMMON_CODES:
         assert code in L.CODES, code
     assert "eng_Latn" in L.COMMON_CODES and "jpn_Jpan" in L.COMMON_CODES
-
-
-def test_scripts_drive_the_cjk_flag():
-    assert L.is_cjk("jpn_Jpan") and L.is_cjk("kor_Hang")
-    assert L.is_cjk("zho_Hans") and L.is_cjk("zho_Hant")
-    assert not L.is_cjk("eng_Latn") and not L.is_cjk("rus_Cyrl")
-    assert not L.is_cjk("not-a-code")
 
 
 def test_the_iso_column_only_holds_two_letter_codes():
@@ -196,50 +191,6 @@ def test_search_with_no_query_is_the_ordered_list():
 
 def test_search_that_matches_nothing_is_empty():
     assert L.search("klingon") == []
-
-
-# --------------------------------------------------------------------------- #
-# The check that actually decides whether a code means a language
-# --------------------------------------------------------------------------- #
-def test_the_table_matches_the_real_tokenizer_when_it_is_available(monkeypatch):
-    """Ask the model, not the list, which codes exist.
-
-    The published FLORES-200 lists disagree with each other and with the model -
-    one carries `sat_Olck` and `arb_Latn`, which this tokenizer scores as
-    `<unk>`, and omits `sat_Beng`, which it does not. The vocabulary is what
-    decides, so when the tokenizer can be loaded this compares against it and
-    skips when it cannot (no transformers, or no cached weights and no network).
-    """
-    transformers = pytest.importorskip("transformers")
-    import os
-    from pathlib import Path
-
-    # Point at this checkout's cache, and stay offline: a test must not fetch
-    # 600 MB of weights, and must not leave the environment changed either.
-    if "HF_HOME" not in os.environ:
-        monkeypatch.setenv(
-            "HF_HOME", str(Path(L.__file__).resolve().parent.parent / ".hf")
-        )
-    if "HF_HUB_OFFLINE" not in os.environ:
-        monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    try:
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            "facebook/nllb-200-distilled-600M"
-        )
-    except Exception as exc:  # noqa: BLE001
-        pytest.skip(f"tokenizer unavailable: {type(exc).__name__}: {exc}")
-
-    pattern = re.compile(r"^[a-z]{2,3}_[A-Z][a-z]{3}$")
-    unk = tokenizer.unk_token_id
-    accepted = {
-        token
-        for token in tokenizer.get_vocab()
-        if pattern.match(token) and tokenizer.convert_tokens_to_ids(token) != unk
-    }
-    assert accepted == set(L.CODES), (
-        f"only in the table: {sorted(set(L.CODES) - accepted)}; "
-        f"only in the model: {sorted(accepted - set(L.CODES))}"
-    )
 
 
 # --------------------------------------------------------------------------- #

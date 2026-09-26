@@ -10,8 +10,8 @@ portal      xdg-desktop-portal D-Bus clients (Screenshot, ScreenCast)
 capture     high-level frame grabber returning an already-cropped frame
 detect      change detection: pixel hashing + typewriter settle detection
 ocr         tesseract wrapper with game-UI preprocessing
-translate   translation backends (local NLLB, cloud APIs) behind one interface
+translate   translation backends (hosted APIs, any OpenAI-compatible endpoint)
 pipeline    wires the above into a polling loop
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

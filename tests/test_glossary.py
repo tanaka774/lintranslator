@@ -237,8 +237,8 @@ def test_cache_is_namespaced_per_language_pair(tmp_path):
     cache = TranslationCache(tmp_path / "c.json")
 
     class Japanese(_EchoTranslator):
-        name = "ct2"
-        model = "nllb"
+        name = "chat"
+        model = "hy-mt2:1.8b"
         source_lang = "eng_Latn"
         target_lang = "jpn_Jpan"
 

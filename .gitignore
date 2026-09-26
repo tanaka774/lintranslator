@@ -17,18 +17,18 @@ build/
 # A throwaway LINTRANSLATOR_HOME, used to exercise a first run by hand.
 .dl-demo/
 
-# Model weights. data/ct2 is ~600 MB of converted NLLB - a `git add .` would
-# try to commit it, and GitHub rejects files over 100 MB.
-data/ct2/
-data/*.bin
-data/*.safetensors
-
 # Runtime state. The app keeps this in the XDG directories now (lintranslator/paths.py);
 # these paths are what an older checkout left behind.
 data/cache.json
 data/tessdata/
 data/*.png
 config.json
+
+# Weights converted in-tree. GitHub rejects files over 100 MB, and none of this is
+# source.
+data/ct2/
+data/*.bin
+data/*.safetensors
 
 # Probe leftovers.
 #

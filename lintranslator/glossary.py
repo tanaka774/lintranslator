@@ -4,7 +4,7 @@ Machine translation gets names, titles and invented jargon wrong in ways that ar
 predictable and easy to correct. Measured examples from this project:
 
     Manager!  ->  管理者        (should be a title, not "administrator")
-    Faust     ->  left alone by NLLB, or transliterated inconsistently
+    Faust     ->  left alone, or transliterated inconsistently
 
 Two kinds of replacement are needed, and they are not interchangeable:
 
@@ -164,8 +164,8 @@ class Glossary:
 # --------------------------------------------------------------------------- #
 LIMBUS_GLOSSARY = Glossary(
     post={
-        # NLLB renders the title "Manager" as the job word 管理者. This is the
-        # reliable fix: patch the output the model actually produces.
+        # Measured: the title "Manager" comes back as the job word 管理者.
+        # Patching the output the model actually produces is the reliable fix.
         "管理者": "マネージャー",
     },
 )

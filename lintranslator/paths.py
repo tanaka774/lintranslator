@@ -1,8 +1,8 @@
 """Where lintranslator keeps its state, and how it writes it.
 
-Everything used to live next to the source: `config.json`, `data/ct2/`,
-`data/tessdata/`, `data/cache.json`. That is fine for a git checkout and wrong
-for an installed app:
+Everything used to live next to the source: `config.json`, `data/tessdata/`,
+`data/cache.json`. That is fine for a git checkout and wrong for an installed
+app:
 
 * `config.json` holds an API key in plain text, and it was written with the
   process umask - 0644 on a normal desktop, so any local account could read it.
@@ -45,13 +45,6 @@ DATA_DIR = _OVERRIDE or _xdg("XDG_DATA_HOME", ".local/share")
 CACHE_DIR = _OVERRIDE or _xdg("XDG_CACHE_HOME", ".cache")
 
 DEFAULT_CONFIG_PATH = CONFIG_DIR / "config.json"
-
-CT2_DIR_NAME = Path("ct2") / "nllb-600m-int8"
-
-
-def default_ct2_dir() -> Path:
-    """Where `lintranslator convert` writes and the `ct2` backend looks."""
-    return DATA_DIR / CT2_DIR_NAME
 
 
 # --------------------------------------------------------------------------- #

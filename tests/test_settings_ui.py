@@ -2,8 +2,8 @@
 
 These cover the two ways the dialog used to mislead: it showed every row at once
 regardless of backend, and it carried one backend's Model value into another's
-(so switching Local -> OpenRouter left an NLLB repo in the model id field, which
-only fails later, at request time, as "model not found").
+(so switching endpoint carried a model id that only fails later, at request time,
+as "model not found").
 
 Requires a GTK display. Skips cleanly when there is none, so the suite still
 runs in a headless container.
@@ -25,13 +25,11 @@ from lintranslator.languages import LANGUAGES  # noqa: E402
 from lintranslator import settings as settings_mod  # noqa: E402
 from lintranslator.settings import (  # noqa: E402
     BACKENDS,
-    DEFAULT_CT2_DIR,
     MODEL_LABELS,
     MODEL_SUGGESTIONS,
     REASONING_CAUTION,
     SettingsDialog,
 )
-from lintranslator.translate import DEFAULT_NLLB_MODEL  # noqa: E402
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -71,17 +69,16 @@ def select(dlg: SettingsDialog, backend: str) -> None:
 
 # -- backend-dependent rows ------------------------------------------------- #
 def test_only_this_backend_rows_are_visible(dialog):
-    # ct2 reads a model dir and a tokenizer repo, and needs no key.
-    select(dialog, "ct2")
+    # chat reads an endpoint, a model id and a key, and has no fetch button.
+    select(dialog, "chat")
     assert dialog.model_row.get_visible()
-    assert dialog.ct2_row.get_visible()
-    assert not dialog.key_row.get_visible()
+    assert dialog.base_row.get_visible()
+    assert dialog.key_row.get_visible()
     assert not dialog.fetch_btn.get_visible()
 
-    # openrouter reads a model id and a key, and has no weights dir.
+    # openrouter reads a model id and a key, and can list models for it.
     select(dialog, "openrouter")
     assert dialog.model_row.get_visible()
-    assert not dialog.ct2_row.get_visible()
     assert dialog.key_row.get_visible()
     assert dialog.fetch_btn.get_visible()
 
@@ -97,7 +94,7 @@ def test_base_url_row_is_only_for_the_backends_that_dial_a_url(dialog):
     for backend in ("openrouter", "openai", "chat"):
         select(dialog, backend)
         assert dialog.base_row.get_visible(), backend
-    for backend in ("ct2", "local", "deepl", "none"):
+    for backend in ("deepl", "none"):
         select(dialog, backend)
         assert not dialog.base_row.get_visible(), backend
 
@@ -108,31 +105,30 @@ def test_the_custom_endpoint_row_says_which_protocol_it_wants(dialog):
 
 
 def test_the_prompt_row_is_only_for_the_backends_that_read_it(dialog):
-    """ct2/local decode a language code, and DeepL has no prompt parameter.
+    """DeepL has no prompt parameter, and `none` sends nothing at all.
 
     The field is only meaningful for the backends that send it, so showing it
-    over a backend that ignores it is a control that silently does nothing -
-    which is what the default backend (ct2) did on a fresh install.
+    over a backend that ignores it is a control that silently does nothing.
     """
     for backend in ("openrouter", "openai", "chat"):
         select(dialog, backend)
         assert dialog.prompt_section.get_visible(), backend
-    for backend in ("ct2", "local", "deepl", "none"):
+    for backend in ("deepl", "none"):
         select(dialog, backend)
         assert not dialog.prompt_section.get_visible(), backend
 
 
 def test_hiding_the_prompt_does_not_erase_a_stored_one():
-    """Switching to a local backend and saving must keep the chat prompt.
+    """Switching to a backend that ignores the prompt and saving must keep it.
 
     The field is hidden, not cleared: `translate.prompt` is still in the config,
-    and a Save made while ct2 is selected must not drop it.
+    and a Save made while DeepL is selected must not drop it.
     """
     cfg = Config()
     cfg.translate.prompt = "keep Faust in Latin script"
     dlg = SettingsDialog(None, cfg)
     try:
-        select(dlg, "ct2")
+        select(dlg, "deepl")
         dlg._on_save(_save_button(dlg))
         assert dlg.config.translate.prompt == "keep Faust in Latin script"
     finally:
@@ -190,7 +186,7 @@ def test_the_timeout_row_shows_where_a_socket_is_waited_on(dialog):
     for backend in ("chat", "openai", "openrouter", "deepl", "google"):
         select(dialog, backend)
         assert dialog.timeout_row.get_visible(), backend
-    for backend in ("none", "ct2", "local"):
+    for backend in ("none",):
         select(dialog, backend)
         assert not dialog.timeout_row.get_visible(), backend
 
@@ -199,7 +195,7 @@ def test_the_thinking_row_is_only_for_the_backends_that_send_a_chat_request(dial
     for backend in ("openrouter", "openai", "chat"):
         select(dialog, backend)
         assert dialog.thinking_row.get_visible(), backend
-    for backend in ("none", "ct2", "local", "deepl", "google"):
+    for backend in ("none", "deepl", "google"):
         select(dialog, backend)
         assert not dialog.thinking_row.get_visible(), backend
 
@@ -232,15 +228,15 @@ def test_a_hand_edited_value_survives_the_dialog(tmp_path):
         dlg.destroy()
 
 
-def test_the_local_backend_states_the_model_licence(dialog):
-    """NLLB is CC-BY-NC-4.0: non-commercial, and worth saying where the backend
-    is chosen rather than only in the README."""
-    for backend in ("ct2", "local"):
-        select(dialog, backend)
-        assert dialog.licence_hint.get_visible(), backend
-        assert "CC-BY-NC-4.0" in dialog.licence_hint.get_text(), backend
-    select(dialog, "openrouter")
-    assert not dialog.licence_hint.get_visible()
+def test_no_row_claims_a_model_licence():
+    """The dialog names no model licence, because it installs no model.
+
+    Nothing this app downloads from the network for itself carries a
+    non-commercial term, so a row saying otherwise would be the misleading part.
+    """
+    assert not hasattr(SettingsDialog, "licence_hint")
+    with open(settings_mod.__file__, encoding="utf-8") as handle:
+        assert "CC-BY-NC" not in handle.read()
 
 
 def test_model_label_matches_backend(dialog):
@@ -250,13 +246,15 @@ def test_model_label_matches_backend(dialog):
 
 
 # -- model memory --------------------------------------------------------- #
-def test_switching_backend_does_not_leak_nllb_repo_into_model_id(dialog):
-    select(dialog, "local")
-    dialog.model_entry.set_text(DEFAULT_NLLB_MODEL)
+def test_switching_backend_does_not_leak_a_model_id(dialog):
+    select(dialog, "chat")
+    dialog.model_entry.set_text("hy-mt2:1.8b")
 
     select(dialog, "openrouter")
-    # The bug: the NLLB repo stayed in the field and was sent as a model id.
-    assert dialog.model_entry.get_text() != DEFAULT_NLLB_MODEL
+    # The bug: one backend's Model value stayed in the field and was sent to
+    # another provider, which only fails later, at request time, as "model not
+    # found".
+    assert dialog.model_entry.get_text() != "hy-mt2:1.8b"
 
 
 def test_each_backend_remembers_its_own_model(dialog):
@@ -279,18 +277,6 @@ def test_configured_model_is_shown_for_its_own_backend(dialog):
 
 
 # -- warnings -------------------------------------------------------------- #
-def test_ct2_warns_when_weights_are_missing(dialog):
-    select(dialog, "ct2")
-    dialog.ct2_entry.set_text("/nonexistent/ct2/dir")
-    dialog._refresh_model_hint()
-    assert "no converted weights" in dialog.model_hint.get_text()
-
-    # The real project dir does exist, so the warning must not appear.
-    dialog.ct2_entry.set_text(DEFAULT_CT2_DIR)
-    dialog._refresh_model_hint()
-    assert "no converted weights" not in dialog.model_hint.get_text()
-
-
 def test_reasoning_model_gets_a_caution(dialog):
     select(dialog, "openrouter")
     cautious = sorted(REASONING_CAUTION)[0]
@@ -310,7 +296,7 @@ def test_deepl_asks_for_a_key_rather_than_denying_one_is_needed(dialog, monkeypa
 
 
 def test_backends_without_keys_say_so(dialog):
-    for backend in ("none", "ct2", "local"):
+    for backend in ("none",):
         select(dialog, backend)
         assert dialog.key_label.get_text() == "No key needed for this backend."
 
@@ -371,10 +357,10 @@ def test_switching_away_and_back_keeps_a_key_that_is_not_saved_yet(dialog):
 def test_a_backend_with_no_key_field_never_gets_one(dialog):
     select(dialog, "deepl")
     dialog.key_entry.set_text("deepl-key")
-    # ct2 takes no key at all, so the field is hidden - and a hidden field must
+    # `none` takes no key at all, so the field is hidden - and a hidden field must
     # not be the place a key gets stored from. The key stays with the backend it
     # was typed for.
-    select(dialog, "ct2")
+    select(dialog, "none")
     dialog._on_save(None)
     assert dialog.config.translate.api_keys == {"deepl": "deepl-key"}
 
@@ -448,17 +434,14 @@ def test_save_records_recent_models_and_weights_dir(tmp_path):
             "tencent/hy-mt2-1.8b",
         ]
 
-        select(dlg, "ct2")
-        dlg.ct2_entry.set_text("/tmp/some-ct2-dir")
+        select(dlg, "deepl")
         dlg._on_save(Gtk.Button())
-        assert cfg.translate.ct2_model_dir == "/tmp/some-ct2-dir"
-        # An NLLB repo must never pollute recent_models.
-        assert DEFAULT_NLLB_MODEL not in cfg.translate.recent_models
+        # A backend whose field is not a model id must never pollute recent_models.
+        assert "DEEPL" not in "".join(cfg.translate.recent_models)
 
         # The writes actually reached the file, and `path` is not persisted.
         reloaded = Config.load(cfg_path)
         assert reloaded.translate.recent_models[0] == "google/gemini-2.5-flash-lite"
-        assert reloaded.translate.ct2_model_dir == "/tmp/some-ct2-dir"
         assert "path" not in reloaded.__dict__ or reloaded.path == cfg_path
         assert not reloaded.warnings, reloaded.warnings
     finally:
@@ -582,8 +565,8 @@ def test_the_language_rows_start_at_the_configured_pair(dialog):
     assert dialog.target_picker.get_code() == dialog.config.translate.target_lang
 
 
-def test_the_picker_offers_only_codes_the_model_can_score(dialog):
-    """Free text is the whole problem: NLLB scores a typo as `<unk>`."""
+def test_the_picker_offers_only_codes_the_app_knows(dialog):
+    """Free text is the whole problem: no backend can use a code it does not know."""
     picker = dialog.target_picker
     picker.search.set_text("jpn")
     picker.refresh()
@@ -616,20 +599,17 @@ def test_choosing_a_language_updates_the_pair_and_the_hint(dialog):
     picker._activate_first()
     assert picker.get_code() == "kor_Hang"
     # The hint follows the picker, in the form the selected backend reads.
-    select(dialog, "ct2")
-    assert "kor_Hang" in dialog.language_hint.get_text()
+    select(dialog, "google")
+    assert "ko" in dialog.language_hint.get_text()
 
 
 def test_the_hint_names_the_code_each_backend_decodes_with(dialog):
-    """NLLB takes the FLORES code verbatim; DeepL wants an ISO code of its own.
+    """DeepL takes an ISO code of its own, and Google a lowercase one.
 
     The chat backends are deliberately not named here: the pair reaches them as
     words inside the prompt, and that prompt is on screen for them. A line
     repeating it under the pickers was the same sentence twice.
     """
-    select(dialog, "ct2")
-    assert "eng_Latn → jpn_Jpan" in dialog.language_hint.get_text()
-
     select(dialog, "deepl")
     assert "EN → JA" in dialog.language_hint.get_text()
 

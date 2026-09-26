@@ -314,7 +314,7 @@ def test_factory_builds_openrouter_from_config(monkeypatch):
 
 
 def test_factory_maps_language_codes_to_names_for_chat_backends(monkeypatch):
-    """NLLB wants eng_Latn; a chat model wants "English" in the prompt."""
+    """The table's code goes out as the name "English", not as `eng_Latn`."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-x")
     cfg = TranslateConfig(
         backend="openrouter", model="m", source_lang="eng_Latn", target_lang="jpn_Jpan"
@@ -505,9 +505,9 @@ def test_deepl_gets_its_own_codes():
 def test_deepl_refuses_a_target_it_cannot_translate():
     """The old fallback sent `ceb`, and the API answered with a bare HTTP 400.
 
-    NLLB can translate into 202 languages and DeepL into 34, so this is the
-    common case rather than an edge one - and the error has to name the setting
-    that caused it.
+    The table carries 202 languages and DeepL 34, so a target it cannot translate
+    is the common case rather than an edge one - and the error has to name the
+    setting that caused it.
     """
     cfg = TranslateConfig(backend="deepl", api_key="k", target_lang="ceb_Latn")
     with pytest.raises(TranslatorError) as exc:
@@ -652,11 +652,18 @@ def test_a_pasted_full_endpoint_url_is_trimmed_back_to_the_base():
     assert t.endpoint == "http://localhost:11434/v1/chat/completions"
 
 
-def test_nllb_backends_get_the_flores_code_untouched():
-    """Anything but the code NLLB was trained on is scored as `<unk>`."""
-    cfg = TranslateConfig(backend="ct2", source_lang="kor_Hang", target_lang="ukr_Cyrl")
-    t = build_translator(cfg)
-    assert (t.source_lang, t.target_lang) == ("kor_Hang", "ukr_Cyrl")
+def test_removed_local_backends_are_rejected_by_name():
+    """A config that still says `ct2` cannot reach a backend by accident.
+
+    `Config.load` migrates it to `none` (see `test_core`), so this is the second
+    line of defence: the factory names the valid options rather than failing
+    somewhere deeper with an AttributeError.
+    """
+    for backend in ("ct2", "local"):
+        with pytest.raises(TranslatorError) as exc:
+            build_translator(TranslateConfig(backend=backend))
+        assert "unknown translation backend" in str(exc.value)
+        assert "chat" in str(exc.value)
 
 
 def test_factory_rejects_unknown_backend():

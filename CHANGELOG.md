@@ -7,7 +7,52 @@ All notable changes to this project are documented here. The format follows
 The version lives in `lintranslator/__init__.py`; the packaging metadata reads it
 from there rather than keeping a second copy.
 
-## [Unreleased]
+## [0.2.0] - 2026-09-27
+
+The release where the app stops shipping a translation model, and the one where
+the Settings dialog stops offering settings nothing reads.
+
+**Removing the local model**
+
+- **The `ct2` and `local` backends, and `lintranslator convert` are gone.** They
+  existed to run `facebook/nllb-200-distilled-600M`, first through transformers
+  and then as int8 weights through CTranslate2, and the app now has no model of
+  its own: local translation means a server you run (Ollama, llama.cpp, vLLM)
+  reached through the `chat` backend, and the README says how.
+- **The model licence warning went with them.** NLLB is CC-BY-NC-4.0 and the
+  dialog said so next to the two local backends. Nothing the app downloads is
+  non-commercial any more, so there is nothing to warn about - and the weights-dir
+  row, `translate.ct2_model_dir`, `translate.device`, `translate.threads`,
+  `translate.max_new_tokens` and `translate.allow_model_download` went too. An old
+  config that still carries them is told so, by name, on the next `check`.
+- **Five dependencies went with the classes that imported them**: `ctranslate2`,
+  `transformers`, `torch`, `sentencepiece` and `sacremoses`. The `.[ct2]` and
+  `.[local]` extras are gone; the base install is Pillow, jeepney and pytesseract,
+  and no path through this app downloads gigabytes.
+- **A config left on `ct2` or `local` is migrated to `none` on load**, with a
+  warning naming the replacement. Without it the value loaded fine and then raised
+  "unknown translation backend" on every line, because `translate.backend` was
+  never validated against a list.
+- **The CJK space normaliser** (`translate.normalize_cjk`, `languages.is_cjk`).
+  It removed the token-level spaces NLLB inserted between CJK tokens; no backend
+  this app talks to produces them.
+- **`lintranslator remove checkpoint` / `remove model`**, and the "not ours, not
+  touched" HuggingFace-cache report. `remove` now reports the OCR language data
+  and the optional cache and nothing else - a model you serve is yours, and not
+  this command's to delete. A running GUI is no longer warned about losing weights
+  under it, because it cannot lose them.
+- `probe/gen_languages.py` no longer checks the table against NLLB's tokenizer
+  vocabulary: membership is frozen where it stands and the script warns when a
+  source disagrees, because no model the app can reach is the authority on which
+  codes exist. The generator and `languages.py` had also drifted - the generator's
+  copy of `google_code` predated the Google backend's `zh-TW` fix, so regenerating
+  the table would have reverted it. They are byte-identical again.
+- The README's local-model section is now the Hy-MT2-1.8B recipe: Q4_K_M GGUF
+  (1.13 GB), a Modelfile with the model card's sampling values, `ollama create`,
+  and the four Settings fields. It is Apache-2.0, and it is not in Ollama's
+  library, so it is a `create` rather than a `pull`.
+
+**Everything below was unreleased until now, and is part of 0.2.0**
 
 - A legacy `api_key` is filed under the backend that issued it when the key itself
   says so. The migration moved it to whatever backend was configured, which is the
@@ -97,17 +142,6 @@ from there rather than keeping a second copy.
   used to be `ct2` while the default was OpenRouter. OpenRouter, DeepL, OpenAI and
   any OpenAI-compatible endpoint are one Settings change away, and none of them
   downloads a model.
-- `lintranslator convert` says what it will fetch - the fp32 checkpoint into the
-  shared HuggingFace cache, and the converted weights beside it - and waits for a
-  yes. Without a terminal there is nobody to ask, so it refuses unless `--yes` is
-  passed.
-- The `local` backend no longer downloads the checkpoint by itself. transformers
-  would fetch whatever was missing while the panel said "warming up"; it now
-  refuses unless `translate.allow_model_download` is set, and says so by name
-  alongside the `lintranslator convert` alternative. A cache holding only the
-  tokenizer - which is what the `ct2` backend leaves behind - deliberately does not
-  count as the model being present, because that is exactly the case where the
-  download would have happened unannounced.
 - The picker's toolbar is three buttons plus the primary action: **Save** is gone,
   **Close** is **Quit** - the word the card already uses for the same act - and the
   vertical rules between the buttons went with them. Save wrote the region to
@@ -142,8 +176,8 @@ from there rather than keeping a second copy.
   translation scrolls after 4 lines…" - and it took its widget and its four
   slider callbacks with it, because a readout whose whole content is the two
   sliders above it has nothing left to say. What stays is what a user cannot see
-  for themselves: the codes NLLB and DeepL decode with, the licence the local
-  weights carry, what an empty field means, and every warning.
+  for themselves: the code each backend decodes with, what an empty field means,
+  and every warning.
 - Settings no longer edits the capture area - hint, readout and all. Its
   Smaller/Larger and 8 px move buttons were a correction made blind: this window
   is on neither the screen it reads nor the crop that comes back from it, so the

@@ -69,9 +69,10 @@ def main() -> int:
     cfg.path = CONFIG
     cfg.translate.backend = "none"  # no network calls in a render probe
     # And pin the model name, for the same reason the frame below is synthetic:
-    # both the card's header and the picker's backend line print it, so a render
-    # meant to be published would otherwise drift with the developer's own config.
-    cfg.translate.model = "facebook/nllb-200-distilled-600M"
+    # the picker's backend line prints it, so a render meant to be published would
+    # otherwise drift with the developer's own config. It is the model the README
+    # documents for local translation.
+    cfg.translate.model = "hy-mt2:1.8b"
 
     # `LINTRANSLATOR_RENDER_SOURCE=<png>` renders over a supplied frame instead of
     # grabbing the screen. The default (the live screen) is fine for looking at

@@ -10,10 +10,9 @@
     lintranslator reread                  re-read the box now (bind this to a hotkey)
     lintranslator status                  what the running GUI is doing
     lintranslator shortcut                how to bind a global Re-read hotkey
-    lintranslator convert                 build the int8 model (629 MB out, ~2.5 GB down)
     lintranslator remove                  what this app has downloaded, and how to free it
     lintranslator models                  list OpenRouter models for your key
-    lintranslator languages [filter]      list the language codes NLLB can translate
+    lintranslator languages [filter]      list the language codes this app can ask for
 """
 from __future__ import annotations
 
@@ -126,30 +125,7 @@ def cmd_check(args) -> int:
 
     backend = cfg.translate.backend
     print(f"translate backend: {backend}", end="")
-    if backend == "ct2":
-        from pathlib import Path
-
-        model_dir = Path(cfg.translate.ct2_model_dir)
-        size = (
-            sum(f.stat().st_size for f in model_dir.rglob("*") if f.is_file())
-            if model_dir.exists()
-            else 0
-        )
-        print(f" ({cfg.translate.source_lang}->{cfg.translate.target_lang})")
-        if size:
-            print(f"  model: {model_dir} ({size / 1e6:.0f} MB)")
-        else:
-            ok = False
-            print(f"  model: MISSING at {model_dir}")
-            print("  -> python -m lintranslator convert")
-        try:
-            import ctranslate2  # noqa: F401
-
-            print("  ctranslate2: installed")
-        except ImportError:
-            ok = False
-            print("  ctranslate2: MISSING -> uv pip install ctranslate2")
-    elif backend in ("openrouter", "openai", "chat"):
+    if backend in ("openrouter", "openai", "chat"):
         from .languages import language_name
         from .translate import resolve_api_key
 
@@ -230,22 +206,13 @@ def cmd_check(args) -> int:
                 print("           -> the key needs a Google Cloud project with billing enabled")
             else:
                 print("           get one at https://www.deepl.com/pro-api")
-    elif backend == "local":
-        print(f" ({cfg.translate.model}, {cfg.translate.source_lang}->{cfg.translate.target_lang})")
-        try:
-            import torch  # noqa: F401
-            import transformers  # noqa: F401
-
-            print("  torch/transformers: installed")
-        except ImportError:
-            ok = False
-            print("  torch/transformers: MISSING -> uv sync --extra local")
     else:
         print()
 
-    # The language pair decides what the model is asked for, and a code it does
-    # not know is not an error anywhere else: it becomes `<unk>` and the output
-    # is fluent nonsense. This is the only place that can say so before a run.
+    # The language pair decides what the model is asked for. A code outside the
+    # table is not an error anywhere else - it is handed to a backend as a name
+    # or an ISO code that means nothing, and what comes back is fluent nonsense
+    # in the wrong language. This is the only place that can say so before a run.
     print(f"languages        : {cfg.translate.source_lang} -> {cfg.translate.target_lang}")
     for role, code in (
         ("source", cfg.translate.source_lang),
@@ -254,7 +221,7 @@ def cmd_check(args) -> int:
         if code in CODES:
             continue
         ok = False
-        print(f"  {role}: {code!r} is not a FLORES-200 code, so NLLB scores it as <unk>")
+        print(f"  {role}: {code!r} is not one of the app's FLORES-200 codes")
         print("  -> run `python -m lintranslator languages` for the codes it does know")
     if backend == "deepl" and deepl_code(cfg.translate.target_lang) is None:
         ok = False
@@ -585,25 +552,13 @@ def cmd_models(args) -> int:
     return 0
 
 
-def cmd_convert(args) -> int:
-    from .convert import confirm_download, convert
-
-    out = args.out or paths.default_ct2_dir()
-    # What this fetches is measured in gigabytes, so it says so and asks first
-    # (and refuses without --yes when there is no terminal to ask).
-    if not confirm_download(args.model, out, args.quantization, args.yes):
-        return 1
-    convert(args.model, out, args.quantization, args.force)
-    return 0
-
-
 def cmd_remove(args) -> int:
     """Report what the app has on disk, or delete a named piece of it.
 
     With no target this changes nothing: it prints the paths, their sizes and
-    what each one costs to get back. That is the more useful half - the app
-    downloads 2.5 GB that nothing ever cleans up, and until now the only way to
-    find that out was to go looking in `~/.cache`.
+    what each one costs to get back. What is left is small - OCR language data and
+    the optional screen-text cache. A model the user runs is theirs to manage and
+    is not this command's to touch.
     """
     from . import cleanup
 
@@ -626,20 +581,8 @@ def cmd_remove(args) -> int:
                 print(f"            note: {target.note}")
         print("-" * 60)
         print(f"{'total':<11} {cleanup.format_size(total):>9}")
-        # The cache this app shares with everything else the user runs. Saying so
-        # is the difference between "remove freed 2.5 GB" and "remove deleted a
-        # directory full of my other models".
-        others = cleanup.others_in_hf_cache(next(t for t in found if t.name == "checkpoint"))
-        if others:
-            other_total = sum(size for _path, size in others)
-            print(
-                f"\n(not ours, not touched: {len(others)} other model(s) in "
-                f"{cleanup.hf_cache_root()} take {cleanup.format_size(other_total)})"
-            )
         print()
         print("nothing was removed. to free the space:")
-        print("  lintranslator remove checkpoint   # the 2.5 GB download, safe to drop")
-        print("  lintranslator remove model        # the converted weights (asks first)")
         print("  lintranslator remove tessdata     # language data, re-fetched on demand")
         if any(t.name == "cache" for t in found):
             print("  lintranslator remove cache        # the screen-text transcript")
@@ -656,8 +599,8 @@ def cmd_remove(args) -> int:
         return 0
 
     # Never delete outside the app's own directories: the config can point
-    # `ct2_model_dir` or `cache_path` at anything, and a path the user chose
-    # themselves is not this command's to remove.
+    # `cache_path` at anything, and a path the user chose themselves is not this
+    # command's to remove.
     for target in chosen:
         why = cleanup.refusal(target.path)
         if why:
@@ -665,7 +608,6 @@ def cmd_remove(args) -> int:
             return 1
 
     total = sum(t.size for t in chosen)
-    _warn_if_a_gui_is_running(chosen)
 
     if not args.yes:
         for target in chosen:
@@ -690,23 +632,6 @@ def cmd_remove(args) -> int:
     return 0
 
 
-def _warn_if_a_gui_is_running(chosen) -> None:
-    """Say so when a running GUI is about to lose the weights under it."""
-    if not any(t.name in ("model", "checkpoint") for t in chosen):
-        return
-    from .control import send
-
-    try:
-        send("status", timeout=1.0)
-    except Exception:  # noqa: BLE001 - no GUI is the normal case
-        return
-    print(
-        "note: a GUI is running. Deleting the weights does not disturb it, but "
-        "its next Start or re-read will fail until they are converted again.",
-        file=sys.stderr,
-    )
-
-
 def cmd_region(args) -> int:
     cfg = _load(args)
     path = cfg.save(args.config)
@@ -716,7 +641,7 @@ def cmd_region(args) -> int:
 
 
 def cmd_languages(args) -> int:
-    """List the codes NLLB can score, so `check` can point somewhere useful."""
+    """List the codes the app can ask for, so `check` can point somewhere useful."""
     from .languages import search, short_code, tesseract_lang
 
     matches = search(args.filter or "")
@@ -803,9 +728,9 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--fps", type=float, help="polls per second")
         sp.add_argument(
             "--backend",
-            help="ct2 | local | deepl | google | openrouter | openai | chat | none",
+            help="deepl | google | openrouter | openai | chat | none",
         )
-        sp.add_argument("--model", help="model name for the local backend")
+        sp.add_argument("--model", help="model id for the chat backends")
         sp.add_argument("--langs", help="tesseract languages, e.g. eng or eng+jpn")
         sp.add_argument("--psm", type=int, help="tesseract page segmentation mode")
         sp.add_argument("--source-lang", dest="source_lang", help="source language code")
@@ -910,15 +835,14 @@ def build_parser() -> argparse.ArgumentParser:
         "remove",
         help="show what has been downloaded, or delete part of it",
         description=(
-            "With no target: report the fp32 checkpoint, the converted weights, "
-            "the language data and the optional cache, with their sizes, and "
-            "change nothing. Naming a target deletes it."
+            "With no target: report the language data and the optional cache, "
+            "with their sizes, and change nothing. Naming a target deletes it."
         ),
     )
     sp.add_argument(
         "target",
         nargs="?",
-        choices=["checkpoint", "model", "tessdata", "cache", "all"],
+        choices=["tessdata", "cache", "all"],
         help="what to remove; omit it for a report",
     )
     sp.add_argument(
@@ -926,18 +850,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common(sp)
     sp.set_defaults(func=cmd_remove)
-
-    sp = sub.add_parser("convert", help="build the int8 CTranslate2 model")
-    sp.add_argument("--model", default="facebook/nllb-200-distilled-600M")
-    sp.add_argument("--out", default=None, help="output dir (default: data/ct2/...)")
-    sp.add_argument("--quantization", default="int8", choices=["int8", "int16", "float32"])
-    sp.add_argument("--force", action="store_true")
-    sp.add_argument(
-        "--yes",
-        action="store_true",
-        help="do not ask before downloading the checkpoint (needed without a terminal)",
-    )
-    sp.set_defaults(func=cmd_convert)
 
     sp = sub.add_parser("region", help="save a region into the config")
     sp.add_argument("--x", type=float, required=True)
@@ -949,7 +861,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser(
         "languages",
-        help="list the 202 language codes NLLB is trained on (for --source-lang)",
+        help="list the FLORES-200 codes this app can be asked for (for --source-lang)",
     )
     sp.add_argument("filter", nargs="?", help="only names or codes containing this")
     sp.set_defaults(func=cmd_languages)

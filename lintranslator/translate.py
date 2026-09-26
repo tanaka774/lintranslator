@@ -1,11 +1,9 @@
 """Translation backends behind one interface, plus caching.
 
-Local backend: NLLB-200-distilled-600M. Measured fluent for eng_Latn -> jpn_Jpan
-at 0.7-1.5 s/line on an 8-thread CPU (AMD Zen 5).
-
-Do NOT use Helsinki-NLP/opus-mt-en-jap for this pair: measured on this project's
-sample line it produced output unrelated to the input (a bracketed two-line
-English passage came back as "わたし が こう い う 理由 は ...").
+Every backend is out-of-process: a hosted API (DeepL, Google, OpenRouter, OpenAI)
+or any OpenAI-compatible endpoint the user runs themselves. That last one is how a
+local model is reached - this app ships no model of its own, loads no weights and
+downloads none. See "Local translation" in the README.
 """
 from __future__ import annotations
 
@@ -33,42 +31,6 @@ from .languages import (
     google_code,
     language_name,
 )
-
-# --------------------------------------------------------------------------- #
-# Text post-processing
-# --------------------------------------------------------------------------- #
-_CJK_RANGES = (
-    (0x3040, 0x30FF),  # hiragana + katakana
-    (0x3400, 0x4DBF),  # CJK ext A
-    (0x4E00, 0x9FFF),  # CJK unified
-    (0xF900, 0xFAFF),  # compatibility ideographs
-    (0xFF00, 0xFFEF),  # halfwidth/fullwidth forms
-    (0xAC00, 0xD7AF),  # hangul syllables
-    (0x3000, 0x303F),  # CJK punctuation
-)
-
-
-def is_cjk(ch: str) -> bool:
-    cp = ord(ch)
-    return any(lo <= cp <= hi for lo, hi in _CJK_RANGES)
-
-
-def normalize_cjk(text: str) -> str:
-    """Remove the spurious spaces NLLB inserts between CJK tokens.
-
-    NLLB emits `今日 の 要請 に関する` with token-level spaces, which is not how
-    Japanese is written. Spaces between two CJK characters are dropped; spaces
-    next to Latin text or digits are preserved.
-    """
-    out: list[str] = []
-    for i, ch in enumerate(text):
-        if ch == " ":
-            prev = out[-1] if out else ""
-            nxt = text[i + 1] if i + 1 < len(text) else ""
-            if prev and nxt and is_cjk(prev) and is_cjk(nxt):
-                continue
-        out.append(ch)
-    return re.sub(r"\s{2,}", " ", "".join(out)).strip()
 
 
 # --------------------------------------------------------------------------- #
@@ -175,247 +137,6 @@ class NullTranslator(Translator):
 
     def translate(self, text: str) -> str:
         return text
-
-
-# The NLLB backends always need a tokenizer repo id, even when the weights are a
-# local CTranslate2 conversion the tokenizer never sees.
-DEFAULT_NLLB_MODEL = "facebook/nllb-200-distilled-600M"
-
-
-def _nllb_model_name(value: str | None) -> str:
-    """Never hand HuggingFace an empty repo id.
-
-    `translate.model` is shared with the chat backends, where an empty value
-    legitimately means "use the provider's default". For the NLLB backends it
-    cannot mean that: the empty string reaches `from_pretrained` and comes back
-    as a `HFValidationError` about an invalid repo id, which says nothing about
-    where the empty value came from. A blank config value - which is what the
-    Settings dialog saves whenever the model field is left empty - means the
-    default model instead.
-    """
-    return (value or "").strip() or DEFAULT_NLLB_MODEL
-
-
-#: Filenames that mean the checkpoint itself is on disk. The repository this
-#: project defaults to changed its weights file from `model.safetensors` to
-#: `pytorch_model.bin` between revisions, so both are looked for.
-_WEIGHT_GLOBS = ("*.safetensors", "pytorch_model*.bin")
-
-
-def model_is_cached(model: str) -> bool:
-    """Whether the *weights* are already downloaded, not just the tokenizer.
-
-    `ct2` caches the tokenizer out of the same repository, so a cache directory
-    that exists is not evidence that the 2.5 GB is there. Only a weights file
-    counts, which is what makes this usable as a "would this download?" test.
-    """
-    # Imported here rather than at the top: `cleanup` imports this module.
-    from .cleanup import hf_repo_dir
-
-    repo = hf_repo_dir(model)
-    if not repo.is_dir():
-        return False
-    for pattern in _WEIGHT_GLOBS:
-        for path in repo.glob(f"snapshots/*/{pattern}"):
-            try:
-                if path.is_file() and path.stat().st_size > 0:
-                    return True
-            except OSError:  # a dangling symlink into blobs/
-                continue
-    return False
-
-
-class NllbTranslator(Translator):
-    """Local NLLB-200 translation via transformers (CPU or CUDA)."""
-
-    name = "local"
-
-    def __init__(
-        self,
-        model: str = DEFAULT_NLLB_MODEL,
-        source_lang: str = "eng_Latn",
-        target_lang: str = "jpn_Jpan",
-        device: str = "cpu",
-        threads: int = 8,
-        max_new_tokens: int = 192,
-        allow_download: bool = False,
-    ) -> None:
-        self.model_name = _nllb_model_name(model)
-        self.source_lang = source_lang
-        self.target_lang = target_lang
-        self.device = device
-        self.max_new_tokens = max_new_tokens
-        self.allow_download = allow_download
-        self._threads = threads
-        self._tokenizer = None
-        self._model = None
-        self._lock = threading.Lock()
-        self.load_seconds: float | None = None
-
-    def load(self) -> None:
-        """Load the model. Separate from __init__ so startup cost is explicit."""
-        if self._model is not None:
-            return
-        if not self.allow_download and not model_is_cached(self.model_name):
-            # transformers fetches this without a word, and it is not a small
-            # fetch. Nothing has happened yet, so the message can offer the ways
-            # forward rather than report a failure.
-            raise TranslatorError(
-                f"the `local` backend would download {self.model_name} first - "
-                "about 2.5 GB for the default model - and it is not in the "
-                "HuggingFace cache yet.\n"
-                "  Nothing was fetched. Either run `lintranslator convert`, which\n"
-                "  downloads the same checkpoint and writes the faster int8 "
-                "weights\n"
-                "  as well, or set translate.allow_model_download: true to let "
-                "this\n"
-                "  backend fetch it."
-            )
-        try:
-            import torch
-            from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-        except ImportError as exc:  # pragma: no cover
-            raise TranslatorError(
-                "the local backend needs torch + transformers:\n"
-                "  uv sync --extra local\n"
-                "or pick a cloud backend in the config."
-            ) from exc
-
-        if self._threads:
-            torch.set_num_threads(self._threads)
-        t0 = time.monotonic()
-        self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self._model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
-        self._model.eval()
-        if self.device and self.device != "cpu":
-            self._model = self._model.to(self.device)
-        self._forced_bos = self._tokenizer.convert_tokens_to_ids(self.target_lang)
-        self.load_seconds = time.monotonic() - t0
-
-    def translate(self, text: str) -> str:
-        import torch
-
-        self.load()
-        assert self._tokenizer is not None and self._model is not None
-        batch = self._tokenizer(
-            text, return_tensors="pt", truncation=True, max_length=512
-        )
-        if self.device and self.device != "cpu":
-            batch = {k: v.to(self.device) for k, v in batch.items()}
-        # The model is not thread-safe; keep generation serialised.
-        with self._lock, torch.inference_mode():
-            generated = self._model.generate(
-                **batch,
-                forced_bos_token_id=self._forced_bos,
-                max_new_tokens=self.max_new_tokens,
-                num_beams=1,  # greedy: ~3x faster than beam search, quality is close here
-            )
-        decoded = self._tokenizer.decode(generated[0], skip_special_tokens=True)
-        return normalize_cjk(decoded)
-
-
-class CTranslate2Translator(Translator):
-    """Local NLLB via CTranslate2, typically with int8 weights.
-
-    Compared with the transformers path this is the difference between holding a
-    2.5 GB fp32 checkpoint in memory and reading a 629 MB directory, and several
-    times the throughput on CPU. The
-    tokenizer still comes from the original HuggingFace repo; only the weights
-    are converted.
-    """
-
-    name = "ct2"
-
-    def __init__(
-        self,
-        model_dir: str | None = None,
-        tokenizer: str = DEFAULT_NLLB_MODEL,
-        source_lang: str = "eng_Latn",
-        target_lang: str = "jpn_Jpan",
-        threads: int = 8,
-        max_decoding_length: int = 256,
-        beam_size: int = 1,
-    ) -> None:
-        # Resolved against the XDG data dir rather than left relative: this used
-        # to default to "data/ct2/nllb-600m-int8", which silently meant "relative
-        # to whatever directory you happened to run from".
-        self.model_dir = str(model_dir) if model_dir else str(paths.default_ct2_dir())
-        self.tokenizer_name = _nllb_model_name(tokenizer)
-        self.source_lang = source_lang
-        self.target_lang = target_lang
-        self.max_decoding_length = max_decoding_length
-        self.beam_size = beam_size
-        self._threads = threads
-        self._tokenizer = None
-        self._translator = None
-        self._target_prefix: list[str] = []
-        self._lock = threading.Lock()
-        self.load_seconds: float | None = None
-
-    def load(self) -> None:
-        if self._translator is not None:
-            return
-        try:
-            import ctranslate2
-            from transformers import AutoTokenizer
-        except ImportError as exc:  # pragma: no cover
-            raise TranslatorError(
-                "the ct2 backend needs ctranslate2 and transformers:\n"
-                "  uv pip install ctranslate2"
-            ) from exc
-
-        model_path = Path(self.model_dir)
-        if not model_path.exists():
-            raise TranslatorError(
-                f"no converted model at {model_path}.\n"
-                "Convert one with:\n"
-                "  python -m lintranslator.convert --model facebook/nllb-200-distilled-600M "
-                f"--out {model_path}"
-            )
-
-        t0 = time.monotonic()
-        self._tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name)
-        self._translator = ctranslate2.Translator(
-            str(model_path),
-            device="cpu",
-            compute_type="auto",
-            intra_threads=self._threads,
-        )
-        # NLLB expects the target language token as a decoder prefix.
-        self._target_prefix = [self.target_lang]
-        self.load_seconds = time.monotonic() - t0
-
-    def translate(self, text: str) -> str:
-        self.load()
-        assert self._translator is not None and self._tokenizer is not None
-
-        # NLLB wants the source language token prepended to the source tokens.
-        self._tokenizer.src_lang = self.source_lang
-        source_tokens = self._tokenizer.convert_ids_to_tokens(
-            self._tokenizer.encode(text)
-        )
-        with self._lock:
-            results = self._translator.translate_batch(
-                [source_tokens],
-                target_prefix=[self._target_prefix],
-                max_decoding_length=self.max_decoding_length,
-                beam_size=self.beam_size,
-                replace_unknowns=True,
-            )
-        if not results:
-            return ""
-        tokens = list(results[0].hypotheses[0])
-        # Drop the language prefix the decoder was primed with.
-        if tokens and tokens[0] == self.target_lang:
-            tokens = tokens[1:]
-        decoded = self._tokenizer.decode(
-            self._tokenizer.convert_tokens_to_ids(tokens), skip_special_tokens=True
-        )
-        return normalize_cjk(decoded)
-
-    def close(self) -> None:
-        self._translator = None
-        self._tokenizer = None
 
 
 # --------------------------------------------------------------------------- #
@@ -964,35 +685,17 @@ def resolve_api_key(cfg, *env_names: str) -> str | None:
 def build_translator(cfg) -> Translator:
     """Instantiate a backend from a TranslateConfig.
 
-    Language codes are mapped per backend because NLLB wants FLORES-200 codes
-    while the HTTP APIs want ISO codes or plain language names. See
+    `translate.source_lang`/`target_lang` are FLORES-200 codes, the app's own
+    vocabulary; each backend is handed what it actually wants. DeepL and Google
+    take ISO codes, a chat model is told the plain language name. See
     `lintranslator.languages` for the table and for why a code is never guessed.
     """
     backend = (cfg.backend or "none").lower()
     if backend == "none":
         return NullTranslator()
 
-    if backend == "ct2":
-        return CTranslate2Translator(
-            model_dir=cfg.ct2_model_dir,
-            tokenizer=cfg.model,
-            source_lang=cfg.source_lang,
-            target_lang=cfg.target_lang,
-            threads=cfg.threads,
-            max_decoding_length=cfg.max_new_tokens,
-        )
-    if backend == "local":
-        return NllbTranslator(
-            model=cfg.model,
-            source_lang=cfg.source_lang,
-            target_lang=cfg.target_lang,
-            device=cfg.device,
-            threads=cfg.threads,
-            max_new_tokens=cfg.max_new_tokens,
-            allow_download=bool(getattr(cfg, "allow_model_download", False)),
-        )
     if backend == "deepl":
-        # DeepL cannot translate into most of what NLLB can. Saying so beats
+        # DeepL supports a fraction of the app's language table. Saying so beats
         # sending a code it will reject: the API answers a bad `target_lang`
         # with an HTTP 400 that names the parameter but not the setting that
         # produced it, and `code.split("_")[0]` - the old fallback - produced
@@ -1087,7 +790,7 @@ def build_translator(cfg) -> Translator:
 
     raise TranslatorError(
         f"unknown translation backend: {backend!r}\n"
-        "  choose from: ct2, local, deepl, google, openrouter, openai, chat, none"
+        "  choose from: deepl, google, openrouter, openai, chat, none"
     )
 
 
@@ -1116,11 +819,11 @@ def _deepl_summary() -> str:
 def _backend_languages(backend: Translator) -> tuple[str | None, str | None]:
     """The language pair a built backend is configured for.
 
-    The NLLB backends keep FLORES codes (`source_lang`); the HTTP ones keep
-    whatever their API wanted (`source`, which is "EN" for DeepL and "English"
-    for a chat model). Either form identifies the pair, which is all the cache
-    namespace needs - the cache is keyed on the source *text*, so "the same text
-    in, a different language out" is the distinction that matters.
+    Every backend keeps the pair in the form its API wanted (`source`, which is
+    "EN" for DeepL and "English" for a chat model). That identifies the pair,
+    which is all the cache namespace needs - the cache is keyed on the source
+    *text*, so "the same text in, a different language out" is the distinction
+    that matters.
     """
     source = getattr(backend, "source_lang", None) or getattr(backend, "source", None)
     target = getattr(backend, "target_lang", None) or getattr(backend, "target", None)
@@ -1154,10 +857,10 @@ class CachedTranslator:
     def cache_namespace(self) -> str:
         """Cache keys are scoped per backend, model **and language pair**.
 
-        Without the model, switching from the local model to a remote one serves
-        the previous backend's translation for any line already seen - which
-        looks exactly like the new model being no better, and makes comparing
-        backends impossible.
+        Without the model, switching from one local model to another on the same
+        endpoint serves the previous model's translation for any line already
+        seen - which looks exactly like the new model being no better, and makes
+        comparing backends impossible.
 
         Without the language pair, the same thing happens to the language
         setting: change the target from Japanese to Korean and every repeated

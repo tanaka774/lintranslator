@@ -4,7 +4,9 @@ Screen translator for linux.
 I run and test mainly on kde wayland but it should work mostly on other linux DE technically...
 
 ## How to use
-- First, set the way of translation. You can choose from some endpoints or llms. And pick languages of source and destination to translate.
+- First, set the way of translation. Nothing is selected by default: pick a
+  hosted endpoint (DeepL, Google, OpenRouter, OpenAI) or point the app at a local
+  model you serve yourself, and pick languages of source and destination.
 - Select the area you want to translate, where ocr runs.
 - Choose "Start" and it opens a panel which shows a translated result. 
 
@@ -53,8 +55,9 @@ Built and verified against on **KDE Plasma 6 / Wayland**, but
 nothing is game-specific: the region is a rectangle, and the OCR and translation
 layers are generic. Linux only - Wayland preferred, X11 works.
 
-Current state: **[0.1.0](CHANGELOG.md)**, Phase 3 complete (pipeline + GUI + int8
-backend + glossary).
+Current state: **[0.2.0](CHANGELOG.md)**, Phase 3 complete (pipeline + GUI +
+glossary). The app ships no translation model of its own - see
+[Local translation](#local-translation).
 
 ![The region picker: a selection box with drag handles sits over a two-line dialogue box, and the sidebar shows the OCR preview, the recognized text, and the translation controls](docs/picker.png)
 
@@ -116,22 +119,7 @@ a model id in the picker's **Settings**. It starts on **None**, which reads the
 region and translates nothing - the card names the backend so that reads as a
 choice rather than a failure. The only thing fetched along the way is the
 tesseract language data: 4.1 MB for `eng`, on first use, pinned and
-checksum-verified, no root needed. DeepL, Google, OpenRouter, OpenAI and any
-OpenAI-compatible endpoint load none of the local machinery.
-
-**Running the model on your own machine instead?** That is an opt-in, and it is
-where the downloads are:
-
-```bash
-uv pip install --python .venv/bin/python -e '.[ct2]'   # int8 NLLB, no torch
-.venv/bin/python -m lintranslator convert             # asks first; ~3 GB
-```
-
-`convert` prints what it will fetch and leaves on disk, and waits for a yes
-(`--yes` for scripts). `.[local]` is the older transformers route for models that
-cannot be converted, and it will not fetch weights behind your back either: it
-refuses until `translate.allow_model_download` is set. `.[x11]` adds keep-above
-support under XWayland, and `.[calibrate]` adds the region auto-detection helper.
+checksum-verified, no root needed.
 
 No `uv`? It only creates the venv and installs into it; `python3 -m venv
 --system-site-packages .venv` and `.venv/bin/pip install -e .` do the same. There
@@ -141,10 +129,65 @@ repository, which is what [the install notes](docs/install.md#install) suggest t
 anyone who would rather not keep a checkout around. Full detail on every download
 is in [what is downloaded, and when](docs/install.md#what-is-downloaded-and-when).
 
-Nothing deletes the 2.5 GB fp32 checkpoint after the conversion. `lintranslator
-remove` reports what is on disk and takes any of it back —
-[the install notes](docs/install.md#what-the-conversion-actually-costs) give the
-sizes and the reasoning.
+Two optional extras exist, and neither is about translation: `.[x11]` adds
+keep-above support under XWayland, and `.[calibrate]` adds the region
+auto-detection helper.
+
+## Local translation
+
+LinTranslator ships no model, bundles no model and converts nothing. Local
+translation means running a model yourself and pointing the `chat` backend at it;
+the app then talks to it over the OpenAI-compatible API that Ollama, llama.cpp's
+server and vLLM all speak. The model this project builds and measures against is
+[Hy-MT2-1.8B](https://huggingface.co/tencent/Hy-MT2-1.8B) - Apache-2.0, 33
+languages, translation-only, 1.13 GB at Q4_K_M.
+
+```bash
+# 1. the weights. 4 bits is the floor: below it the model starts repeating the
+#    request instead of translating, and it is not faster.
+curl -LO https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/main/Hy-MT2-1.8B-Q4_K_M.gguf
+
+# 2. the sampling values from the model card
+cat > Modelfile <<'EOF'
+FROM ./Hy-MT2-1.8B-Q4_K_M.gguf
+PARAMETER temperature 0.7
+PARAMETER top_p 0.6
+PARAMETER top_k 20
+PARAMETER repeat_penalty 1.05
+EOF
+
+# 3. register it. It is not in Ollama's library, so this is a create, not a pull.
+ollama create hy-mt2:1.8b -f Modelfile
+```
+
+Then in the picker's **Settings**:
+
+| field | value |
+|---|---|
+| Backend | `Custom · any OpenAI-compatible endpoint` |
+| Base URL | `http://localhost:11434/v1` |
+| Model id | `hy-mt2:1.8b` |
+| Prompt | see below |
+
+The model wants to be told what to do in words, so the prompt is the card's
+instruction, adapted to the system/user split this app sends:
+
+```
+You are a translation engine. Translate the user's text into {target}.
+Output only the translation - no notes, no explanations, no romanisation.
+```
+
+`{source}` and `{target}` are substituted with the language names from the
+language picker, so a prompt can name either or both (this one needs only the
+target). Anything that speaks the same protocol works the same way -
+llama.cpp's server on port 8080, vLLM, or a gateway on your LAN (set
+`translate.allow_insecure_http` for plain http off this machine).
+
+Two numbers, from another overlay project that measured the same model on game
+text rather than from this one: about **85 ms per line** on a desktop GPU
+(RTX 4070 Ti, all layers offloaded) and about **1 s per line** on CPU, with a
+1.13 GB download and ~1.8 GB of VRAM. The rest of the latency budget here is OCR,
+which is measured in `probe/RESULTS.md`.
 
 ## Compatibility
 
@@ -172,7 +215,9 @@ Wayland or X11 desktop with PyGObject.
   is untested, though `--langs eng+jpn` is wired up.
 - Only KDE Plasma 6 / Wayland has actually been run. X11, GNOME and other
   compositors are analysed, not exercised.
-- GPU inference is untested: the `ct2` backend runs on CPU threads here.
+- Throughput on a local model is your server's, not this app's: the panel waits
+  for one line at a time, and a model on CPU takes about a second per line. The
+  timeout for a loopback endpoint is 120 s by default for exactly that reason.
 - The PipeWire `ScreenCast` backend is implemented but not wired to the pipeline;
   the `portal-screenshot` path is the default and is fast enough at 2 fps.
 - The panel cannot position itself under the dialogue box on native Wayland, where
@@ -190,13 +235,12 @@ Wayland or X11 desktop with PyGObject.
 
 LinTranslator is MIT — see [LICENSE](LICENSE).
 
-The models are not all the same, and one of them matters:
+It ships no model and downloads none. Every backend talks to an endpoint, either
+a hosted one (DeepL, Google, OpenRouter, OpenAI) or one you run yourself, so
+there is no model licence attached to this project and nothing the app has to
+warn you about. The model the README suggests, `tencent/Hy-MT2-1.8B`, is
+Apache-2.0; whatever you serve instead is your choice, under its own terms.
 
-**The default local model, `facebook/nllb-200-distilled-600M`, is CC-BY-NC-4.0 —
-non-commercial use only.** Nothing is bundled or redistributed: `lintranslator
-convert` downloads the weights onto your machine, so the licence binds whoever
-runs the local backend rather than whoever distributes this source. For commercial
-use, pick a hosted backend (DeepL, Google, OpenRouter, OpenAI, or your own endpoint) or a
-permissive model such as `facebook/m2m100_418M` (MIT). [NOTICE](NOTICE) has the
-third-party terms in full, and
-[the install notes](docs/install.md#model-licences) explain the trade-offs.
+[NOTICE](NOTICE) lists what the app does fetch — tesseract language data
+(Apache-2.0) and the Python and GUI libraries it imports — and
+[the install notes](docs/install.md#model-licences) say the same in context.

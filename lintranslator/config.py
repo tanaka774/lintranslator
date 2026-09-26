@@ -74,36 +74,20 @@ class OcrConfig:
 
 @dataclass
 class TranslateConfig:
-    # Nothing, by default: every other backend either spends gigabytes before it
-    # can say a word (ct2, local) or sends the text read off the screen to somebody
-    # (deepl, openrouter, openai, chat), and a first run should do neither
-    # unasked. It used to be OpenRouter, chosen because the local backends could
-    # not translate until 2.5 GB had been downloaded - but "needs a key and a model
-    # id before it works" is its own kind of broken first run, and picking a
-    # provider on the user's behalf is the part that cannot be undone afterwards.
-    # `none` still reads the screen and shows the OCR text, so the app is visibly
-    # alive while the backend is chosen in Settings - see `allow_model_download`
-    # below for the local ones.
-    backend: str = "none"  # "ct2" | "local" | "deepl" | "openrouter" | "openai" | "chat" | "none"
-    # Where the int8-converted CTranslate2 model lives (ct2 backend). The user
-    # data dir, unless an older install left the weights in the source tree.
-    ct2_model_dir: str = field(default_factory=lambda: str(paths.default_ct2_dir()))
+    # Nothing, by default. Every remaining backend either sends the text read off
+    # the screen to somebody (deepl, google, openrouter, openai) or needs a server
+    # the user runs themselves (chat), and a first run should do neither unasked.
+    # "Needs a key and a model id before it works" is its own kind of broken first
+    # run, and picking a provider on the user's behalf is the part that cannot be
+    # undone afterwards. `none` still reads the screen and shows the OCR text, so
+    # the app is visibly alive while the backend is chosen in Settings.
+    backend: str = "none"  # "deepl" | "google" | "openrouter" | "openai" | "chat" | "none"
     source_lang: str = "eng_Latn"
     target_lang: str = "jpn_Jpan"
-    # Empty means "whatever this backend defaults to": the NLLB repo for `ct2`
-    # and `local` (see their constructors), and for the hosted chat backends the
-    # model you chose in Settings. Their ids change too often for a baked-in
-    # default to stay right, so there deliberately is not one.
+    # The chat family's model id (an Ollama tag, a llama.cpp/vLLM name, or a
+    # provider's own id). Their ids change too often for a baked-in default to
+    # stay right, so there deliberately is not one. Unused by deepl and google.
     model: str = ""
-    device: str = "cpu"
-    threads: int = 8
-    max_new_tokens: int = 192
-    # `local` hands the model id to transformers, which downloads it without
-    # asking: 2.46 GB for the model this project uses, into the shared HuggingFace
-    # cache. Off by default, so that is a decision rather than a surprise.
-    # `lintranslator convert` does not need it - it says what it will fetch and
-    # asks first, and leaves the faster int8 weights behind as well.
-    allow_model_download: bool = False
     # Term overrides. Accepts {"Term": "訳"} (applied to the output) or
     # {"pre": {...}, "post": {...}} for explicit control.
     glossary: dict = field(default_factory=dict)
@@ -316,6 +300,9 @@ class Config:
         if path is None and p.exists():
             if paths.tighten(p):
                 cfg.warnings.append(f"config permissions tightened to 0600 ({p})")
+        # The backend migration runs first: the key migration below reads
+        # `translate.backend` when a legacy key names no issuer of its own.
+        _migrate_removed_backends(cfg)
         # Not a warning: the old value keeps working, it just belongs to one
         # backend now instead of to all of them.
         _migrate_api_keys(cfg)
@@ -411,6 +398,33 @@ def _migrate_api_keys(cfg: "Config") -> None:
     keys.setdefault(owner, legacy)
     translate.api_keys = keys
     translate.api_key = None
+
+
+#: Values `translate.backend` may still hold from an older config, and that this
+#: version has no implementation for. Neither has an equivalent here, so both
+#: migrate to `none` rather than to another backend.
+_REMOVED_BACKENDS = ("ct2", "local")
+
+
+def _migrate_removed_backends(cfg: "Config") -> None:
+    """Move a config off a backend this version has no implementation for.
+
+    `translate.backend` is never validated against a list - an unknown value
+    loads fine and only fails later, in `build_translator` - so this keeps the app
+    running and puts the reason where the user will see it. `none` keeps it
+    visible too: the region is still read and the OCR text still shown.
+    """
+    translate = cfg.translate
+    removed = (translate.backend or "").strip()
+    if removed.lower() not in _REMOVED_BACKENDS:
+        return
+    translate.backend = "none"
+    cfg.warnings.append(
+        f"translate.backend {removed!r} is not a backend this version has, so it "
+        "is now 'none'. For local translation, serve a model such as "
+        "Hy-MT2-1.8B with Ollama or llama.cpp and use the 'chat' backend - see "
+        "the README"
+    )
 
 
 def _unknown_keys(raw: dict[str, Any], cls: type = Config) -> set[str]:

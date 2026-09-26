@@ -1,10 +1,13 @@
-"""Live end-to-end validation: real portal capture + tesseract + ct2 NLLB.
+"""Live end-to-end validation: real portal capture + tesseract + the backend.
 
 Run:  .venv/bin/python probe/live_validate.py [seconds]
 
 Prints every translation the pipeline emits, flags duplicate emissions, and
 reports the OCR edit-distance jitter seen between consecutive reads on the live
 screen (the quantity the settle/dedupe rules have to tolerate).
+
+The backend is whatever the config says, and it is printed before the run, so a
+validation run is never a surprise spend against an API.
 """
 import sys
 import time
@@ -22,12 +25,14 @@ from lintranslator.pipeline import Pipeline
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 75.0
 
 cfg = Config.load()
-# Force the local model by default: the configured backend may be a remote API,
-# and a validation run should not spend credits or depend on the network.
-if "--here" not in sys.argv:
-    cfg.translate.backend = "ct2"
+print(
+    f"backend: {cfg.translate.backend}"
+    f" ({cfg.translate.model or 'no model id'})"
+    f" {cfg.translate.source_lang} -> {cfg.translate.target_lang}",
+    flush=True,
+)
 p = Pipeline(cfg)
-print("warming up (portal + tesseract + ct2 NLLB)...", flush=True)
+print("warming up (portal + tesseract + the configured backend)...", flush=True)
 t_warm = time.monotonic()
 p.warmup()
 print(f"warm in {time.monotonic() - t_warm:.1f}s", flush=True)
@@ -55,7 +60,10 @@ while time.monotonic() - t0 < SECONDS:
     p.step()
     time.sleep(p.sleep_time())
 
-print(f"\n=== {SECONDS:.0f}s live run: real portal capture + tesseract + ct2 NLLB ===")
+print(
+    f"\n=== {SECONDS:.0f}s live run: real portal capture + tesseract + "
+    f"{cfg.translate.backend} ==="
+)
 print(
     f"polls={p.stats.polls} changed={p.stats.changed} ocr={p.stats.ocr_runs} "
     f"refreshed={p.stats.refreshed_reads} throttled={p.stats.throttled} "

@@ -1,18 +1,20 @@
 """Regenerate `lintranslator/languages.py` from primary sources.
 
 The language table is data, not logic, and getting one code wrong is invisible:
-an unknown FLORES code reaches NLLB as `<unk>` and the model returns garbage with
-no error at all. So the table is built from sources that can be checked rather
-than typed by hand:
+no backend rejects a language it does not know, it just answers in the wrong one.
+So the columns are built from sources that can be checked rather than typed by
+hand:
 
-  * the FLORES-200 code list, from the NLLB language list (name -> code)
-  * the authoritative set of codes NLLB accepts, read out of the real tokenizer
-    vocabulary - exactly 202 entries, and the generator fails loudly on any
-    disagreement with the published list
+  * the FLORES-200 code list, from the published NLLB language list (name -> code)
   * ISO 639-1 codes, from the system iso-codes data (`alpha_3` -> `alpha_2`)
   * DeepL's documented language set
   * tesseract's `tessdata_fast` file list, so an OCR suggestion can never name a
     file that does not exist
+
+Membership is *frozen* - see `frozen_codes()`. The table is this app's own
+vocabulary rather than any one model's: a model a user serves may know 33
+languages or 200, so this script refreshes the per-backend columns and the
+display names, and only *warns* when a source disagrees about which codes exist.
 
 Run it when a source changes, then read the diff:
 
@@ -41,13 +43,12 @@ FLORES_LIST_URL = (
 )
 TESSDATA_API = "https://api.github.com/repos/tesseract-ocr/tessdata_fast/contents/"
 ISO_CODES_639_3 = Path("/usr/share/iso-codes/json/iso_639-3.json")
-NLLB_MODEL = "facebook/nllb-200-distilled-600M"
 
-# Names the published list cannot supply. It disagrees with the tokenizer in both
-# directions - it carries three codes NLLB cannot score (`arb_Latn`, `min_Arab`,
-# `sat_Olck`) and omits two it can (`sat_Beng`, `zul_Latn`, the last only because
-# of a quoting bug in that file). Membership comes from the tokenizer, which is
-# the thing that actually decides whether a code means a language or `<unk>`;
+# Names the published list cannot supply. It disagrees with the frozen membership
+# in both directions - it carries three codes that are not in the table
+# (`arb_Latn`, `min_Arab`, `sat_Olck`) and omits two that are (`sat_Beng`,
+# `zul_Latn`, the last only because of a quoting bug in that file). Membership is
+# frozen, so a disagreement is a warning to read rather than a change to apply;
 # only the display name comes from the list.
 EXTRA_NAMES = {
     "sat_Beng": "Santali (Bengali script)",
@@ -72,7 +73,7 @@ DEEPL_LANGUAGES = {
 # is a deliberate decision; anything not listed is looked up directly.
 ISO_ALIASES = {
     "arb": "ara",   # Modern Standard Arabic -> Arabic
-    # The Arabic varieties NLLB can score. None has an ISO 639-1 code of its
+    # The Arabic varieties in the table. None has an ISO 639-1 code of its
     # own, and no API offers "Egyptian Arabic" as a target, so the choice is the
     # macrolanguage or a code the API rejects outright.
     "acm": "ara", "acq": "ara", "aeb": "ara", "ajp": "ara", "apc": "ara",
@@ -160,25 +161,17 @@ def flores_names() -> dict[str, str]:
     return rows
 
 
-def nllb_codes() -> set[str] | None:
-    """The codes the real tokenizer accepts, or None when it cannot be loaded.
+def frozen_codes() -> set[str]:
+    """The membership the table already has.
 
-    This is the check that matters: the tokenizer vocabulary is what NLLB scores
-    against, so `languages.py` must not contain a code it does not have, nor miss
-    one it does.
+    The table is this app's own vocabulary, not a model's, so the set is taken
+    from the table itself - the thing this script edits - rather than derived from
+    anything that can change underneath it. A disagreement with a published list
+    is then a warning to read rather than an edit to apply.
     """
-    try:
-        import os
+    from lintranslator.languages import CODES
 
-        os.environ.setdefault("HF_HOME", str(APP_DIR / ".hf"))
-        from transformers import AutoTokenizer
-
-        tokenizer = AutoTokenizer.from_pretrained(NLLB_MODEL)
-    except Exception as exc:  # noqa: BLE001
-        print(f"  ! tokenizer unavailable ({type(exc).__name__}), skipping check")
-        return None
-    pattern = re.compile(r"^[a-z]{2,3}_[A-Z][a-z]{3}$")
-    return {token for token in tokenizer.get_vocab() if pattern.match(token)}
+    return set(CODES)
 
 
 def iso_639_1() -> dict[str, str]:
@@ -215,17 +208,13 @@ def script_of(code: str) -> str:
 def build_rows() -> tuple[dict[str, tuple], list[str]]:
     warnings: list[str] = []
     names = flores_names()
-    codes = nllb_codes()
-    if codes is not None:
-        missing = codes - set(names)
-        extra = set(names) - codes
-        if missing:
-            warnings.append(f"published list lacks {sorted(missing)} - add a name")
-        if extra:
-            warnings.append(f"tokenizer lacks {sorted(extra)} - dropping them")
-        have = codes
-    else:
-        have = set(names)
+    have = frozen_codes()
+    missing = have - set(names)
+    extra = set(names) - have
+    if missing:
+        warnings.append(f"published list lacks {sorted(missing)} - add a name")
+    if extra:
+        warnings.append(f"table does not carry {sorted(extra)} - not adding them")
 
     iso = iso_639_1()
     tess = tessdata_languages()
@@ -249,18 +238,17 @@ def build_rows() -> tuple[dict[str, tuple], list[str]]:
 HEADER = '''"""The language table: what each backend is told, from one FLORES-200 code.
 
 `translate.source_lang` and `translate.target_lang` are FLORES-200 codes
-(`eng_Latn`, `jpn_Jpan`) because NLLB needs exactly those: the code is prepended
-to the source tokens and used as the decoder prefix, and anything else is scored
-as a language the model was never trained on. Every other backend wants something
-different from the same language - a chat model wants the name "Japanese" in the
-prompt, DeepL wants `JA`, Google wants `ja`, and tesseract needs `jpn.traineddata`
-to read it in the first place - so this module is the single place those
-translations live.
+(`eng_Latn`, `jpn_Jpan`) - this app's own vocabulary, because the codes are
+unambiguous in a way language names are not. Each backend is handed what it
+actually wants from the same language: a chat model gets the name "Japanese" in
+the prompt, DeepL gets `JA`, Google gets `ja`, and tesseract needs
+`jpn.traineddata` to read it in the first place. This module is the single place
+those translations live.
 
-Getting one of them wrong is invisible: NLLB maps an unknown code to `<unk>` and
-returns plausible-looking garbage with no error, and a chat prompt that says
-"translate into jpn_Jpan" is merely ignored. That is why the Settings dialog
-offers these codes from a list rather than as free text.
+Getting one of them wrong is invisible: a chat prompt that says "translate into
+jpn_Jpan" is merely ignored, and a code no backend recognises produces fluent
+output in the wrong language rather than an error. That is why the Settings
+dialog offers these codes from a list rather than as free text.
 
 Generated by `probe/gen_languages.py` - see that file for the sources. Do not
 hand-edit the table; regenerate it and read the diff.
@@ -268,11 +256,6 @@ hand-edit the table; regenerate it and read the diff.
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-# FLORES script subtag -> the script is written without spaces between words, so
-# token-level spacing in the output has to be normalised (see
-# `translate.normalize_cjk`). `Hant`/`Hans` are the two Chinese scripts.
-CJK_SCRIPTS = frozenset({"Jpan", "Hang", "Hans", "Hant"})
 
 # Pinned to the top of the picker: the pairs this app was built and measured
 # against, so the common case is one click rather than a search.
@@ -315,15 +298,6 @@ class Language:
     tesseract: str | None = None
 
     @property
-    def script(self) -> str:
-        """The FLORES script subtag, e.g. "Jpan"."""
-        return self.code.split("_", 1)[1]
-
-    @property
-    def cjk(self) -> bool:
-        return self.script in CJK_SCRIPTS
-
-    @property
     def short(self) -> str:
         """The bare language part, e.g. "jpn" - for tight labels."""
         return self.code.split("_", 1)[0]
@@ -344,7 +318,7 @@ LANGUAGES: dict[str, Language] = {
     code: Language(code, *row) for code, row in _ROWS.items()
 }
 
-# Every code NLLB accepts, as a set: the picker's vocabulary and the thing a
+# Every code in the table, as a set: the picker's vocabulary and the thing a
 # config value is validated against.
 CODES: frozenset[str] = frozenset(LANGUAGES)
 
@@ -398,17 +372,6 @@ def iso_code(code: str) -> str | None:
     return language.iso if language is not None else None
 
 
-def google_code(code: str) -> str:
-    """What to send Google, which wants ISO 639-1.
-
-    Falls back to the bare language part rather than to nothing: the endpoint is
-    unofficial and lenient enough to accept plenty of ISO 639-2/3 codes, and a
-    request for `arz` that fails loudly beats a request with an empty language
-    parameter that silently translates from anything.
-    """
-    return iso_code(code) or (code or "").split("_")[0]
-
-
 def short_code(code: str) -> str:
     """The bare language part, for a label: "eng_Latn" -> "eng".
 
@@ -425,6 +388,26 @@ def deepl_code(code: str) -> str | None:
     return language.deepl if language is not None else None
 
 
+# Google takes ISO 639-1 as well, but it tells the two Chinese scripts apart and
+# this table does not: `zho_Hans` and `zho_Hant` both carry "zh", so a Traditional
+# target sent as "zh" comes back Simplified with nothing on the card to show it.
+# Google accepts zh-TW as a source too, so the one table covers both sides.
+GOOGLE_CODES = {"zho_Hant": "zh-TW"}
+
+
+def google_code(code: str) -> str | None:
+    """Google's code for a language, or None where Google cannot do it.
+
+    153 of the 202 have an ISO 639-1 code, which is what the Basic v2 endpoint
+    takes; the rest have none and cannot be asked for at all. None is a real
+    answer - `build_translator` turns it into a sentence naming the setting,
+    where sending a guess would come back as an HTTP 400 naming the parameter.
+    """
+    if code in GOOGLE_CODES:
+        return GOOGLE_CODES[code]
+    return iso_code(code)
+
+
 def tesseract_lang(code: str) -> str | None:
     """The tessdata file stem to read this language with, or None.
 
@@ -434,12 +417,6 @@ def tesseract_lang(code: str) -> str | None:
     """
     language = get(code)
     return language.tesseract if language is not None else None
-
-
-def is_cjk(code: str) -> bool:
-    """Whether the language is written without spaces between words."""
-    language = get(code)
-    return bool(language and language.cjk)
 
 
 def ordered() -> list[Language]:

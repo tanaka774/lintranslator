@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw
 from lintranslator.config import Config
 from lintranslator.ocr import OcrLine, OcrResult, strip_trailing_cursor
 from lintranslator.pipeline import Pipeline
-from lintranslator.translate import NullTranslator, NllbTranslator
+from lintranslator.translate import NullTranslator
 
 
 class StubOcr:

@@ -109,10 +109,6 @@ def test_the_socket_fallback_lives_with_the_rest_of_the_state(monkeypatch, tmp_p
     assert resolved[-1] == paths.CACHE_DIR / "lintranslator.sock"
 
 
-def test_the_weights_live_under_the_data_dir():
-    assert paths.default_ct2_dir() == paths.DATA_DIR / paths.CT2_DIR_NAME
-
-
 def test_the_home_variable_moves_every_directory_at_once(monkeypatch, tmp_path):
     """`LINTRANSLATOR_HOME` is the portable-install switch."""
     monkeypatch.setenv("LINTRANSLATOR_HOME", str(tmp_path / "portable"))

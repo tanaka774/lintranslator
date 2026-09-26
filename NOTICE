@@ -1,33 +1,17 @@
-LinTranslator — third-party notices and model licences
-===============================================
+LinTranslator — third-party notices
+===================================
 
 LinTranslator itself is MIT licensed (see LICENSE). This file covers everything
-it uses, downloads or is built around, whose terms are not all the same.
+it uses or downloads, whose terms are not all the same.
 
-The short version, because it is the one that can bite a user:
-
-  The default local translation model, facebook/nllb-200-distilled-600M, is
-  licensed CC-BY-NC-4.0 — NON-COMMERCIAL USE ONLY.
-
-  LinTranslator does not bundle or redistribute those weights. `lintranslator convert`
-  downloads them from HuggingFace onto the user's own machine, and the local
-  backends load them from there. So the licence binds whoever runs the local
-  backend, not whoever distributes LinTranslator's source.
-
-  It does bind a distributor who ships pre-converted weights, and it binds
-  anyone using the local backend for paid or commercial work.
+The short version: there is no model licence here to read, because the app ships
+no model. Every translation backend talks to an endpoint — a hosted API, or a
+model server the user runs themselves — and a model you run is your choice under
+its own terms. Nothing LinTranslator downloads for itself is non-commercial.
 
 
 Downloaded at runtime
 ---------------------
-
-facebook/nllb-200-distilled-600M  (and any other NLLB checkpoint)
-    Licence: CC-BY-NC-4.0
-    https://huggingface.co/facebook/nllb-200-distilled-600M
-    Used by the `ct2` (default) and `local` backends. Non-commercial only.
-    This includes derived artefacts: the int8 directory `lintranslator convert`
-    produces is a derivative of the weights and carries the same terms, so
-    publishing converted weights is redistributing an NC-licensed model.
 
 tessdata_fast language data (eng, jpn, kor, chi_sim, chi_tra, rus, deu, fra,
 spa, por, ita, pol, tur, vie, tha, ara)
@@ -37,34 +21,8 @@ spa, por, ita, pol, tur, vie, tha, ara)
     87416418657359cb625c412a48b6e1d6d41c29bd and verified against a SHA-256
     before it is installed. See lintranslator/ocr.py:TESSDATA_SHA256.
 
-Anything else the user points `ct2_model_dir` / `translate.model` at is the
-user's own choice, under that model's own licence.
-
-
-Permissive alternatives to NLLB
--------------------------------
-
-These are permissively licensed, and both are a config change rather than a
-code change — the `local` backend loads any HuggingFace seq2seq model and
-`ct2` loads any converted one:
-
-  facebook/m2m100_418M              MIT
-  Helsinki-NLP/opus-mt-en-jap       Apache-2.0
-
-Two caveats, both real:
-
-  * A different model family expects its own language codes. LinTranslator's language
-    picker offers FLORES-200 codes (`eng_Latn`, `jpn_Jpan`) because that is what
-    NLLB was trained on; m2m100 wants `en` / `ja`. Until the language table
-    carries per-model codes, swapping the model means also handling that.
-  * Quality is not equal. This project measured `opus-mt-en-jap` producing
-    output unrelated to its input on its own reference line (see
-    `docs/design.md`, "NLLB, never opus-mt-en-jap"), and NLLB-600M was chosen
-    over it on measured quality.
-
-For commercial use without any of this, use a hosted backend (OpenRouter,
-OpenAI, DeepL, or your own OpenAI-compatible endpoint): then no local model is
-involved and the provider's own terms apply.
+Nothing else. A translation model is downloaded by the user, for the user's own
+server, and is not fetched, converted, bundled or redistributed by this app.
 
 
 Python dependencies (installed from PyPI, not vendored)
@@ -73,12 +31,6 @@ Python dependencies (installed from PyPI, not vendored)
 pillow          MIT-CMU
 jeepney         MIT
 pytesseract     Apache-2.0
-ctranslate2     MIT              (extra: ct2)
-transformers    Apache-2.0       (extras: ct2, local)
-sentencepiece   Apache-2.0       (extras: ct2, local)
-torch           BSD-3-Clause     (extra: local)
-sacremoses      MIT              (extra: local - transformers pulls it in for the
-                                 Marian tokenizer, which opus-mt models use)
 numpy           BSD-3-Clause     (extras: calibrate, test)
 python-xlib     LGPL-2.1-or-later (extra: x11)
 

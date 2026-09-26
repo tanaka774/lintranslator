@@ -4,9 +4,10 @@
 # left two gaps that only show up after publishing:
 #
 #   * `tests/conftest.py` was missing, so `pytest` on an unpacked sdist ran
-#     against the developer's real `~/.config/lintranslator` and real HuggingFace
-#     cache - 18 failures, and a `remove all` test that can delete the model the
-#     machine actually uses. The fixture's own docstring says as much.
+#     against the developer's real `~/.config/lintranslator` and real data
+#     directory - 18 failures, and a `remove all` test that could delete files
+#     from the machine actually running it. The fixture's own docstring says as
+#     much.
 #   * the `.desktop` entry and its launcher were missing entirely, which is what
 #     the global hotkey depends on.
 include LICENSE

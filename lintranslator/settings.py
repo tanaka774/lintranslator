@@ -8,20 +8,17 @@ and line budgets - stays, because nothing else sets those.
 
 The language pair is here rather than in `config.json` only because the codes are
 not interchangeable strings: each backend is given a different form of the same
-language, and a code NLLB does not know is scored as `<unk>` instead of raising.
-So it is a picker over the 202 codes the model was trained on, with the backend's
-own form of the pair spelled out underneath it.
+language, and a code outside the table is silently meaningless to all of them. So
+it is a picker over the 202 codes, with the backend's own form of the pair spelled
+out underneath it.
 """
 from __future__ import annotations
-
-from pathlib import Path
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
-from . import paths  # noqa: E402
 from .config import Config  # noqa: E402
 from .geometry import DEFAULT_PROMPT, PROMPT_PRESETS  # noqa: E402
 from .languages import (  # noqa: E402
@@ -46,18 +43,11 @@ from .ocr_languages import (  # noqa: E402
     ordered as ocr_models_ordered,
     search as ocr_models_search,
 )
-from .translate import DEFAULT_NLLB_MODEL  # noqa: E402
-
-# Where the converted weights are expected: the user data dir, or an
-# older in-tree install that has not been moved yet (lintranslator.paths).
-DEFAULT_CT2_DIR = str(paths.default_ct2_dir())
 
 BACKENDS = [
     # First because it is the default in a fresh config: a list whose first entry
     # is not the default reads as a default that does not match what is selected.
     ("none", "None (read only, no translation)"),
-    ("ct2", "Local · int8 CTranslate2 (fast, offline)"),
-    ("local", "Local · transformers (slow, offline)"),
     ("openrouter", "OpenRouter (many models, needs key)"),
     ("openai", "OpenAI (needs key)"),
     ("deepl", "DeepL (needs key)"),
@@ -67,35 +57,29 @@ BACKENDS = [
 
 # Which backends actually read `translate.model`, and what the field means for
 # them. This is the whole reason the Model row cannot be one fixed widget: for
-# ct2/local it is a HuggingFace repo, for the chat backends it is an id like
-# "tencent/hy-mt2-1.8b", and for deepl/none it is unused entirely.
+# the chat backends it is an id like "hy-mt2:1.8b" - the local model this project
+# documents, served by Ollama or llama.cpp - and for deepl/none it is unused
+# entirely.
 MODEL_LABELS = {
-    "ct2": "HF tokenizer",
-    "local": "HF model",
     "openrouter": "Model id",
     "openai": "Model id",
     "chat": "Model id",
 }
 MODEL_PLACEHOLDERS = {
-    # ct2/local: an empty field means the default repo, and on a config whose
-    # backend is a chat one the field opens empty - so this one is the only
-    # place the default is named. The chat backends get an example because the
-    # format is theirs to choose; openrouter gets nothing, because "pick a model
-    # below" described the two buttons that sit beside the field.
-    "ct2": f"{DEFAULT_NLLB_MODEL} (default)",
-    "local": f"{DEFAULT_NLLB_MODEL} (default)",
+    # openrouter gets nothing, because "pick a model below" described the two
+    # buttons that sit beside the field. The others get an example: the format
+    # is the server's to choose.
     "openai": "e.g. gpt-4o-mini",
-    "chat": "e.g. llama3.1:8b",
+    "chat": "e.g. hy-mt2:1.8b",
 }
 MODEL_TOOLTIPS = {
-    "ct2": (
-        "The HF repo the tokenizer is read from. The weights come from the "
-        "converted int8 directory, not from here."
-    ),
-    "local": "The HuggingFace repo to load with transformers.",
     "openrouter": "Any id from openrouter.ai/models. Use the list button to search.",
     "openai": "Any OpenAI model id.",
-    "chat": "Whatever your server calls the model, e.g. llama3.1:8b for Ollama.",
+    "chat": (
+        "Whatever your server calls the model. For local translation, serve "
+        "Hy-MT2-1.8B (Apache-2.0) with Ollama or llama.cpp and put its tag here "
+        "- see the README."
+    ),
 }
 MODEL_LINKS = {
     "openrouter": ("https://openrouter.ai/models", "Browse all models"),
@@ -112,9 +96,8 @@ BASE_URL_PLACEHOLDERS = {
 
 # Which backends read `translate.prompt`. The Model and Base URL rows already
 # hide themselves for the backends that ignore them; the prompt did not, so the
-# dialog used to sell it as "the biggest quality lever" over a field the default
-# backend (ct2) never reads - NLLB is given a language code, not an instruction,
-# and DeepL has no prompt parameter at all.
+# dialog used to sell it as "the biggest quality lever" over a field that DeepL
+# never reads - it has no prompt parameter at all.
 BACKENDS_WITH_PROMPT = ("openrouter", "openai", "chat")
 
 # Which backends read `translate.timeout`, and `translate.reasoning_effort`. Both
@@ -365,10 +348,9 @@ class LanguagePicker(Gtk.MenuButton):
 
     Same shape as `ModelPicker` because it has the same problem: 202 entries is
     past what a `Gtk.DropDown` can show usefully. The difference is that free
-    text is not offered at all here. NLLB scores an unknown code as `<unk>` and
-    returns plausible-looking garbage with no error, and a chat prompt that says
-    "translate into jpn_Jpan" is simply ignored, so the picker offers exactly
-    the codes the model has.
+    text is not offered at all here. A code outside the table is meaningless to
+    every backend - a chat prompt that says "translate into jpn_Jpan" is simply
+    ignored - so the picker offers exactly the codes the app knows.
 
     A code that is already in the config but is *not* one of them is still shown
     on the button. Opening the settings window must never edit the config by
@@ -862,7 +844,7 @@ class SettingsDialog(Gtk.Window):
         self.config = config
         self.on_apply = on_apply
         # Per-backend memory for the shared Model field, so switching backend
-        # does not drag one backend's value (an NLLB repo, say) into another's.
+        # does not drag one backend's value (an Ollama tag, say) into another's.
         self._model_memory: dict[str, str] = {}
         # Same, for the API key field: a key typed here belongs to the backend it
         # was typed for, and switching away must not carry it to the next one.
@@ -1003,11 +985,11 @@ class SettingsDialog(Gtk.Window):
         self.backend_dd.connect("notify::selected", lambda *_: self._on_backend_changed())
         grid.attach(self.backend_dd, 1, 0, 1, 1)
 
-        # The language pair. One setting for every backend: NLLB is given the
-        # FLORES-200 code verbatim, a chat model is told the name in the prompt,
-        # DeepL and Google get an ISO code - all derived in `lintranslator.languages`.
+        # The language pair. One setting for every backend: a chat model is told
+        # the name in the prompt, DeepL and Google get an ISO code, tesseract
+        # needs a traineddata stem - all derived in `lintranslator.languages`.
         # It is a picker and not an entry because a typo here is invisible:
-        # NLLB scores an unknown code as <unk> and returns fluent nonsense.
+        # no backend can say which language an unknown code meant.
         grid.attach(Gtk.Label(label="From", xalign=0), 0, 1, 1, 1)
         self.source_picker = LanguagePicker(self._on_language_picked, "source language")
         self.source_picker.set_code(self.config.translate.source_lang)
@@ -1099,22 +1081,6 @@ class SettingsDialog(Gtk.Window):
         self.fetch_btn.connect("clicked", self._on_fetch_models)
         self.model_row.append(self.fetch_btn)
         grid.attach(self.model_row, 1, 4, 1, 1)
-
-        # Only ct2 has a second, separate location (the converted weights).
-        self.ct2_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.ct2_entry = Gtk.Entry()
-        self.ct2_entry.set_text(self.config.translate.ct2_model_dir or DEFAULT_CT2_DIR)
-        self.ct2_entry.set_hexpand(True)
-        self.ct2_entry.set_placeholder_text(DEFAULT_CT2_DIR)
-        self.ct2_entry.set_tooltip_text(
-            "Directory holding the CTranslate2 int8 weights. Build it with:\n"
-            f"  python -m lintranslator.convert --model {DEFAULT_NLLB_MODEL} "
-            f"--out {DEFAULT_CT2_DIR}"
-        )
-        self.ct2_row.append(self.ct2_entry)
-        self.ct2_label = Gtk.Label(label="Weights dir", xalign=0)
-        grid.attach(self.ct2_label, 0, 6, 1, 1)
-        grid.attach(self.ct2_row, 1, 6, 1, 1)
 
         # API key entry. Editable here so nothing requires a terminal: exporting
         # an environment variable before launch is not a GUI workflow.
@@ -1239,15 +1205,6 @@ class SettingsDialog(Gtk.Window):
         grid.attach(self.thinking_label, 0, 11, 1, 1)
         grid.attach(self.thinking_row, 1, 11, 1, 1)
 
-        # The licence of the weights the local backends download. It is not a
-        # detail of this app - NLLB is non-commercial - so it is stated where the
-        # backend is chosen, not only in the README.
-        self.licence_hint = Gtk.Label(label="", xalign=0, wrap=True)
-        self.licence_hint.add_css_class("lintranslator-hint")
-        self.licence_hint.set_max_width_chars(70)
-        self.licence_hint.set_visible(False)
-        grid.attach(self.licence_hint, 1, 9, 1, 1)
-
         # Prompt. Wrapped in a box of its own so the whole control - text, hint
         # and preset list - can be hidden for the backends that never send one.
         self.prompt_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -1298,9 +1255,8 @@ class SettingsDialog(Gtk.Window):
         key = BACKENDS[self.backend_dd.get_selected()][0]
 
         # Remember what was typed for the backend we are leaving. Without this,
-        # switching Local -> OpenRouter carries "facebook/nllb-200-distilled-600M"
-        # into the model id field, which then fails at request time with a
-        # confusing "model not found".
+        # switching backend carries the previous model id into the model field,
+        # which then fails at request time with a confusing "model not found".
         if previous and previous != key and previous in MODEL_LABELS:
             self._model_memory[previous] = self.model_entry.get_text().strip()
         self._last_backend = key
@@ -1348,12 +1304,7 @@ class SettingsDialog(Gtk.Window):
                 remembered = (
                     self.config.translate.model if self.config.translate.backend == key else ""
                 )
-                # Never treat another backend's NLLB repo as a chat model id.
-                if key in ("openrouter", "openai") and remembered == DEFAULT_NLLB_MODEL:
-                    remembered = ""
             self.model_entry.set_text(remembered or "")
-        self.ct2_label.set_visible(key == "ct2")
-        self.ct2_row.set_visible(key == "ct2")
 
         # The endpoint row: only the backends that talk HTTP to a URL.
         uses_base = key in BACKENDS_WITH_BASE_URL
@@ -1377,8 +1328,8 @@ class SettingsDialog(Gtk.Window):
 
         # Both of these are read by the request itself, so they are hidden exactly
         # where they would be decoration: the timeout for the backends that run
-        # without a socket (the two local ones, and `none`), the thinking row for
-        # the backends that never send a chat request.
+        # without a socket (`none`), the thinking row for the backends that never
+        # send a chat request.
         uses_timeout = key in BACKENDS_WITH_TIMEOUT
         self.timeout_label.set_visible(uses_timeout)
         self.timeout_row.set_visible(uses_timeout)
@@ -1386,14 +1337,6 @@ class SettingsDialog(Gtk.Window):
         self.thinking_label.set_visible(uses_thinking)
         self.thinking_row.set_visible(uses_thinking)
 
-        # The local weights are non-commercial (CC-BY-NC-4.0). Saying so here is
-        # cheaper than a user finding out after shipping something with them.
-        self.licence_hint.set_visible(key in ("ct2", "local"))
-        if key in ("ct2", "local"):
-            self.licence_hint.set_text(
-                f"{DEFAULT_NLLB_MODEL} is licensed CC-BY-NC-4.0: non-commercial "
-                "use only. See NOTICE for the terms and for the alternatives."
-            )
         self._refresh_model_hint(key)
         self._refresh_key_label(key)
         # The languages do not change with the backend, but what they *become*
@@ -1416,12 +1359,12 @@ class SettingsDialog(Gtk.Window):
     def _refresh_language(self) -> None:
         """Spell out what this pair becomes for the selected backend.
 
-        A pair is not the same string everywhere: NLLB decodes with `jpn_Jpan`,
-        DeepL wants `JA`, and tesseract needs `jpn.traineddata` to read the
-        source at all. Each of those is invisible in config.json and each fails
-        as "the translation is bad" rather than as an error, so the dialog says
-        which one is in play. The chat backends get the pair as words inside the
-        prompt itself, where it is already visible.
+        A pair is not the same string everywhere: DeepL wants `JA`, Google wants
+        `ja`, and tesseract needs `jpn.traineddata` to read the source at all.
+        Each of those is invisible in config.json and each fails as "the
+        translation is bad" rather than as an error, so the dialog says which one
+        is in play. The chat backends get the pair as words inside the prompt
+        itself, where it is already visible.
         """
         source = self.source_picker.get_code()
         target = self.target_picker.get_code()
@@ -1434,14 +1377,11 @@ class SettingsDialog(Gtk.Window):
             listed = ", ".join(repr(code) for code in unknown)
             verb = "are" if len(unknown) > 1 else "is"
             parts.append(
-                f"⚠ {listed} {verb} not a FLORES-200 code this model knows, so "
-                f"{'they are' if len(unknown) > 1 else 'it is'} scored as <unk>. "
-                "Pick one from the list."
+                f"⚠ {listed} {verb} not a FLORES-200 code this app knows, so no "
+                "backend can be told which language it is. Pick one from the list."
             )
 
-        if backend in ("ct2", "local"):
-            parts.append(f"NLLB decodes with {source} → {target}.")
-        elif backend == "deepl":
+        if backend == "deepl":
             if deepl_code(target) is None:
                 parts.append(
                     f"⚠ DeepL cannot translate into {target_name or target}. "
@@ -1611,13 +1551,6 @@ class SettingsDialog(Gtk.Window):
                 parts.append(
                     "⚠ set the Base URL above — llama.cpp, Ollama and vLLM all "
                     "serve this protocol, e.g. http://localhost:11434/v1"
-                )
-        if backend == "ct2":
-            path = Path(self.ct2_entry.get_text().strip() or DEFAULT_CT2_DIR)
-            if not path.exists():
-                parts.append(
-                    f"⚠ no converted weights at {path} — build them with "
-                    f"`python -m lintranslator.convert --out {DEFAULT_CT2_DIR}`"
                 )
         if model in REASONING_CAUTION:
             parts.append(
@@ -1826,23 +1759,13 @@ class SettingsDialog(Gtk.Window):
         backend = BACKENDS[self.backend_dd.get_selected()][0]
         self.config.translate.backend = backend
         model = self.model_entry.get_text().strip()
-        if not model and backend in ("ct2", "local"):
-            # An empty model means "use the provider's default" for the chat
-            # backends, but for the NLLB ones it would be an empty HuggingFace
-            # repo id, which fails at load time with a validation error. Store
-            # the real default so the panel names the model actually in use.
-            model = DEFAULT_NLLB_MODEL
         self.config.translate.model = model
 
-        # Only remember ids for backends where the field is a model id; storing
-        # an NLLB repo or a DeepL target here would poison the picker.
+        # Only remember ids for backends where the field is a model id; storing a
+        # DeepL target here would poison the picker.
         if backend in ("openrouter", "openai") and model:
             recent = [m for m in self.config.translate.recent_models if m != model]
             self.config.translate.recent_models = [model, *recent][:6]
-
-        if backend == "ct2":
-            weights = self.ct2_entry.get_text().strip() or DEFAULT_CT2_DIR
-            self.config.translate.ct2_model_dir = weights
 
         if backend in BACKENDS_WITH_BASE_URL:
             self.config.translate.api_base = self.base_entry.get_text().strip() or None

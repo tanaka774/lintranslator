@@ -5,12 +5,12 @@ name = "lintranslator"
 dynamic = ["version"]
 description = "Screen translator for Linux: watches a screen region, reads it with OCR and translates it (Wayland/KDE first)"
 readme = "README.md"
-# The app is MIT. The models it downloads are not: NLLB is CC-BY-NC-4.0
-# (non-commercial). See NOTICE.
+# The app is MIT. It ships no model: every backend talks to an endpoint, and
+# NOTICE lists what it does download.
 license = "MIT"
 # NOTICE has to travel with the package. `license-files` replaces setuptools'
 # legacy NOTICE/AUTHORS globs, so naming only LICENSE dropped it - and NOTICE is
-# the only place the default model's non-commercial licence is disclosed.
+# where the OCR language data's terms and the GUI libraries' LGPL are stated.
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "tanaka" }]
 keywords = [
@@ -55,21 +55,8 @@ Issues = "https://github.com/tanaka774/lintranslator/issues"
 Changelog = "https://github.com/tanaka774/lintranslator/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-# Recommended local backend: int8 NLLB via CTranslate2. The tokenizer still
-# comes from transformers, but no torch is needed to run inference.
-ct2 = [
-    "ctranslate2>=4.0",
-    "transformers>=4.40,<5",
-    "sentencepiece>=0.2",
-]
-# The slower transformers path, for models that cannot be converted or as a
-# fallback if CTranslate2 is unavailable. Pulls in torch.
-local = [
-    "transformers>=4.40,<5",
-    "torch>=2.2",
-    "sentencepiece>=0.2",
-    "sacremoses>=0.1",
-]
+# No translation extra. Local translation is a model server the user runs, reached
+# through the `chat` backend, so nothing here installs a model runtime.
 # There was a `rapidocr` extra here. It advertised PP-OCR as a second OCR engine,
 # but no engine class was ever written: `ocr.py` hardcodes tesseract and the
 # config's `ocr.engine` value went nowhere. An extra that installs a package the

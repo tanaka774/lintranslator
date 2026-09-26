@@ -32,12 +32,4 @@ def isolated_app_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(
         config_mod, "DEFAULT_CONFIG_PATH", tmp_path / "config" / "config.json"
     )
-    # The HuggingFace cache is not the app's, but `lintranslator remove` deletes
-    # inside it - and it resolves from `$HF_HOME`/`$HF_HUB_CACHE`, which point at
-    # the developer's real cache. Without this, a test of `remove all` deletes
-    # their downloaded checkpoint: it only survived the first run because the
-    # sandbox refused the write. `hf_cache_root` reads the environment per call,
-    # so setting the variables is enough.
-    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hf-cache"))
-    monkeypatch.delenv("HF_HOME", raising=False)
     return tmp_path

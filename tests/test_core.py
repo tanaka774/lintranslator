@@ -24,7 +24,7 @@ from lintranslator.detect import (
     signature,
 )
 from lintranslator.ocr import preprocess
-from lintranslator.translate import TranslationCache, is_cjk, normalize_cjk
+from lintranslator.translate import TranslationCache
 
 
 def _frame(text: str = "", size=(320, 60)) -> Image.Image:
@@ -291,25 +291,6 @@ def test_empty_guard_mutes_after_repeated_empty_reads():
 
 
 # --------------------------------------------------------------------------- #
-# Text post-processing
-# --------------------------------------------------------------------------- #
-def test_cjk_detection():
-    assert is_cjk("あ")
-    assert is_cjk("事")
-    assert is_cjk("。")
-    assert not is_cjk("A")
-    assert not is_cjk(" ")
-
-
-def test_normalize_cjk_removes_spaces_between_japanese():
-    assert normalize_cjk("今日 の 要請 に関する") == "今日の要請に関する"
-
-
-def test_normalize_cjk_keeps_spaces_around_latin():
-    assert normalize_cjk("LRU cache を 使う") == "LRU cache を使う"
-
-
-# --------------------------------------------------------------------------- #
 # Cache
 # --------------------------------------------------------------------------- #
 def test_cache_roundtrip_and_stats(tmp_path):
@@ -413,6 +394,45 @@ def test_an_old_single_api_key_migrates_to_the_configured_backend(tmp_path):
     assert cfg.translate.api_keys == {"deepl": "deepl-legacy"}
     assert cfg.translate.api_key is None, "the shared field must not survive the load"
     assert cfg.warnings == [], "a working config must not warn about anything"
+
+
+def test_a_config_left_on_a_missing_backend_moves_to_none(tmp_path):
+    """`ct2` and `local` have no implementation, and the value is never validated.
+
+    Without this the config loaded fine and then raised "unknown translation
+    backend" on every line - a wall of errors from a setting the user cannot see
+    is wrong. `none` keeps the app alive (it still reads the screen) and the
+    warning says where that job went.
+    """
+    path = tmp_path / "config.json"
+    path.write_text(
+        '{"translate": {"backend": "ct2", "model": "facebook/nllb-200-distilled-600M"}}'
+    )
+    cfg = Config.load(path)
+    assert cfg.translate.backend == "none"
+    assert any("is not a backend this version has" in w for w in cfg.warnings), cfg.warnings
+    assert any("chat" in w for w in cfg.warnings), cfg.warnings
+
+
+def test_a_supported_backend_is_left_alone(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"translate": {"backend": "chat"}}')
+    cfg = Config.load(path)
+    assert cfg.translate.backend == "chat"
+    assert cfg.warnings == []
+
+
+def test_a_removed_setting_is_reported_rather_than_ignored(tmp_path):
+    """An old config's `ct2_model_dir` is not silently dropped.
+
+    It is an unknown key now, and the loader already says so for typos; the point
+    here is that the same mechanism covers a setting this version removed, so the
+    user is told rather than left wondering why the field disappeared.
+    """
+    path = tmp_path / "config.json"
+    path.write_text('{"translate": {"backend": "chat", "ct2_model_dir": "/tmp/x"}}')
+    cfg = Config.load(path)
+    assert any("translate.ct2_model_dir" in w for w in cfg.warnings), cfg.warnings
 
 
 def test_a_key_that_names_its_issuer_is_filed_under_that_backend(tmp_path):
