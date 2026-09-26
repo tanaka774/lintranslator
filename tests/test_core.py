@@ -415,6 +415,26 @@ def test_an_old_single_api_key_migrates_to_the_configured_backend(tmp_path):
     assert cfg.warnings == [], "a working config must not warn about anything"
 
 
+def test_a_key_that_names_its_issuer_is_filed_under_that_backend(tmp_path):
+    """The case that prompted this: an OpenRouter key left in the shared field
+    while the backend was on `chat`, which sent it to a local Ollama server as a
+    bearer token. The configured backend is the only backend the old field
+    records, and here it is the wrong one - the key says so itself."""
+    path = tmp_path / "config.json"
+    path.write_text('{"translate": {"backend": "chat", "api_key": "sk-or-v1-abc"}}')
+    cfg = Config.load(path)
+    assert cfg.translate.api_keys == {"openrouter": "sk-or-v1-abc"}
+    assert any("openrouter" in w for w in cfg.warnings), cfg.warnings
+
+
+def test_an_unrecognised_key_stays_with_the_configured_backend(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"translate": {"backend": "chat", "api_key": "gateway-token"}}')
+    cfg = Config.load(path)
+    assert cfg.translate.api_keys == {"chat": "gateway-token"}
+    assert cfg.warnings == [], "nothing was moved, so there is nothing to say"
+
+
 def test_saving_drops_the_old_single_api_key_field(tmp_path):
     path = tmp_path / "config.json"
     path.write_text('{"translate": {"backend": "openrouter", "api_key": "sk-or-x"}}')

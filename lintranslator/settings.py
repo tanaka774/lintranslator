@@ -129,7 +129,10 @@ BACKENDS_WITH_TIMEOUT = ("openrouter", "openai", "chat", "deepl", "google")
 # "send nothing", which is the only value that is safe on every provider.
 THINKING_CHOICES = ("", "none", "low", "medium", "high")
 THINKING_LABELS = {
-    "": "Default (send nothing)",
+    # Named for what actually goes on the wire: a server on this machine is sent
+    # `none` unless the user picks something, because hidden reasoning costs a
+    # local model 10.3 s and an empty answer for one line of dialogue.
+    "": "Default (none for a server on this machine)",
     "none": "none — no hidden reasoning",
     "low": "low",
     "medium": "medium",
@@ -1226,8 +1229,9 @@ class SettingsDialog(Gtk.Window):
         self.thinking_dd.set_tooltip_text(
             "Sent as `reasoning_effort` on each request.\n"
             "A local thinking model needs none - otherwise it can spend the whole\n"
-            "answer on hidden reasoning and return an empty translation. Not every\n"
-            "provider accepts it, so the default sends nothing."
+            "answer on hidden reasoning and return an empty translation - so that\n"
+            "is what the default sends to a server on this machine. A hosted\n"
+            "provider is sent nothing, because not every one accepts the field."
         )
         self.thinking_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.thinking_row.append(self.thinking_dd)

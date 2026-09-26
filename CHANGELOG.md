@@ -9,6 +9,26 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+- A legacy `api_key` is filed under the backend that issued it when the key itself
+  says so. The migration moved it to whatever backend was configured, which is the
+  only backend the old field records - and not always the right one: a key left in
+  the shared field while the backend was on `chat` was attached to `chat`, and the
+  next translation sent an OpenRouter key to a local Ollama server as a bearer
+  token. `sk-or-` and `AIza` are the prefixes that name a provider; anything else
+  keeps the configured backend. A key that was moved says so in the config
+  warnings, because a wrong guess here is invisible until a request fails.
+- A server on this machine is asked not to think, unless the Thinking row says
+  otherwise. Hidden reasoning is pure latency for one line of dialogue and can
+  consume the whole answer budget - measured on qwen3.5:4b through Ollama: 10.3 s
+  and an empty answer with it, 0.4 s and a translation without - so on loopback
+  the app sends `reasoning_effort: "none"` by default. Hosted endpoints are sent
+  nothing, as before: the field is not universally accepted and their thinking is
+  the user's money. A model that answers with reasoning and no translation anyway
+  is asked once more with the thinking off, on this machine only, instead of
+  failing with a sentence about hidden reasoning.
+- `lintranslator check` notes when a stored key looks like another backend's.
+  Prefixes are a guess, so it is a note rather than a failure: a gateway that
+  fronts OpenRouter is a real setup and its key starts `sk-or-` too.
 - API keys are stored per backend: `translate.api_keys: {"deepl": "...",
   "openrouter": "..."}` instead of one `translate.api_key` for all of them. The
   old field is migrated on load - under the backend that was configured when it

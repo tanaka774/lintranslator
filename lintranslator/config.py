@@ -362,21 +362,53 @@ class Config:
         return p
 
 
+# Prefixes that name the provider a key was issued by. Used for two things, both
+# of them guesses that only ever make a config better: filing a migrated key under
+# the backend that issued it instead of under whichever backend happened to be
+# selected, and saying so in `check` when a stored key clearly belongs elsewhere.
+# An unrecognised key keeps whatever backend it was stored for.
+KEY_ISSUERS = (
+    ("sk-or-", "openrouter"),
+    ("AIza", "google"),
+)
+
+
+def key_issuer(key: str | None) -> str | None:
+    """The backend a key's prefix names, or None when nothing does."""
+    text = str(key or "")
+    for prefix, backend in KEY_ISSUERS:
+        if text.startswith(prefix):
+            return backend
+    return None
+
+
 def _migrate_api_keys(cfg: "Config") -> None:
     """Move a single old `api_key` into the per-backend map.
 
     The old field recorded no backend - that was the bug - so the configured one
     is the only answer the file holds, and it is right for every config Settings
-    ever wrote: the field was filled in while that backend was selected. A config
-    that already has the map keeps it; a leftover legacy value does not overwrite
-    an entry that is already there.
+    wrote: the field was filled in while that backend was selected. The exception
+    is the case that produced this migration: a key left in the shared field while
+    the backend was on `chat`, which then sent an OpenRouter key to a local Ollama
+    server. When the key itself names its issuer, believe the key, and say what
+    was done with it, because a wrong guess here is invisible until a request
+    fails. A config that already has the map keeps it.
     """
     translate = cfg.translate
     legacy = translate.api_key
     if not legacy:
         return
+    owner = key_issuer(legacy) or translate.backend
     keys = dict(translate.api_keys or {})
-    keys.setdefault(translate.backend, legacy)
+    if owner != translate.backend:
+        # No part of the key is repeated here: `check` prints warnings, and this
+        # file is the reason keys are handled carefully in the first place.
+        cfg.warnings.append(
+            f"translate.api_key looks like an {owner} key, so it was stored under "
+            f"{owner!r} rather than {translate.backend!r} - change it in Settings "
+            "if that is wrong"
+        )
+    keys.setdefault(owner, legacy)
     translate.api_keys = keys
     translate.api_key = None
 

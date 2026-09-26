@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 
 from . import paths
-from .config import Config, Region
+from .config import Config, Region, key_issuer
 from .languages import CODES, deepl_code, google_code, ordered
 from .pipeline import Event, Pipeline
 
@@ -64,6 +64,22 @@ def _report_fetch(message: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
+def _key_source(cfg, backend: str, env_names: tuple[str, ...], key: str) -> str:
+    """Where a key came from, and a note when it looks like another backend's.
+
+    The note is a guess from the key's own prefix, so it does not fail the check:
+    a gateway that fronts OpenRouter is a real setup, and its key starts `sk-or-`
+    too. It is here because the failure it catches - the wrong provider's key
+    stored for this backend - is otherwise invisible until a translation fails.
+    """
+    stored = bool((cfg.translate.api_keys or {}).get(backend))
+    source = "config.json" if stored else next((n for n in env_names if os.environ.get(n)), "unknown")
+    owner = key_issuer(key)
+    if owner and owner != backend:
+        print(f"  note: this key looks like an {owner} key, not a {backend} one")
+    return source
+
+
 def cmd_check(args) -> int:
     from .ocr import TesseractOcr, find_tessdata, tesseract_version
     from .portal import PortalBus, PortalError
@@ -176,13 +192,7 @@ def cmd_check(args) -> int:
             print(f"  ⚠ {exc}")
         key = resolve_api_key(cfg.translate, *env_names)
         if key:
-            stored = bool((cfg.translate.api_keys or {}).get(backend))
-            source = (
-                "config.json"
-                if stored
-                else next((n for n in env_names if os.environ.get(n)), "unknown")
-            )
-            print(f"  api key: set via {source} ({len(key)} chars)")
+            print(f"  api key: set via {_key_source(cfg, backend, env_names, key)} ({len(key)} chars)")
         elif backend == "chat":
             # A local llama.cpp / Ollama / vLLM server usually wants no key.
             print("  api key: none (fine for a local server that ignores auth)")
@@ -208,13 +218,7 @@ def cmd_check(args) -> int:
         )
         key = resolve_api_key(cfg.translate, *env_names)
         if key:
-            stored = bool((cfg.translate.api_keys or {}).get(backend))
-            source = (
-                "config.json"
-                if stored
-                else next((n for n in env_names if os.environ.get(n)), "unknown")
-            )
-            print(f"  api key: set via {source} ({len(key)} chars)")
+            print(f"  api key: set via {_key_source(cfg, backend, env_names, key)} ({len(key)} chars)")
         else:
             ok = False
             print(f"  api key: MISSING -> export {env_names[0]}=...")

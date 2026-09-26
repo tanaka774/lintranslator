@@ -801,6 +801,20 @@ class ChatCompletionsTranslator(HttpTranslator):
         return headers
 
     def translate(self, text: str) -> str:
+        data = self._post_json(self.endpoint, self._body(text), self.auth_headers())
+        if self._only_reasoned(data):
+            # The second chance. A local thinking model is asked not to think by
+            # `build_translator`, but a server that does not honour the field - or
+            # a config that asks for thinking and gets an empty answer anyway -
+            # would otherwise hand the user a sentence about hidden reasoning and
+            # no translation. One retry, on this machine only: a hosted model's
+            # thinking is the user's money and the Thinking row is theirs to set.
+            data = self._post_json(
+                self.endpoint, self._body(text, thinking_off=True), self.auth_headers()
+            )
+        return self._extract(data)
+
+    def _body(self, text: str, thinking_off: bool = False) -> dict:
         payload = {
             "model": self.model,
             "temperature": self.temperature,
@@ -810,10 +824,23 @@ class ChatCompletionsTranslator(HttpTranslator):
                 {"role": "user", "content": text},
             ],
         }
-        if self.reasoning_effort:
-            payload["reasoning_effort"] = self.reasoning_effort
-        data = self._post_json(self.endpoint, payload, self.auth_headers())
-        return self._extract(data)
+        effort = "none" if thinking_off else self.reasoning_effort
+        if effort:
+            payload["reasoning_effort"] = effort
+        return payload
+
+    def _only_reasoned(self, data: dict) -> bool:
+        """Whether the model talked to itself and never answered."""
+        try:
+            message = data["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError):
+            return False
+        if message.get("content"):
+            return False
+        if not (message.get("reasoning") or message.get("reasoning_content")):
+            return False
+        # Nothing to gain from the retry if thinking was already off.
+        return not self.reasoning_effort and is_loopback(self.base_url)
 
     def _extract(self, data: dict) -> str:
         try:
@@ -1022,6 +1049,13 @@ def build_translator(cfg) -> Translator:
                 "  Settings - e.g. http://localhost:11434/v1 for Ollama,\n"
                 "  http://localhost:8080/v1 for llama.cpp."
             )
+        # A server on this machine is treated as translation-only unless the user
+        # says otherwise. Hidden reasoning is pure latency here - measured on
+        # qwen3.5:4b through Ollama: 10.3 s and an empty answer with it, 0.4 s and
+        # a translation without - and the local endpoint is the one case where the
+        # app can know that without being told. Hosted endpoints are not touched:
+        # their thinking is the user's money and their own model's business.
+        local = is_loopback(cfg.api_base)
         common = dict(
             model=cfg.model,
             base_url=cfg.api_base,
@@ -1031,10 +1065,10 @@ def build_translator(cfg) -> Translator:
             glossary_hint=cfg.glossary_hint or None,
             temperature=cfg.temperature,
             max_tokens=cfg.max_tokens,
-            reasoning_effort=cfg.reasoning_effort or None,
+            reasoning_effort=cfg.reasoning_effort or ("none" if local else None),
             # A server on this machine is given the longer default: it is the one
             # that spends the time, and the user set nothing to tell us so.
-            timeout=request_timeout(cfg, local=is_loopback(cfg.api_base)),
+            timeout=request_timeout(cfg, local=local),
             allow_insecure_http=bool(getattr(cfg, "allow_insecure_http", False)),
         )
         if backend == "openrouter":

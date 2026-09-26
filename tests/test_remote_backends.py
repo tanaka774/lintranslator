@@ -377,6 +377,77 @@ def test_a_timeout_is_reported_as_a_timeout_and_not_as_unreachable(monkeypatch):
     assert "Timeout" in message
 
 
+def test_a_local_endpoint_is_asked_not_to_think():
+    """A server on this machine is for translating, not for reasoning.
+
+    Measured on qwen3.5:4b through Ollama: 10.3 s and an empty answer with the
+    thinking on, 0.4 s and a translation with it off.
+    """
+    local = build_translator(
+        TranslateConfig(
+            backend="chat", model="qwen3.5:4b", api_base="http://localhost:11434/v1"
+        )
+    )
+    assert local.reasoning_effort == "none"
+    # A hosted endpoint is left alone: the field is not universally accepted, and
+    # its thinking is the user's money.
+    hosted = build_translator(TranslateConfig(backend="openai", model="gpt-4o-mini", api_key="k"))
+    assert hosted.reasoning_effort == ""
+    # And a choice made in Settings wins over the default.
+    chosen = build_translator(
+        TranslateConfig(
+            backend="chat",
+            model="m",
+            api_base="http://localhost:11434/v1",
+            reasoning_effort="low",
+        )
+    )
+    assert chosen.reasoning_effort == "low"
+
+
+def test_a_local_model_that_only_thinks_is_asked_again_without_thinking():
+    """The safety net for a server that ignores `reasoning_effort`."""
+
+    class Stubborn(ChatCompletionsTranslator):
+        def __init__(self, **kw):
+            self.calls: list[dict] = []
+            super().__init__(
+                None, model="m", base_url="http://localhost:11434/v1", key_required=False, **kw
+            )
+
+        def _post_json(self, url, payload, headers):
+            self.calls.append(payload)
+            if len(self.calls) == 1:
+                return {"choices": [{"message": {"content": "", "reasoning": "x" * 100}}]}
+            return GOOD_RESPONSE
+
+    t = Stubborn()
+    assert t.translate("hi") == "こんにちは"
+    assert len(t.calls) == 2
+    assert "reasoning_effort" not in t.calls[0]
+    assert t.calls[1]["reasoning_effort"] == "none"
+
+
+def test_a_hosted_model_that_only_thinks_is_not_asked_twice():
+    """One request, one bill: the retry is for a server on this machine."""
+
+    class Stubborn(ChatCompletionsTranslator):
+        def __init__(self, **kw):
+            self.calls = 0
+            super().__init__(
+                "k", model="m", base_url="https://example.test/v1", key_required=True, **kw
+            )
+
+        def _post_json(self, url, payload, headers):
+            self.calls += 1
+            return {"choices": [{"message": {"content": "", "reasoning": "x" * 100}}]}
+
+    t = Stubborn()
+    with pytest.raises(TranslatorError):
+        t.translate("hi")
+    assert t.calls == 1
+
+
 def test_reasoning_effort_is_sent_only_when_it_is_set():
     class Recording(ChatCompletionsTranslator):
         def __init__(self, **kw):
