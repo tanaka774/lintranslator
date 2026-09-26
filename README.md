@@ -4,9 +4,9 @@ Screen translator for linux.
 I run and test mainly on kde wayland but it should work mostly on other linux DE technically...
 
 ## How to use
-- first, set the way to translate. The current default option is openrouter, and you can choose from some endpoints or local llms. And pick languages of source and destination.
-- select the area you want to translate, where ocr runs.
-- choose "Start" and it opens a panel which shows a translated result. 
+- First, set the way of translation. You can choose from some endpoints or llms. And pick languages of source and destination to translate.
+- Select the area you want to translate, where ocr runs.
+- Choose "Start" and it opens a panel which shows a translated result. 
 
 [lintranslator_demo.webm](https://github.com/user-attachments/assets/b43b4580-044b-4783-b868-0ec2132f5c19)
 
