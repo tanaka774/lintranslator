@@ -81,6 +81,14 @@ The picker also shows the translation of the current selection as you adjust the
 region, which is the quickest way to judge a model or prompt without launching the
 panel.
 
+The same Settings window holds **OCR input** — invert, contrast stretch and an
+ink/paper cut. Those are what tesseract is handed, not display options: invert for
+white dialogue on a black panel, and a cut when grey glyphs sit on a background
+the stretch cannot separate them from. The picker's **Preview: OCR input** shows
+that recipe exactly, and **Preview: threshold** shows it cut into ink and paper at
+the level tesseract would otherwise pick for itself, so both can be judged by eye
+before the panel opens.
+
 For the global Re-read hotkey — the one that works while the game has focus — run
 `lintranslator install-desktop` once and start the app from the application menu
 rather than a terminal. That launch is what gives it the application id the

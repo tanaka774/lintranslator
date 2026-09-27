@@ -83,6 +83,64 @@ def test_only_this_backend_rows_are_visible(dialog):
     assert dialog.fetch_btn.get_visible()
 
 
+def test_saving_writes_the_ocr_recipe(dialog):
+    """The OCR-input rows are what OCR is handed, not display options.
+
+    They are the only place `ocr.invert`, `ocr.autocontrast` and `ocr.threshold`
+    can be set, so a save that dropped them would leave the recipe reachable only
+    by editing config.json - which is what this row exists to stop.
+    """
+    dialog.ocr_invert.set_active(True)
+    dialog.ocr_autocontrast.set_active(False)
+    dialog.ocr_threshold.set_value(144)
+    dialog._on_save(None)
+    assert dialog.config.ocr.invert is True
+    assert dialog.config.ocr.autocontrast is False
+    assert dialog.config.ocr.threshold == 144
+
+
+def test_the_cut_row_says_off_rather_than_zero():
+    """0 is not a grey level, it is "no cut", and the field has to say so.
+
+    A numeric spin button rejects a word that is not a number and blanks itself
+    instead, which is how this row first rendered: an empty box next to a value
+    of 0, in the one control that has to explain what 0 means.
+    """
+    dlg = SettingsDialog(None, Config())
+    try:
+        assert dlg.ocr_threshold.get_text() == "off"
+        dlg.ocr_threshold.set_value(160)
+        assert dlg.ocr_threshold.get_text() == "160"
+        dlg.ocr_threshold.set_value(0)
+        assert dlg.ocr_threshold.get_text() == "off"
+    finally:
+        dlg.destroy()
+
+
+def test_the_ocr_recipe_rows_are_shown_for_every_backend(dialog):
+    """The recipe is about reading the screen, so no backend may hide it."""
+    for backend in ("openrouter", "openai", "deepl", "chat", "none"):
+        select(dialog, backend)
+        assert dialog.ocr_input_row.get_visible(), backend
+
+
+def test_a_hand_edited_cut_survives_the_dialog(tmp_path):
+    """`"threshold": "128"` in config.json must not take the dialog down.
+
+    The field is a number and the config is hand-editable, so the value goes
+    through the same normalisation the read uses: a string that is not a level
+    means "off", exactly as it does for OCR itself.
+    """
+    path = tmp_path / "config.json"
+    path.write_text('{"ocr": {"threshold": "wide"}}')
+    dlg = SettingsDialog(None, Config.load(path))
+    try:
+        assert dlg.ocr_threshold.get_value() == 0
+        assert dlg.ocr_threshold.get_text() == "off"
+    finally:
+        dlg.destroy()
+
+
 def test_model_row_hidden_for_backends_that_ignore_it(dialog):
     for backend in ("deepl", "none"):
         select(dialog, backend)
@@ -1091,3 +1149,34 @@ def test_the_dialog_offers_no_way_to_edit_the_capture_region(dialog):
     assert (region.x, region.y, region.w, region.h, region.mode) == before, (
         "Save moved the capture region"
     )
+
+
+def test_saving_writes_the_confidence_gate(dialog):
+    """The gate decides whether a good read survives, and had no row.
+
+    A read that misses it by a point is dropped, which the window used to report
+    as "no text found in this region" - indistinguishable from an OCR that cannot
+    see the box at all.
+    """
+    dialog.ocr_confidence.set_value(70)
+    dialog._on_save(None)
+    assert dialog.config.ocr.min_confidence == 70.0
+
+
+def test_saving_leaves_the_layout_alone(tmp_path):
+    """`ocr.psm` has no row on purpose, so Save must not invent one.
+
+    It is a config key: no single value is safe for every box shape (the mode
+    that reads a one-line strip reads a two-line box as nothing), so it is not a
+    question the dialog asks - and a save that rewrote it would silently undo a
+    value chosen for the box in hand.
+    """
+    path = tmp_path / "config.json"
+    path.write_text('{"ocr": {"psm": 7}}')
+    dlg = SettingsDialog(None, Config.load(path))
+    try:
+        assert not hasattr(dlg, "ocr_psm"), "the layout row came back"
+        dlg._on_save(None)
+        assert dlg.config.ocr.psm == 7
+    finally:
+        dlg.destroy()

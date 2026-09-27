@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 from lintranslator.config import Config, Region, TranslateConfig
 from lintranslator.detect import (
@@ -23,7 +23,7 @@ from lintranslator.detect import (
     mean_abs_delta,
     signature,
 )
-from lintranslator.ocr import preprocess
+from lintranslator.ocr import otsu_threshold, preprocess
 from lintranslator.translate import TranslationCache
 
 
@@ -495,6 +495,130 @@ def test_preprocess_upscales_and_grayscales():
     out = preprocess(img, upscale=3.0, autocontrast=True)
     assert out.mode == "L"
     assert out.size == (300, 60)
+
+
+def test_preprocess_inverts_and_cuts_the_input():
+    """The two recipe steps a game box needs and the config had no key for.
+
+    Inverting is what reads white dialogue on a black panel, and a cut is the
+    only way to separate grey glyphs from a background the contrast stretch
+    cannot: both change the image tesseract is handed, so both are pinned here.
+    """
+    img = Image.new("RGB", (20, 10), (20, 20, 20))
+    ImageDraw.Draw(img).rectangle([2, 2, 17, 7], fill=(210, 210, 210))
+
+    grey = preprocess(img, upscale=1.0, autocontrast=False, invert=False)
+    assert grey.getextrema() == (20, 210)
+
+    inverted = preprocess(img, upscale=1.0, autocontrast=False, invert=True)
+    assert inverted.getextrema() == (45, 235)
+
+    cut = preprocess(img, upscale=1.0, autocontrast=False, threshold=128)
+    assert set(cut.getdata()) == {0, 255}
+
+    # The cut is applied last, so it separates the stretched image rather than
+    # the raw one: the same level still works when the contrast is stretched.
+    stretched = preprocess(img, upscale=1.0, autocontrast=True, threshold=128)
+    assert set(stretched.getdata()) == {0, 255}
+    assert stretched.getpixel((0, 0)) == 0
+    assert stretched.getpixel((10, 5)) == 255
+
+
+@pytest.mark.parametrize("bad", [0, -5, 300, "128", None, "wide"])
+def test_an_unusable_cut_means_no_cut(bad):
+    """`ocr.threshold` is a config value, and a hand-edited one may be nonsense.
+
+    Anything unusable has to mean "off" rather than fail the read - which is also
+    the default, so a config that was never edited and one that was edited badly
+    behave the same way.
+    """
+    img = _frame("test", size=(40, 12))
+    out = preprocess(img, upscale=1.0, autocontrast=False, threshold=bad)
+    assert out.getextrema() != (0, 255), "a grey image, not an ink mask"
+
+
+def test_otsu_cut_separates_the_glyphs_from_the_panel():
+    """The cut the binarised preview draws when no cut is configured.
+
+    It has to land between the two levels rather than on one of them, or the
+    preview would show glyphs and paper in the same colour and say nothing about
+    whether a fixed cut helps. Noise is what makes this a real question: on a
+    perfect two-level image every cut between the levels scores the same, so the
+    answer is a tie rather than a valley.
+    """
+    base = Image.new("L", (120, 40), 34)
+    draw = ImageDraw.Draw(base)
+    for x in range(8, 112, 16):
+        draw.rectangle([x, 12, x + 9, 27], fill=214)
+    noisy = ImageChops.add(base, Image.effect_noise((120, 40), 10))
+
+    cut = otsu_threshold(noisy)
+    assert 34 < cut < 214
+    mask = noisy.point(lambda p: 255 if p > cut else 0)
+    assert mask.getpixel((3, 3)) == 0, "the panel is paper"
+    assert mask.getpixel((10, 20)) == 255, "a glyph block is ink"
+
+
+def test_the_ocr_recipe_survives_a_config_roundtrip(tmp_path):
+    cfg = Config()
+    cfg.ocr.invert = True
+    cfg.ocr.autocontrast = False
+    cfg.ocr.threshold = 144
+    path = tmp_path / "config.json"
+    cfg.save(path)
+
+    loaded = Config.load(path)
+    assert loaded.ocr.invert is True
+    assert loaded.ocr.autocontrast is False
+    assert loaded.ocr.threshold == 144
+    assert loaded.warnings == []
+
+
+def test_the_confidence_gate_keeps_what_it_rejects(monkeypatch):
+    """`dropped` was a count, and a count cannot say *what* was dropped.
+
+    That is what made "no text found in this region" ambiguous: tesseract reading
+    nothing and tesseract reading a line the gate threw away looked the same, and
+    only the second one is a setting the user can move. So the rejected line is
+    kept whole - text, confidence and box - for the window to show.
+    """
+    import pytesseract
+
+    from lintranslator.ocr import TesseractOcr
+
+    def image_to_data(_image, **_kwargs):
+        return {
+            "text": ["AAAA low", "BBBB sure"],
+            "conf": ["20.0", "80.0"],
+            "block_num": [1, 1],
+            "par_num": [1, 1],
+            "line_num": [1, 2],
+            "left": [0, 0],
+            "top": [0, 10],
+            "width": [40, 40],
+            "height": [10, 10],
+        }
+
+    monkeypatch.setattr(pytesseract, "image_to_data", image_to_data)
+    engine = TesseractOcr(min_confidence=40.0)
+    monkeypatch.setattr(engine, "ensure_ready", lambda: None)
+
+    result = engine.read(_frame("ignored", size=(60, 30)))
+    assert [line.text for line in result.lines] == ["BBBB sure"]
+    assert [line.text for line in result.rejected] == ["AAAA low"]
+    assert result.rejected[0].confidence == 20.0
+    # In crop coordinates, not the upscaled ones: the box is there for a UI to
+    # draw on the region the user selected (40/3 x 10/3 at the default upscale).
+    assert result.rejected[0].box == (0, 0, 13, 3)
+    assert result.dropped == 1
+    assert result.text == "BBBB sure"
+
+    # Our own UI being stripped out is counted the same way, and must not lose
+    # the lines the gate rejected on the way through.
+    stripped = result.without_lines(lambda text: text == "BBBB sure")
+    assert stripped.lines == []
+    assert stripped.dropped == 2
+    assert [line.text for line in stripped.rejected] == ["AAAA low"]
 
 
 def test_a_shorter_new_line_replaces_the_held_one():

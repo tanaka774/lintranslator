@@ -45,6 +45,12 @@ def _load(args) -> Config:
         cfg.ocr.langs = args.langs
     if getattr(args, "psm", None):
         cfg.ocr.psm = args.psm
+    if getattr(args, "invert", False):
+        cfg.ocr.invert = True
+    # `is not None`, not truthiness: `--threshold 0` means "no cut" and has to be
+    # able to override a stored one, which is the whole reason to pass it.
+    if getattr(args, "threshold", None) is not None:
+        cfg.ocr.threshold = args.threshold
     if getattr(args, "target_lang", None):
         cfg.translate.target_lang = args.target_lang
     if getattr(args, "source_lang", None):
@@ -80,7 +86,13 @@ def _key_source(cfg, backend: str, env_names: tuple[str, ...], key: str) -> str:
 
 
 def cmd_check(args) -> int:
-    from .ocr import TesseractOcr, find_tessdata, tesseract_version
+    from .ocr import (
+        PSM_NAMES,
+        TesseractOcr,
+        find_tessdata,
+        tesseract_version,
+        threshold_value,
+    )
     from .portal import PortalBus, PortalError
 
     cfg = _load(args)
@@ -93,6 +105,24 @@ def cmd_check(args) -> int:
     if not version:
         ok = False
         print("  -> install tesseract (Arch: sudo pacman -S tesseract)")
+
+    # The recipe, because it is the usual answer to "why is this box read as
+    # nothing?": the binary and the language data can both be fine while the
+    # input is inverted, stretched or cut in a way this screen does not want.
+    recipe = ["grey", f"upscale x{cfg.ocr.upscale:g}"]
+    if cfg.ocr.invert:
+        recipe.append("inverted")
+    recipe.append("contrast stretched" if cfg.ocr.autocontrast else "contrast untouched")
+    cut = threshold_value(cfg.ocr.threshold)
+    recipe.append(f"cut at {cut}" if cut else "no cut")
+    print(f"OCR recipe       : {', '.join(recipe)}")
+    # The layout is the one part of the read with no row in Settings, so this is
+    # where it is visible: it decides as much as the recipe does when the box is
+    # hard, and `PSM_NAMES` carries the measurements that say so.
+    print(
+        f"OCR layout       : {PSM_NAMES.get(int(cfg.ocr.psm), 'psm')} "
+        f"(psm {cfg.ocr.psm}, gate {cfg.ocr.min_confidence:.0f}%)"
+    )
 
     engine = TesseractOcr(
         langs=cfg.ocr.langs,
@@ -733,6 +763,16 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--model", help="model id for the chat backends")
         sp.add_argument("--langs", help="tesseract languages, e.g. eng or eng+jpn")
         sp.add_argument("--psm", type=int, help="tesseract page segmentation mode")
+        sp.add_argument(
+            "--invert",
+            action="store_true",
+            help="invert the OCR input (light text on a dark box)",
+        )
+        sp.add_argument(
+            "--threshold",
+            type=int,
+            help="binarise the OCR input at this grey level (1-255, 0 for no cut)",
+        )
         sp.add_argument("--source-lang", dest="source_lang", help="source language code")
         sp.add_argument("--target-lang", dest="target_lang", help="target language code")
 

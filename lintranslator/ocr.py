@@ -17,7 +17,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -163,7 +163,15 @@ class OcrResult:
     elapsed: float
     engine: str
     lang: str
-    dropped: int = 0  # tokens rejected for low confidence
+    # Lines removed from the read for any reason: the confidence gate below, or
+    # one of our own windows being inside the box (`without_lines`).
+    dropped: int = 0
+    # The lines the confidence gate threw away, kept whole rather than counted.
+    # A UI cannot tell "tesseract read nothing" from "tesseract read something
+    # and the gate rejected it" out of a count, and only the second is a setting
+    # the user can move - which is how a box that reads fine at 41% under a gate
+    # of 55% looked like an OCR that cannot read the language.
+    rejected: list[OcrLine] = field(default_factory=list)
 
     def without_lines(self, predicate) -> "OcrResult":
         """A copy with the lines matching `predicate` removed.
@@ -182,6 +190,7 @@ class OcrResult:
             engine=self.engine,
             lang=self.lang,
             dropped=self.dropped + removed,
+            rejected=self.rejected,
         )
 
     @property
@@ -219,14 +228,50 @@ class OcrResult:
         return bool(self.lines)
 
 
+#: The tesseract page segmentation modes (`ocr.psm`) this app names, by the box
+#: shape each suits. Measured on three boxes with the same recipe: on an easy box
+#: (dark panel, one line) every mode reads it at 84.4% and the choice is free; on
+#: a one-line strip over bright artwork the default 6 reads garbage at 38.1%
+#: where 7 reads the line at 70.8%; and on a two-line box 7 reads *nothing at
+#: all* (0.0%) where 6 reads both lines at 74.1%. So the mode matters only when
+#: the box is hard - and then it matters completely, in both directions.
+PSM_NAMES = {
+    6: "one block of text",
+    7: "a single line",
+    11: "scattered text",
+}
+
+
+def threshold_value(value) -> int:
+    """A usable ink/paper cut, or 0 for "leave the image grey".
+
+    `ocr.threshold` is a config value, and a hand-edited one may not be a number
+    at all or may be outside the range a grey image has. The read must not fail
+    for that: anything unusable means "off", which is also the default. Public
+    because the picker's binarised preview asks the same question of the same
+    setting.
+    """
+    try:
+        cut = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return cut if 1 <= cut <= 255 else 0
+
+
 def preprocess(
     image: Image.Image,
     *,
     upscale: float = 3.0,
     autocontrast: bool = True,
     invert: bool = False,
+    threshold: int = 0,
 ) -> Image.Image:
-    """Grayscale, upscale, stretch contrast - the recipe that makes OCR work."""
+    """Grayscale, upscale, stretch contrast - the recipe that makes OCR work.
+
+    The order is the meaning: upscale first, so the stretch and the cut are
+    computed over the pixels tesseract actually reads; the cut last, so a fixed
+    number means the same thing whether or not the contrast was stretched.
+    """
     gray = image.convert("L")
     if upscale and upscale != 1.0:
         gray = gray.resize(
@@ -237,7 +282,47 @@ def preprocess(
         gray = ImageOps.invert(gray)
     if autocontrast:
         gray = ImageOps.autocontrast(gray)
+    cut = threshold_value(threshold)
+    if cut:
+        gray = gray.point(lambda p: 255 if p > cut else 0)
     return gray
+
+
+def otsu_threshold(gray: Image.Image) -> int:
+    """The cut tesseract picks for itself: Otsu, from the image's histogram.
+
+    What the picker's binarised preview needs, because that view exists to answer
+    "would a fixed cut help here?" - and the answer only means something against
+    the cut tesseract would otherwise apply. Pillow only, on purpose: numpy is
+    the calibrator's dependency (`calibrate._auto_threshold` is a different
+    question - where the glyphs are - and is not part of the app's install).
+    """
+    hist = gray.convert("L").histogram()[:256]
+    total = sum(hist)
+    if total == 0:
+        return 128
+    weighted = sum(level * count for level, count in enumerate(hist))
+    background_weight = 0
+    background_sum = 0.0
+    best_cut, best_variance = 128, -1.0
+    for cut in range(256):
+        background_weight += hist[cut]
+        if background_weight == 0:
+            continue
+        foreground_weight = total - background_weight
+        if foreground_weight == 0:
+            break
+        background_sum += cut * hist[cut]
+        mean_background = background_sum / background_weight
+        mean_foreground = (weighted - background_sum) / foreground_weight
+        variance = (
+            background_weight
+            * foreground_weight
+            * (mean_background - mean_foreground) ** 2
+        )
+        if variance > best_variance:
+            best_variance, best_cut = variance, cut
+    return best_cut
 
 
 def split_langs(langs: str) -> list[str]:
@@ -468,9 +553,10 @@ class TesseractOcr:
         psm: int = 6,
         upscale: float = 3.0,
         autocontrast: bool = True,
+        invert: bool = False,
+        threshold: int = 0,
         tessdata_dir: str | None = None,
         min_confidence: float = 40.0,
-        invert: bool = False,
         allow_unverified_tessdata: bool = False,
         on_progress: Callable[[str], None] | None = None,
     ) -> None:
@@ -478,8 +564,9 @@ class TesseractOcr:
         self.psm = psm
         self.upscale = upscale
         self.autocontrast = autocontrast
-        self.min_confidence = min_confidence
         self.invert = invert
+        self.threshold = threshold
+        self.min_confidence = min_confidence
         self.allow_unverified_tessdata = allow_unverified_tessdata
         # Called before a language file is fetched. The GUI passes its status
         # row here; the CLI prints it. A first run has to say what it is doing.
@@ -516,17 +603,28 @@ class TesseractOcr:
             )
         return self._tessdata
 
+    def prepared(self, image: Image.Image) -> Image.Image:
+        """The exact image `read` hands to tesseract.
+
+        Public because the picker's preview has to show this and not a
+        re-implementation of it: the preview drew its own grey autocontrast for
+        as long as this was inlined, so a box read with `invert` or a fixed cut
+        was previewed as something OCR never saw.
+        """
+        return preprocess(
+            image,
+            upscale=self.upscale,
+            autocontrast=self.autocontrast,
+            invert=self.invert,
+            threshold=self.threshold,
+        )
+
     def read(self, image: Image.Image) -> OcrResult:
         import pytesseract
         from pytesseract import Output
 
         tessdata = self.ensure_ready()
-        prepared = preprocess(
-            image,
-            upscale=self.upscale,
-            autocontrast=self.autocontrast,
-            invert=self.invert,
-        )
+        prepared = self.prepared(image)
         config = f"--psm {self.psm}"
         kwargs: dict = {"config": config, "output_type": Output.DICT}
         if tessdata:
@@ -569,35 +667,37 @@ class TesseractOcr:
             buckets.setdefault(key, []).append((text, conf, box))
 
         lines: list[OcrLine] = []
-        dropped = 0
+        rejected: list[OcrLine] = []
         for key in sorted(buckets, key=lambda k: (k[0], k[1], k[2])):
             tokens = buckets[key]
             text = " ".join(t[0] for t in tokens)
             conf = sum(t[1] for t in tokens) / len(tokens)
-            # A low-confidence line is almost always HUD chrome or background
-            # texture that leaked into the region. Feeding it to the translator
-            # both wastes time and corrupts an otherwise good passage, so drop it.
-            if conf < self.min_confidence:
-                dropped += 1
-                continue
             xs = [t[2][0] for t in tokens]
             ys = [t[2][1] for t in tokens]
             x2 = [t[2][0] + t[2][2] for t in tokens]
             y2 = [t[2][1] + t[2][3] for t in tokens]
-            lines.append(
-                OcrLine(
-                    text=text,
-                    confidence=conf,
-                    box=(min(xs), min(ys), max(x2) - min(xs), max(y2) - min(ys)),
-                )
+            line = OcrLine(
+                text=text,
+                confidence=conf,
+                box=(min(xs), min(ys), max(x2) - min(xs), max(y2) - min(ys)),
             )
+            # A low-confidence line is almost always HUD chrome or background
+            # texture that leaked into the region. Feeding it to the translator
+            # both wastes time and corrupts an otherwise good passage, so drop it
+            # - but keep it, so the picker can show what was thrown away and name
+            # the gate that threw it.
+            if conf < self.min_confidence:
+                rejected.append(line)
+                continue
+            lines.append(line)
 
         return OcrResult(
             lines=lines,
             elapsed=elapsed,
             engine="tesseract",
             lang=self.langs,
-            dropped=dropped,
+            dropped=len(rejected),
+            rejected=rejected,
         )
 
 

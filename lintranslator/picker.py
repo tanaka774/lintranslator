@@ -24,14 +24,23 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
-from PIL import Image, ImageOps  # noqa: E402
+from PIL import Image  # noqa: E402
 
 from .config import Config, Region  # noqa: E402
-from .ocr import TesseractOcr  # noqa: E402
+from .ocr import (  # noqa: E402
+    PSM_NAMES,
+    TesseractOcr,
+    otsu_threshold,
+    threshold_value,
+)
 from .occlusion import GUARD  # noqa: E402
 from .selection import HANDLE_WIDGET_MIN, SelectionMath  # noqa: E402
 
 HANDLE = 8  # px grab tolerance for dragging an existing edge
+# How big the preview draws the crop, whatever the recipe's own upscale is: the
+# frame is 340px wide, and the recipe's upscale is a setting about OCR quality
+# rather than about what the eye needs to judge the box.
+PREVIEW_SCALE = 3
 PICKER_WINDOW = "picker"
 # How long a *mapped* picker waits before it grabs: long enough for the
 # compositor to take this window off the screen (it would otherwise be captured
@@ -357,20 +366,18 @@ class RegionPicker(Gtk.ApplicationWindow):
         # autocontrast`), and which together left the raw crop unreachable
         # without unticking both. A dropdown cannot express that contradiction.
         #
-        # Display only: none of the three is what OCR reads. The text below
-        # comes from `self.ocr.read(crop)` whatever is selected here, and
-        # "threshold" is this panel's own fixed cut, not the calibrator's
-        # per-image one.
+        # Two of the three are now the same image OCR is handed: "OCR input" is
+        # `self.ocr.prepared(crop)` itself, and "threshold" is that image cut
+        # into ink and paper. They were the panel's own drawings before, which
+        # made the one view meant to judge `ocr.invert` and `ocr.threshold` the
+        # one view that ignored both - see `_preview_image`.
         self.preview_choice = Gtk.DropDown.new_from_strings(
             ["Preview: raw", "Preview: OCR input", "Preview: threshold"]
         )
-        self.preview_choice.set_tooltip_text(
-            "How the crop is drawn above. Display only — it does not change what "
-            "OCR reads or the text below."
-        )
-        # Index 1 keeps the old default (autocontrast), which is the view the
+        # Index 1 keeps the old default (the OCR input), which is the view the
         # eye judges glyphs by.
         self.preview_choice.set_selected(1)
+        self.preview_choice.set_tooltip_text(self._preview_explanation(1))
         self.preview_choice.connect("notify::selected", lambda *_: self._refresh_preview())
         side.append(self.preview_choice)
 
@@ -727,7 +734,9 @@ class RegionPicker(Gtk.ApplicationWindow):
         """The config values the OCR engine is built from.
 
         Kept in one place so "build the engine" and "did anything the engine
-        reads move?" cannot disagree about what those values are.
+        reads move?" cannot disagree about what those values are. The preview
+        does not use this dict: it calls `self.ocr.prepared`, so it shows the
+        recipe of the engine in hand rather than a second copy of the settings.
         """
         ocr = self.config.ocr
         return {
@@ -735,6 +744,8 @@ class RegionPicker(Gtk.ApplicationWindow):
             "psm": ocr.psm,
             "upscale": ocr.upscale,
             "autocontrast": ocr.autocontrast,
+            "invert": ocr.invert,
+            "threshold": ocr.threshold,
             "tessdata_dir": ocr.tessdata_dir,
             "min_confidence": ocr.min_confidence,
             "allow_unverified_tessdata": ocr.allow_unverified_tessdata,
@@ -857,20 +868,11 @@ class RegionPicker(Gtk.ApplicationWindow):
             return
 
         try:
-            # 0 raw, 1 the OCR input, 2 the ink mask. Raw is genuinely reachable
-            # now, so there is no unreachable third branch as there was when
-            # this was two checkboxes.
             mode = self.preview_choice.get_selected()
-            if mode == 2:
-                view = self._threshold_view(crop)
-            elif mode == 1:
-                view = ImageOps.autocontrast(crop.convert("L")).convert("RGB")
-            else:
-                view = crop
-            shown = view.resize(
-                (max(1, view.width * 3), max(1, view.height * 3)), Image.LANCZOS
+            self.preview.set_paintable(
+                self._to_texture(self._preview_image(crop, mode))
             )
-            self.preview.set_paintable(self._to_texture(shown))
+            self.preview_choice.set_tooltip_text(self._preview_explanation(mode))
         except Exception as exc:  # noqa: BLE001
             self.status_label.set_text(f"preview failed: {exc}")
 
@@ -887,12 +889,11 @@ class RegionPicker(Gtk.ApplicationWindow):
             self.conf_label.set_text("")
             return
 
+        shown, caption = self._readout(result)
+        self.ocr_label.set_text(shown)
+        self.conf_label.set_text(caption)
+
         if result.lines:
-            self.ocr_label.set_text(result.display_text)
-            self.conf_label.set_text(
-                f"confidence {result.confidence:.0f}   {len(result.lines)} line(s)"
-                + (f"   {result.dropped} dropped" if result.dropped else "")
-            )
             self._last_ocr_text = result.text
             # Always translate. This was behind a "Re-translate when I adjust
             # the box" checkbox, which was doing more harm than good: the
@@ -904,16 +905,126 @@ class RegionPicker(Gtk.ApplicationWindow):
             # new settings. It also meant the picker could not answer "is the
             # box right?" the one way that settles the question - the text.
             self._translate_async(result.text, debounce_ms=700)
-        else:
-            self.ocr_label.set_text("(no text found in this region)")
-            self.conf_label.set_text("")
 
-    @staticmethod
-    def _threshold_view(crop: Image.Image) -> Image.Image:
-        """What the calibrator's ink mask sees for this crop."""
-        gray = crop.convert("L")
-        mask = gray.point(lambda p: 255 if p > 150 else 0)
-        return mask.convert("RGB")
+    def _readout(self, result) -> tuple[str, str]:
+        """What the OCR pane and its caption say about one read.
+
+        Split out of `_refresh_preview` so the empty case can be tested without
+        running tesseract or drawing anything, because that case is where the
+        window used to lie: "(no text found in this region)" was the whole message
+        both when tesseract read nothing and when it read something the
+        confidence gate rejected. From the outside those look identical, and only
+        the second is a setting the user can move - so a box that reads fine at
+        41% under a gate of 55% reads as "this OCR cannot read Chinese".
+        """
+        if result.lines:
+            caption = f"confidence {result.confidence:.0f}   {len(result.lines)} line(s)"
+            if result.dropped:
+                caption += f"   {result.dropped} dropped"
+            return result.display_text, caption
+        if result.rejected:
+            # Show the read itself: whether the gate is too strict (clean text at
+            # 41%) or the recipe is wrong (garbage) is visible in the text and in
+            # nothing else.
+            best = max(line.confidence for line in result.rejected)
+            return (
+                "\n".join(line.text for line in result.rejected if line.text),
+                f"read {len(result.rejected)}, best {best:.0f}% — "
+                f"under the {self.ocr.min_confidence:.0f}% gate",
+            )
+        # Nothing at all, so the two things that decide the read - what OCR is
+        # handed, and what it is told to expect - are named here rather than left
+        # to tooltips. A one-line box read as "one block of text" comes back as
+        # nothing, and that is not a thing a user can guess from an empty pane.
+        return (
+            "(no text found in this region)\ninput: "
+            + ", ".join(self._recipe_steps())
+            + " — layout: "
+            + self._layout_label(),
+            "",
+        )
+
+    def _layout_label(self) -> str:
+        """The layout in force, as `ocr.PSM_NAMES` spells it."""
+        return PSM_NAMES.get(int(self.ocr.psm), f"psm {self.ocr.psm}")
+
+    def _recipe_steps(self) -> list[str]:
+        """The recipe in force, as words - one source for the caption and the
+        preview tooltip."""
+        steps = ["grey"]
+        if self.ocr.invert:
+            steps.append("inverted")
+        steps.append(
+            "contrast stretched" if self.ocr.autocontrast else "contrast untouched"
+        )
+        cut = threshold_value(self.ocr.threshold)
+        if cut:
+            steps.append(f"cut at {cut}")
+        return steps
+
+    def _preview_image(self, crop: Image.Image, mode: int) -> Image.Image:
+        """What the preview shows, always at `PREVIEW_SCALE` times the crop.
+
+        0 is the crop as captured, 1 is the exact image OCR is handed, 2 is that
+        image cut into ink and paper.
+
+        Modes 1 and 2 come from `self.ocr.prepared` rather than from a second
+        copy of the settings, which is the point: the preview used to draw its
+        own grey autocontrast whatever the config said, so `ocr.invert` and
+        `ocr.threshold` were invisible in the one view that exists to judge them.
+        """
+        if mode == 2:
+            view = self._cut_into_ink(crop)
+        elif mode == 1:
+            view = self.ocr.prepared(crop)
+        else:
+            view = crop
+        target = (
+            max(1, crop.width * PREVIEW_SCALE),
+            max(1, crop.height * PREVIEW_SCALE),
+        )
+        if view.size != target:
+            view = view.resize(target, Image.LANCZOS)
+        return view.convert("RGB")
+
+    def _cut_into_ink(self, crop: Image.Image) -> Image.Image:
+        """The OCR input cut into ink and paper.
+
+        At the configured cut - in which case `prepared` has already applied it,
+        and this is the same picture as mode 1 - or, when no cut is set, at the
+        one tesseract would choose for itself. That comparison is what answers
+        "would a fixed cut help here?".
+
+        The cut is read from the engine rather than from the config, like the
+        rest of the recipe: the engine is what OCR actually reads with, and a
+        config that had moved ahead of it would make this view describe a read
+        that is not happening.
+        """
+        prepared = self.ocr.prepared(crop)
+        if threshold_value(self.ocr.threshold):
+            return prepared
+        cut = otsu_threshold(prepared)
+        return prepared.point(lambda p: 255 if p > cut else 0)
+
+    def _preview_explanation(self, mode: int) -> str:
+        """The tooltip for the preview chooser: what this view is, in the terms
+        the recipe is set in."""
+        if mode == 0:
+            return "The crop as it was captured."
+        steps = self._recipe_steps()
+        cut = threshold_value(self.ocr.threshold)
+        if mode == 1:
+            steps.append(f"cut at {cut}" if cut else "left grey for tesseract's own cut")
+            return "Exactly what OCR is handed: " + ", ".join(steps) + "."
+        if cut:
+            return (
+                f"The OCR input cut into ink and paper at {cut} — the same picture "
+                "as the OCR input, because that cut is already applied there."
+            )
+        return (
+            "The OCR input cut into ink and paper at the level tesseract would "
+            "pick for itself. Set a cut in Settings to override it."
+        )
 
     # -- start watching ---------------------------------------------------- #
     def _on_start(self) -> None:

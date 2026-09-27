@@ -37,6 +37,7 @@ from .ocr import (  # noqa: E402
     installed_models,
     model_state,
     split_langs,
+    threshold_value,
 )
 from .ocr_languages import (  # noqa: E402
     get as ocr_model,
@@ -1055,6 +1056,86 @@ class SettingsDialog(Gtk.Window):
         self.ocr_hint.add_css_class("lintranslator-hint")
         self.ocr_hint.set_max_width_chars(70)
         language_notes.append(self.ocr_hint)
+
+        # What OCR is handed. The recipe is grey, upscaled, inverted, stretched
+        # and optionally cut into ink and paper, and every step of it is invisible
+        # in the config while changing the read completely: white dialogue on a
+        # black box reads badly until it is inverted, and a box that is already
+        # high contrast can be *hurt* by the stretch, which turns a background
+        # gradient behind the glyphs into edges of its own. The picker's preview
+        # shows this recipe exactly (see `RegionPicker._preview_image`), so these
+        # three are chosen by looking at it rather than by trusting the names.
+        self.ocr_input_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.ocr_input_row.append(Gtk.Label(label="OCR input", xalign=0))
+
+        self.ocr_invert = Gtk.CheckButton(label="Invert")
+        self.ocr_invert.set_active(self.config.ocr.invert)
+        self.ocr_invert.set_tooltip_text(
+            "Read light text on a dark box: the grey crop is inverted before OCR. "
+            "Tesseract is trained on dark glyphs on light paper, and inverting a "
+            "dark-on-light box is what makes it unreadable."
+        )
+        self.ocr_input_row.append(self.ocr_invert)
+
+        self.ocr_autocontrast = Gtk.CheckButton(label="Stretch contrast")
+        self.ocr_autocontrast.set_active(self.config.ocr.autocontrast)
+        self.ocr_autocontrast.set_tooltip_text(
+            "Stretch the grey range to full black-to-white before OCR. On by "
+            "default; turn it off for a box that is already clean, where the "
+            "stretch only amplifies the background."
+        )
+        self.ocr_input_row.append(self.ocr_autocontrast)
+
+        self.ocr_input_row.append(Gtk.Label(label="Cut at", xalign=0))
+        self.ocr_threshold = Gtk.SpinButton.new_with_range(0, 255, 4)
+        # Through `threshold_value`, because `ocr.threshold` is a config value
+        # and a hand-edited one may not be a number: `set_value` raises on a
+        # string, which would take the whole dialog down rather than say "off".
+        level = threshold_value(self.config.ocr.threshold)
+        self.ocr_threshold.set_value(level)
+        # Not numeric, so the field can say "off" at 0 (see
+        # `_on_threshold_output`): a numeric spin button rejects text that is not
+        # a number and blanks the field instead, which is how this row first
+        # rendered - an empty box beside a value of 0.
+        self.ocr_threshold.set_numeric(False)
+        self.ocr_threshold.connect("output", self._on_threshold_output)
+        # Written here as well as by the handler: `output` is emitted when the
+        # widget is drawn, so without this a dialog that has not been on screen
+        # yet - every test, and the moment before the window maps - reads "0".
+        self.ocr_threshold.set_text(self._cut_label(level))
+        self.ocr_threshold.set_tooltip_text(
+            "Cut the grey input into ink and paper at this level, or leave it at "
+            "off and let tesseract choose its own cut. Applied after the contrast "
+            "stretch, so the number means the same thing either way."
+        )
+        self.ocr_input_row.append(self.ocr_threshold)
+        language_notes.append(self.ocr_input_row)
+
+        # The gate, which is the one thing here that is not about what OCR is
+        # handed but about what counts as a read at all: a line below this is
+        # dropped rather than translated, and the picker names the number when it
+        # drops one. It was config-only, which made a read that missed it by a
+        # point indistinguishable from an OCR that could not see the box.
+        #
+        # `ocr.psm` is deliberately *not* here. It changes the read as much as
+        # anything on this row does - measured on a one-line strip over artwork,
+        # the default mode read garbage at 38% where "a single line" read the text
+        # at 70.8% - but no single value is safe for every box shape (that same
+        # mode reads a two-line box as nothing at all), and the box shape is not
+        # something a user should have to answer a question about. It stays a
+        # config key, the picker names the layout in force when a read comes back
+        # empty, and `lintranslator check` prints it.
+        self.ocr_gate_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.ocr_gate_row.append(Gtk.Label(label="Confidence gate", xalign=0))
+        self.ocr_confidence = Gtk.SpinButton.new_with_range(0, 100, 5)
+        self.ocr_confidence.set_value(threshold_value(self.config.ocr.min_confidence))
+        self.ocr_confidence.set_tooltip_text(
+            "A line read with less confidence than this is dropped instead of "
+            "translated, and the picker says so under the readout. 0 accepts "
+            "everything, including the background art."
+        )
+        self.ocr_gate_row.append(self.ocr_confidence)
+        language_notes.append(self.ocr_gate_row)
         grid.attach(language_notes, 1, 3, 1, 1)
 
         # The Model row is rebuilt on every backend change: the label, the
@@ -1507,6 +1588,26 @@ class SettingsDialog(Gtk.Window):
         self._ocr_langs = "+".join(self.ocr_picker.get_langs())
         self._refresh_ocr_hint(self.source_picker.get_code())
 
+    @staticmethod
+    def _cut_label(value) -> str:
+        """The cut as the field shows it: "off" at 0, which is not a grey level.
+
+        A row that reads `Cut at 0` invites the reading that OCR is being handed
+        a black image, when 0 means "leave the image grey and let tesseract
+        choose its own cut".
+        """
+        level = int(value)
+        return "off" if level == 0 else str(level)
+
+    def _on_threshold_output(self, spin: Gtk.SpinButton) -> bool:
+        """Draw the cut through `_cut_label` rather than as a bare number.
+
+        The spin button is `numeric=False` so that this text survives: a numeric
+        one rejects anything that is not a number and blanks the field.
+        """
+        spin.set_text(self._cut_label(spin.get_value()))
+        return True
+
     def _set_ocr_langs(self, value: str) -> None:
         """Write the list into the picker, which the state then follows.
 
@@ -1835,6 +1936,13 @@ class SettingsDialog(Gtk.Window):
             else:
                 # Stored `+`-joined, which is the only form `-l` accepts.
                 self.config.ocr.langs = "+".join(split_langs(self._ocr_langs))
+        # What OCR is handed. Written whether or not the OCR languages were
+        # usable: these are what the *read* of a good box is tuned with, and they
+        # have nothing to do with the language list being wrong.
+        self.config.ocr.invert = self.ocr_invert.get_active()
+        self.config.ocr.autocontrast = self.ocr_autocontrast.get_active()
+        self.config.ocr.threshold = int(self.ocr_threshold.get_value())
+        self.config.ocr.min_confidence = float(self.ocr_confidence.get_value())
         self.config.display.font_scale = round(self.font_scale.get_value(), 2)
         self.config.display.width = int(self.width_scale.get_value())
         # Changing a line budget re-states the rule the card's height comes from,

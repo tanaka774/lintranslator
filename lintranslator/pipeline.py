@@ -155,6 +155,8 @@ class Pipeline:
             psm=config.ocr.psm,
             upscale=config.ocr.upscale,
             autocontrast=config.ocr.autocontrast,
+            invert=config.ocr.invert,
+            threshold=config.ocr.threshold,
             tessdata_dir=config.ocr.tessdata_dir,
             min_confidence=config.ocr.min_confidence,
             allow_unverified_tessdata=config.ocr.allow_unverified_tessdata,
@@ -474,11 +476,20 @@ class Pipeline:
             self.empty_guard.observe(False)
             self._decision = "skip:self-ui" if dropped_own else "skip:no-text"
             if force:
-                self._note(
-                    "only lintranslator's own window is in the box"
-                    if dropped_own
-                    else "nothing readable in the box — check the region"
-                )
+                # Say which of the three it was. "Nothing readable in the box" is
+                # the wrong advice when tesseract read a line and the confidence
+                # gate rejected it: the box is fine and `ocr.min_confidence` is
+                # the setting in the way.
+                if dropped_own:
+                    self._note("only lintranslator's own window is in the box")
+                elif result.rejected:
+                    best = max(line.confidence for line in result.rejected)
+                    self._note(
+                        f"read {len(result.rejected)} line(s), best {best:.0f}% — "
+                        f"under the {self.ocr.min_confidence:.0f}% confidence gate"
+                    )
+                else:
+                    self._note("nothing readable in the box — check the region")
             return None
 
         # Confident nonsense: background art and UI chrome read cleanly enough to

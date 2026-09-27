@@ -243,6 +243,12 @@ class _ScriptedOcr:
         # Settable per test: how sure OCR is of what it read decides whether a
         # short or thin read is treated as dialogue (see `selftext.noise_reason`).
         self.confidence = confidence
+        # The gate the real engine applies, read by the pipeline when it has to
+        # explain a read that produced no text.
+        self.min_confidence = 40.0
+        # When set, the scripted read comes back as a line the gate rejected
+        # instead of as text: the box is fine and the gate is what is in the way.
+        self.rejected_at: float | None = None
 
     def ensure_ready(self):
         return None
@@ -252,8 +258,19 @@ class _ScriptedOcr:
 
         self.calls += 1
         text = self.screen.readings[max(0, self.screen.i)]
-        lines = [OcrLine(text, self.confidence, (0, 0, 10, 10))] if text else []
-        return OcrResult(lines=lines, elapsed=0.001, engine="s", lang="eng")
+        if not text:
+            return OcrResult(lines=[], elapsed=0.001, engine="s", lang="eng")
+        line = OcrLine(text, self.rejected_at or self.confidence, (0, 0, 10, 10))
+        if self.rejected_at is not None:
+            return OcrResult(
+                lines=[],
+                elapsed=0.001,
+                engine="s",
+                lang="eng",
+                dropped=1,
+                rejected=[line],
+            )
+        return OcrResult(lines=[line], elapsed=0.001, engine="s", lang="eng")
 
 
 def _pipeline_for(readings: list[str], blinking: bool = False, **overrides):
@@ -878,6 +895,28 @@ def test_a_reread_of_an_empty_box_says_so():
     assert events == []
     assert pipe.last_decision == "skip:no-text"
     assert any("nothing readable" in note for note in notes), notes
+    pipe.close()
+
+
+def test_a_reread_the_gate_rejected_says_which_gate():
+    """The other half of "nothing readable", and the opposite advice.
+
+    `ocr.min_confidence` has no row in Settings, so this note is the only place
+    its effect is visible - and "check the region" is wrong advice when the
+    region is right and the gate is what threw the line away.
+    """
+    pipe, screen, events = _pipeline_for(["你从昨天12点吃到还没吃饱"] * 8)
+    pipe.ocr.rejected_at = 41.0
+    pipe.ocr.min_confidence = 55.0
+    notes = []
+    pipe.on_note = notes.append
+
+    pipe.request_reread()
+    pipe.step(0.5)
+
+    assert events == []
+    assert pipe.last_decision == "skip:no-text"
+    assert any("best 41%" in note and "55% confidence gate" in note for note in notes), notes
     pipe.close()
 
 

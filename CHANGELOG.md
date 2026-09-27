@@ -9,6 +9,57 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+**A read that finds nothing says which kind of nothing it was**
+
+- **"(no text found in this region)" was two different answers.** Tesseract
+  reading nothing, and tesseract reading a line that `ocr.min_confidence` then
+  rejected, looked identical in the picker - and only the second is a setting the
+  user can move. So a box that reads fine at 41% under a gate of 55% read as "this
+  OCR cannot read the language". The readout now shows the rejected read and names
+  the gate underneath it ("read 1, best 41% — under the 55% gate"), and when
+  nothing was read at all it names the recipe in force ("input: grey, inverted,
+  contrast untouched"). `OcrResult` keeps the lines the gate threw away whole
+  rather than counting them, and the panel's forced re-read note makes the same
+  three-way distinction instead of always saying "check the region".
+- **`ocr.min_confidence` has a row now**, because it decides whether a good read
+  survives and had none. A read that misses the gate by a point is dropped, and
+  the window reported that as "no text found in this region" - indistinguishable
+  from an OCR that cannot see the box at all.
+- **`ocr.psm` stays a config key, deliberately.** It changes a read as much as
+  anything else does: on a one-line strip over bright artwork the default mode
+  read garbage at 38.1% where "a single line" read the text at 70.8%. But no
+  single value is safe for every box shape - that same mode reads a two-line box
+  as *nothing at all* (0.0% against 74.1% for the default) - and the box's shape
+  is not a question the dialog should ask. So the picker names the layout in force
+  when a read comes back empty, `lintranslator check` prints it beside the recipe,
+  and the names with the measurements behind them live in `ocr.PSM_NAMES` so the
+  readout, the check and the numbers cannot drift apart.
+- **The hint under the OCR-input row is gone.** The row explains itself through
+  its tooltips, and the picker's readout is where the recipe's effect is actually
+  visible.
+
+**OCR input is a setting, and the preview shows it**
+
+- **`ocr.invert` and `ocr.threshold` are new, and both are in Settings.** The
+  engine already had an `invert` argument that nothing could reach, and the recipe
+  was grey, 3x upscale and autocontrast with no way to read white dialogue on a
+  black panel, or to separate grey glyphs from a background the stretch cannot.
+  The new **OCR input** row sets both, beside the contrast stretch that was
+  config-only until now. The cut is applied *after* the stretch, so the number
+  means the same thing whatever the contrast setting is, and 0 shows as "off"
+  rather than as a level - it is not one.
+- **The picker's preview is the recipe now, not a drawing of it.** Both of its
+  non-raw modes drew their own grey autocontrast, so `invert` and a fixed cut were
+  invisible in the one view that exists to judge them, and its "threshold" mode was
+  a fixed 150 that no setting could move. "Preview: OCR input" is
+  `TesseractOcr.prepared(crop)` itself, and "Preview: threshold" is that image cut
+  at the configured level - or, with no cut set, at the one tesseract would pick
+  for itself (Otsu), which is the comparison that answers "would a fixed cut help
+  here?". The tooltip names the recipe in force.
+- **`lintranslator read|run --invert --threshold N`** set the same two for one run,
+  and **`lintranslator check`** prints the recipe it would use, which is the usual
+  answer to "why is this box read as nothing?".
+
 **Popovers stop borrowing the desktop theme's colours**
 
 - **The model, language and OCR-language lists could not be read in a light

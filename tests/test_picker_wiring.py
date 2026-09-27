@@ -29,7 +29,7 @@ try:
 except (ImportError, ValueError):  # pragma: no cover - no GTK typelib
     pytest.skip("GTK 4 typelib unavailable", allow_module_level=True)
 
-from PIL import Image  # noqa: E402
+from PIL import Image, ImageDraw  # noqa: E402
 
 from lintranslator import capture as capture_mod  # noqa: E402
 from lintranslator import panel as panel_mod  # noqa: E402
@@ -1231,3 +1231,177 @@ def test_applying_settings_retries_a_failed_preparation(picker, monkeypatch):
 
     assert picker._ocr_ready.wait(5.0), "the retry never ran"
     assert picker._ocr_blocked_reason() is None, "the old failure still blocks OCR"
+
+
+# --------------------------------------------------------------------------- #
+# The preview and the recipe
+# --------------------------------------------------------------------------- #
+def _box(size=(24, 12)) -> Image.Image:
+    """A dark panel with a light block in it, the shape a dialogue box has."""
+    img = Image.new("RGB", size, (20, 20, 20))
+    ImageDraw.Draw(img).rectangle([2, 2, size[0] - 3, size[1] - 3], fill=(210, 210, 210))
+    return img
+
+
+def _at(view: Image.Image, x: int, y: int) -> tuple:
+    """The preview pixel for crop pixel (x, y): the view is drawn at 3x."""
+    scale = picker_mod.PREVIEW_SCALE
+    return view.getpixel((x * scale + scale // 2, y * scale + scale // 2))
+
+
+def test_the_preview_shows_the_image_ocr_is_handed(picker, monkeypatch):
+    """Regression: the preview drew its own grey autocontrast.
+
+    `ocr.invert` and `ocr.threshold` were therefore invisible in the one view
+    that exists to judge them - a box read inverted was previewed as if it were
+    not. The preview now asks the engine in hand for its recipe, so the two
+    cannot disagree.
+    """
+    monkeypatch.setattr(picker, "_prepare_ocr_async", lambda: None)
+    crop = _box()
+    picker.config.ocr.invert = True
+    picker.config.ocr.threshold = 96
+    picker._rebuild_ocr()
+
+    shown = picker._preview_image(crop, 1)
+    assert shown.size == (
+        crop.width * picker_mod.PREVIEW_SCALE,
+        crop.height * picker_mod.PREVIEW_SCALE,
+    )
+    assert shown.tobytes() == picker.ocr.prepared(crop).convert("RGB").tobytes()
+    # And it is the inverted picture, not the old fixed one: the panel comes out
+    # white and the glyph block black.
+    assert _at(shown, 0, 0) == (255, 255, 255), "the panel is white once inverted"
+    assert _at(shown, 10, 5) == (0, 0, 0), "the glyph block is the ink"
+
+    # Put the recipe back: the panel is dark again, so the two assertions above
+    # are about the settings rather than about the drawing.
+    picker.config.ocr.invert = False
+    picker.config.ocr.threshold = 0
+    picker._rebuild_ocr()
+    panel = _at(picker._preview_image(crop, 1), 0, 0)
+    assert sum(panel) < 200, f"the panel should be dark again, got {panel}"
+
+
+def test_a_configured_cut_makes_the_threshold_view_the_same_picture(picker, monkeypatch):
+    """With a cut configured there is nothing left for the ink view to add.
+
+    Both modes then show the image OCR is handed, which is what the tooltip
+    says - a second name for the same picture would be a lie in the other
+    direction.
+    """
+    monkeypatch.setattr(picker, "_prepare_ocr_async", lambda: None)
+    crop = _box()
+    picker.config.ocr.threshold = 96
+    picker._rebuild_ocr()
+
+    assert set(picker._preview_image(crop, 1).convert("L").getdata()) == {0, 255}
+    assert picker._preview_image(crop, 2).tobytes() == picker._preview_image(crop, 1).tobytes()
+
+
+def test_the_threshold_view_is_ink_and_paper_only(picker):
+    """With no cut configured it shows tesseract's own cut, so a fixed one can be
+    judged against it - not a panel-invented level like the fixed 150 it was."""
+    view = picker._preview_image(_box(), 2).convert("L")
+    assert set(view.getdata()) == {0, 255}
+
+
+def test_the_raw_view_is_the_crop_as_captured(picker):
+    crop = _box()
+    view = picker._preview_image(crop, 0)
+    assert _at(view, 0, 0) == (20, 20, 20)
+    assert _at(view, 10, 5) == (210, 210, 210)
+
+
+def test_a_changed_recipe_rebuilds_the_engine(picker, monkeypatch):
+    """`invert` and `threshold` are part of what OCR reads, so they belong to the
+    set that decides whether the engine in hand is still the configured one.
+
+    Without this a box would keep being read with the recipe the window was
+    opened with, which is the bug `_rebuild_ocr` exists for - it was `ocr.langs`
+    then, and the same rule covers the rest of the recipe.
+    """
+    monkeypatch.setattr(picker, "_prepare_ocr_async", lambda: None)
+    before = picker.ocr
+    picker.config.ocr.invert = True
+    picker._rebuild_ocr()
+    assert picker.ocr is not before
+    assert picker.ocr.invert is True
+
+    before = picker.ocr
+    picker.config.ocr.threshold = 128
+    picker._rebuild_ocr()
+    assert picker.ocr is not before
+    assert picker.ocr.threshold == 128
+
+
+def test_the_readout_says_when_the_confidence_gate_ate_the_read(picker):
+    """The window used to say "(no text found in this region)" for this too.
+
+    It is the difference between "this OCR cannot read the language" and "the OCR
+    read it and a filter rejected it", and only the second is a setting - so the
+    read is shown, with the gate that threw it away named underneath.
+    """
+    from lintranslator.ocr import OcrLine, OcrResult
+
+    picker.ocr.min_confidence = 55.0
+    result = OcrResult(
+        lines=[],
+        elapsed=0.01,
+        engine="tesseract",
+        lang="chi_sim+eng",
+        dropped=1,
+        rejected=[OcrLine("你从昨天12点吃到还没吃饱", 41.0, (0, 0, 10, 10))],
+    )
+
+    shown, caption = picker._readout(result)
+    assert shown == "你从昨天12点吃到还没吃饱"
+    assert "41%" in caption and "55%" in caption
+    assert "gate" in caption
+
+
+def test_the_readout_names_the_recipe_when_nothing_was_read(picker, monkeypatch):
+    """With no read at all the recipe is the only thing that can be wrong with
+    the input, so the pane names it instead of leaving it to a tooltip."""
+    from lintranslator.ocr import OcrResult
+
+    monkeypatch.setattr(picker, "_prepare_ocr_async", lambda: None)
+    picker.config.ocr.invert = True
+    picker.config.ocr.autocontrast = False
+    picker._rebuild_ocr()
+
+    result = OcrResult(lines=[], elapsed=0.01, engine="tesseract", lang="chi_sim+eng")
+    shown, caption = picker._readout(result)
+    assert "(no text found in this region)" in shown
+    assert "inverted" in shown and "contrast untouched" in shown
+    # And the other thing that decides a read: on a one-line box the default
+    # layout reads nothing at all, which is not guessable from an empty pane.
+    assert "layout: one block of text" in shown
+    assert caption == ""
+
+
+def test_the_readout_names_the_layout_that_is_set(picker, monkeypatch):
+    from lintranslator.ocr import OcrResult
+
+    monkeypatch.setattr(picker, "_prepare_ocr_async", lambda: None)
+    picker.config.ocr.psm = 7
+    picker._rebuild_ocr()
+    result = OcrResult(lines=[], elapsed=0.01, engine="tesseract", lang="chi_sim+eng")
+    shown, _ = picker._readout(result)
+    assert "layout: a single line" in shown
+
+
+def test_the_readout_still_reports_a_good_read(picker):
+    from lintranslator.ocr import OcrLine, OcrResult
+
+    result = OcrResult(
+        lines=[OcrLine("When the St. Andrew's", 88.0, (0, 0, 10, 10))],
+        elapsed=0.01,
+        engine="tesseract",
+        lang="eng",
+        dropped=2,
+    )
+    shown, caption = picker._readout(result)
+    assert shown == "When the St. Andrew's"
+    assert "confidence 88" in caption and "1 line(s)" in caption
+    assert "2 dropped" in caption

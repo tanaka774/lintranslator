@@ -63,6 +63,18 @@ class OcrConfig:
     psm: int = 6
     upscale: float = 3.0
     autocontrast: bool = True
+    # Read light text on a dark box. Tesseract is trained on dark glyphs on light
+    # paper, so white dialogue on a black panel reads worse than it should until
+    # the crop is inverted - and inverting a dark-on-light box is exactly what
+    # makes *that* unreadable, which is why this is off by default rather than
+    # guessed from the image.
+    invert: bool = False
+    # Cut the grey input into ink and paper at this level (1-255), or 0 to leave
+    # it grey and let tesseract choose its own cut. The blunt tool for a box that
+    # stays the same shape: a coloured panel, or grey glyphs over a background
+    # the contrast stretch cannot separate them from. Applied after the stretch,
+    # so the number means the same thing whatever the contrast setting is.
+    threshold: int = 0
     # extra user patterns, e.g. "/usr/share/tessdata"
     tessdata_dir: str | None = None
     min_confidence: float = 40.0
