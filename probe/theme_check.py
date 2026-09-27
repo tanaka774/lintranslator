@@ -1,39 +1,8 @@
-"""Check that the app's own surfaces win over the desktop theme.
-
-The bug this exists for: the app paints its windows dark and its labels light,
-but it left the *background* of the lists inside popovers to the desktop theme.
-Breeze light gives `list`, `list row` and `listview.view` the theme's base
-colour, i.e. white, and that is painted *over* the popover surface - so the model
-list came out white under this stylesheet's near-white labels, and the only clue
-was that it happened "in a certain system colour theme".
-
-Four surfaces are rendered and sampled:
-
-  control   a bare ListBox in a window *without* the app class - the colour the
-            desktop theme would paint the other three with
-  list      a ListBox inside a popover, the shape the three pickers use
-  view      a real Gtk.DropDown popup, whose ListView carries `.view`
-  textview  the prompt editor, a Gtk.TextView
-
-The three app surfaces must come out dark - this app's own popover surface, or
-one of the two overlays it puts on a row - and never the theme's light colour.
-
-Run:  .venv/bin/python probe/theme_check.py
-
-The light variant is forced by re-executing under `GTK_THEME` (default
-`Breeze:light`, override with `LINTRANSLATOR_PROBE_THEME`): the failure only
-appears in a light theme, and the dark variant is a request rather than a
-mechanism - GTK deprecated `gtk-application-prefer-dark-theme` in 4.20 and it
-never applied to a theme that ships no dark variant - so it cannot be relied on
-from inside the process. `--as-is` keeps the current theme, and then the probe
-reports that it cannot test rather than passing on a dark theme's colours.
-"""
+"""Check that the app's own surfaces win over the desktop theme."""
 import os
 import sys
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -120,12 +89,7 @@ def find_descendant(widget, kind):
 
 
 def row_sample(child, ancestor, *, from_right: int = 15, height_fraction: float = 0.5):
-    """A point inside `child` (a row), `from_right` px in from its right edge.
-
-    The right end of a row rather than its middle: the labels are left aligned
-    and short, so this is background in every list here, whatever the theme's
-    padding is.
-    """
+    """A point inside `child` (a row), `from_right` px in from its right edge."""
     ok, rect = child.compute_bounds(ancestor)
     if not ok:
         failures.append("a row could not be located inside its parent")
@@ -164,14 +128,12 @@ def main() -> int:
     theme.install_for(Config.load())
     loop = GLib.MainLoop()
 
-    # The control: the desktop theme with none of this app's classes on it.
     plain = Gtk.Window(title="theme check - control")
     plain.set_default_size(360, 120)
     control = make_listbox()
     plain.set_child(control)
     plain.present()
 
-    # The app's own window: pickers' popover, a DropDown popup, a TextView.
     win = Gtk.Window(title="theme check")
     win.add_css_class("lintranslator-app")
     win.set_default_size(420, 260)
@@ -211,8 +173,7 @@ def main() -> int:
         return False
 
     def step_dropdown(list_point):
-        # A DropDown's popup is private and has no public "open" call; toggling
-        # its own button is what a click does.
+        # a DropDown's popup is private and has no public "open" call - toggle its button
         dropdown.get_first_child().set_active(True)
         GLib.timeout_add(700, lambda: (step_shot_dropdown(list_point), False)[1])
         return False
@@ -235,8 +196,7 @@ def main() -> int:
             else:
                 view_point = row_sample(listview, popup, from_right=15, height_fraction=0.0)
                 if view_point is not None:
-                    # The first row rather than the middle of the list: the list
-                    # fills the popup, and row 0 is where the surface shows.
+                    # row 0 rather than the middle: the list fills the popup and the surface shows there
                     view_point = (view_point[0], view_point[1] + 18)
         dropdown.get_first_child().set_active(False)
         GLib.timeout_add(300, lambda: (step_shot_textview(list_point, view_point), False)[1])
@@ -248,15 +208,12 @@ def main() -> int:
         return False
 
     def report(list_point, view_point):
-        # The control is measured the same way as the app's surfaces - inside a
-        # row, at its right end - so it is the theme's list background and not a
-        # selected row or a border.
+        # same sampling as the app's surfaces: inside a row, at its right end, not a border
         control_point = row_sample(control.get_row_at_index(1), plain)
         control_rgb = pixel("control", *control_point)[:3] if control_point else (0, 0, 0)
         print(f"  desktop theme paints lists {control_rgb}", flush=True)
-        # The whole check rests on the theme painting something light: under a
-        # dark theme this app's colour and the theme's are both dark, and a pass
-        # would mean nothing. That is "cannot run here", not a failure.
+        # under a dark theme this app's colour and the theme's are both dark, so a
+        # pass would mean nothing - "cannot run here", not a failure
         if sum(control_rgb) < 400:
             print(
                 f"cannot test: this theme paints lists {control_rgb}, which is not "
@@ -269,9 +226,8 @@ def main() -> int:
             return False
         expect_dark("list", list_point, "popover list")
         expect_dark("view", view_point, "dropdown popup")
-        # The prompt editor is a translucent sunken surface, so the check is that
-        # it is not the theme's opaque light slab. Sampled below the first line
-        # of text, which is where the surface itself shows.
+        # the prompt editor is translucent, so the check is that it is not the
+        # theme's opaque light slab; sampled below the first line of text
         got = pixel("textview", 12, 60)
         print(f"  {'prompt editor':<22} {got} at (12, 60)", flush=True)
         if got[3] > 250 and sum(got[:3]) > 600:

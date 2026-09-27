@@ -1,29 +1,10 @@
-"""Measure the region picker's sidebar: who sets its width, and how tall it is.
-
-Run:  .venv/bin/python probe/picker_sidebar_check.py
-
-Two questions, both about the picker's right column:
-
-* **Width.** The sidebar is wrapped in a Gtk.ScrolledWindow so its wrapping
-  labels cannot dictate the window width, yet in `data/render_picker_idle.png`
-  the sidebar looks far wider than its 320px request while the canvas - which
-  has `hexpand` - gets the smaller half. An unwrapped label's *minimum* width is
-  its whole text, and `propagate-natural-width=False` only suppresses the
-  natural width, so the floor has to be found rather than guessed at.
-* **Height.** How much of the column the content actually asks for, so the empty
-  space at the bottom can be attributed to something instead of eyeballed.
-
-It prints the widget requests first, then presents the window once with
-realistic content and prints what each widget was actually allocated.
-"""
+"""Measure the region picker's sidebar: who sets its width, and how tall it is."""
 from __future__ import annotations
 
 import sys
 from io import BytesIO
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -37,8 +18,8 @@ from PIL import Image  # noqa: E402
 from lintranslator import picker as picker_mod  # noqa: E402
 from lintranslator.config import Config  # noqa: E402
 
-# What the picker really holds once a region has been dragged: the coordinate
-# readout is one long unwrapped line and the OCR text is a whole sentence.
+# realistic content: the coordinate readout is one long unwrapped line, the OCR
+# text a whole sentence
 COORDS = "x=307 y=1213 w=1175 h=165   (fractions 0.1199, 0.8424, 0.4590, 0.1146)"
 OCR = (
     "Hm. Of all the work done by our team during the last deployment, hers "
@@ -117,8 +98,6 @@ def main() -> int:
 
     def on_activate(_app) -> None:
         picker = picker_mod.RegionPicker(app, cfg, screenshot_png=png())
-        # The picker opens no card until Start, so there is nothing else on
-        # screen to hide while the columns are measured.
 
         print("-- requests, before any window exists --")
         for name, widget in (
@@ -154,8 +133,8 @@ def main() -> int:
         picker.conf_label.set_text("confidence 95   2 line(s)")
         picker.trans_label.set_text(TRANSLATION)
         picker.present()
-        # A separate slot: changing text above invalidates the cached render
-        # node, so the allocation is only meaningful a frame or two later.
+        # a separate slot: changing the text above invalidates the cached render node, so the
+        # allocation is only meaningful a frame or two later
         GLib.timeout_add(900, report_live, picker)
         GLib.timeout_add(1400, lambda: (picker._shutdown_panel(), app.quit(), False)[2])
 

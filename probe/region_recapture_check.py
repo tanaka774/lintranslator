@@ -1,32 +1,9 @@
-"""Does the panel's Region button come back on a *fresh* screenshot?
-
-The behaviour being checked: pressing Region used to re-show the picker on the
-screenshot taken when Start was pressed - so the box was framed against a
-screen the game had long since moved on from. It now re-grabs the screen on the
-way back, and does so immediately when the window is already off screen (which
-is what watching means), rather than paying the Capture button's 1 s countdown.
-
-Two things are measured, both against the **real** portal:
-
-1. the picker's canvas is replaced by a new capture, the dragged box survives it,
-   and no 1 s wait is inserted when the window is already unmapped;
-2. concurrent full-screen grabs do not fail - during the re-grab the pipeline is
-   still polling the same portal, on another thread, so a portal that refused the
-   second request would turn Region into "capture failed".
-
-No window is presented and no pipeline is started: `present` is stubbed out, so
-nothing appears on screen. The screen itself *is* captured - that is the point -
-so run this at a moment when that is acceptable.
-
-Run:  .venv/bin/python probe/region_recapture_check.py
-"""
+"""Does the panel's Region button come back on a *fresh* screenshot?"""
 import sys
 import threading
 import time
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -101,7 +78,7 @@ def concurrent_grab_check(cfg, rounds: int = 4) -> bool:
 
     reader = threading.Thread(target=poll, daemon=True)
     reader.start()
-    time.sleep(0.3)  # let the reader get going
+    time.sleep(0.3)  # let the reader thread get going, so the grabs really overlap
     for _ in range(rounds):
         try:
             grabber = capture_mod.ScreenGrabber(cfg.capture.region)
@@ -132,8 +109,7 @@ def main() -> int:
     ok_concurrent = concurrent_grab_check(cfg)
     print(f"  failures: {FAILURES or 'none'}")
 
-    # Only from here on is the picker's grabber counted: the concurrency check
-    # above is not what this probe is reporting on.
+    # only from here on is the picker's grabber counted, so GRABS holds just the Region grab
     capture_mod.ScreenGrabber = CountingGrabber
 
     app = Gtk.Application(
@@ -146,11 +122,9 @@ def main() -> int:
 
         picker = RegionPicker(app, cfg, screenshot_png=png)
         picker.present = lambda: None  # nothing lands on the real screen
-        # Never ask the developer's compositor for a global shortcut from a probe.
         picker._panel.hotkey_enabled = False
 
-        # The state the user is in when they press Region: watching, and this
-        # window already off screen.
+        # the state when Region is pressed: watching, and this window already off screen
         picker._on_start()
         picker.set_visible(False)
         box_before = picker.sel

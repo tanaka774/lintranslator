@@ -1,35 +1,13 @@
-"""Text that can only have come from lintranslator's own windows.
-
-The occlusion gate (`lintranslator.occlusion`) keeps the pipeline from capturing while the
-picker or the settings dialog is on screen. The panel cannot be gated - it is the
-output and stays visible while watching - so a panel dragged over the box is
-caught here instead, by recognising our own text in the OCR result.
-
-Two rules, in order of confidence:
-
-* **Phrases.** Long, specific strings that no game dialogue contains
-  ("drag over the dialogue text", "press Start to begin translating", or the
-  picker's status line, which always contains `captured <w>x<h>`).
-* **Whole reads.** A read that is *nothing but* one of our short button labels
-  ("Pause", "Quit", "no selection"). Kept to whole reads on purpose: "Start" or
-  "Close" can appear inside a real sentence, and flagging those would cost the
-  user a translation.
-
-Anything flagged here is skipped rather than translated, and the panel says so -
-a false positive must be visible and explainable, never a silent missing line.
-"""
+"""Text that can only have come from lintranslator's own windows."""
 from __future__ import annotations
 
 import re
 
-# Substrings that only our own UI produces. Matched case-insensitively anywhere in
-# the read, so they survive OCR noise around them.
+# substrings only our own UI produces, matched case-insensitively anywhere in the
+# read so they survive OCR noise around them
 SELF_PHRASES = (
     "drag over the dialogue text",
     "still produces plausible ocr",
-    # The picker's Preview dropdown. One phrase per entry rather than the bare
-    # word: "raw" or "threshold" alone are words a game line can contain, while
-    # the label as drawn ("Preview: raw") is not.
     "preview: raw",
     "preview: ocr input",
     "preview: threshold",
@@ -47,8 +25,8 @@ SELF_PHRASES = (
     "lintranslator",
 )
 
-# Reads that are nothing but a control label. Compared against the whole
-# normalised text, never as a substring.
+# reads that are nothing but a control label, compared against the whole
+# normalised text rather than as a substring
 SELF_LABELS = frozenset(
     {
         "no selection",
@@ -68,27 +46,21 @@ SELF_LABELS = frozenset(
     }
 )
 
-# The picker's status line and the panel's status line, both of which carry
-# numbers that identify them:
-#   "captured 2560x1440 — drag over the dialogue text"
-#   "12:34:56 · conf 90 · 812 ms · openrouter"
+# the picker's and the panel's status lines, both of which carry numbers that
+# identify them
 _SELF_PATTERNS = (
     re.compile(r"captured\s+\d{3,5}\s*[x×]\s*\d{3,5}"),
     re.compile(r"\bconf\s+\d{1,3}\s*[·.\-*]\s*(cached|\d+\s*ms)"),
 )
 
-# Trailing punctuation/whitespace is dropped before the whole-read comparison, so
-# "Pause." and "Pause …" still count as the label.
+# characters trimmed from both ends before the whole-read comparison, so "Pause."
+# and "Pause …" still count as the label
 _EDGE = " \t\r\n.,;:!?…·-—*_'\"“”‘’()[]{}|"
 
-# A read needs at least this many letters to be dialogue at all. Background art
-# and UI chrome come back as one or two glyphs, often with punctuation glued on:
-# measured on a patterned poster inside the box, tesseract returned "e¢" at 62.5%
-# confidence - above the ordinary gate, and it was translated.
+# a read needs at least this many letters to be dialogue at all
 MIN_LETTERS = 2
-# Below this many letters+digits a read carries no context to judge it by, so it
-# has to be *more* confident than a normal line before a model is asked about it.
-# Real short lines ("Yes.", "Hm?") come off a clean game font at 90%+.
+# below this many letters+digits a read carries too little context to judge it
+# by, so it has to be more confident than a normal line before a model is asked
 SHORT_CHARS = 12
 DEFAULT_SHORT_CONFIDENCE = 75.0
 
@@ -114,18 +86,7 @@ def looks_like_own_ui(text: str) -> bool:
 def noise_reason(
     text: str, confidence: float, short_confidence: float = DEFAULT_SHORT_CONFIDENCE
 ) -> str | None:
-    """Why `text` is not dialogue, or None if it might be.
-
-    The other rails - nothing to read, low confidence, our own window - all miss
-    the same case: *confident nonsense*. Background art and UI chrome can read
-    cleanly at 60-80% confidence, which is above the ordinary gate, and a
-    translation of "e¢" is worse than none at all.
-
-    Two cheap tests, both asking whether there is enough language present to be
-    worth translating. Deliberately conservative: nothing longer than `SHORT_CHARS`
-    is judged on confidence at all, and a real short line off a clean game font is
-    high-confidence and passes. A false positive here costs one missing line.
-    """
+    """Why `text` is not dialogue, or None if it might be."""
     if not text or not text.strip():
         return None  # empty is a different case, handled by the empty path
     letters = sum(1 for char in text if char.isalpha())

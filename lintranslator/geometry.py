@@ -1,11 +1,6 @@
-"""Prompt templating shared by the settings dialog and the translator.
-
-Kept out of the widget code so it can be tested without a display.
-"""
+"""Prompt templating shared by the settings dialog and the translator."""
 from __future__ import annotations
 
-# A game-agnostic starting point. Short on purpose: long prompts get truncated by
-# small models and add latency to every line.
 DEFAULT_PROMPT = (
     "You are translating in-game dialogue from {source} into {target}. "
     "This is a video game script, not a document, so keep it natural and concise.\n"
@@ -13,11 +8,8 @@ DEFAULT_PROMPT = (
     "Keep the speaker's tone, and preserve leading or trailing brackets and symbols."
 )
 
-# Offered in the GUI so nobody has to write a prompt from scratch. The first
-# entry *is* the built-in default, and is named for that rather than for a genre:
-# it is what an empty `translate.prompt` falls back to, not one choice among
-# three. The Limbus one exists because the game's terminology is unusual enough
-# that a generic prompt produces wrong names and a wrong register.
+# presets offered in the GUI; "Default prompt" is the built-in default that an
+# empty `translate.prompt` falls back to
 PROMPT_PRESETS: dict[str, str] = {
     "Default prompt": DEFAULT_PROMPT,
     "Limbus Company": (
@@ -43,9 +35,5 @@ PROMPT_PRESETS: dict[str, str] = {
 
 
 def fill_prompt(template: str, source: str, target: str) -> str:
-    """Substitute the language names into a prompt template.
-
-    Uses explicit replacement rather than str.format so a stray brace in a
-    user-written prompt cannot raise.
-    """
+    """Substitute the language names into a prompt template, without raising on a stray brace."""
     return template.replace("{source}", source).replace("{target}", target)

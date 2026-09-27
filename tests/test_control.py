@@ -1,10 +1,4 @@
-"""The one-line control channel behind `lintranslator reread`.
-
-Wayland forbids reading global keys, so a shortcut outside the app runs a command
-and that command talks to the running window over this socket. What matters here:
-a round trip works, an absent socket reports something a user can act on, and a
-second GUI never steals the socket from a live one.
-"""
+"""The one-line control channel behind `lintranslator reread`."""
 from __future__ import annotations
 
 import threading
@@ -89,7 +83,6 @@ def test_a_second_gui_does_not_steal_the_socket():
 
     assert second.listening is False
     assert second.error and "another lintranslator GUI" in second.error
-    # And the first one still answers.
     replies: list[str] = []
     threading.Thread(target=lambda: replies.append(send("hi")), daemon=True).start()
     _pump_until(lambda: bool(replies))
@@ -129,12 +122,8 @@ def test_a_crashing_handler_still_answers():
     server.stop()
 
 
-# -- who else can reach it -------------------------------------------------- #
 def test_the_socket_is_never_placed_in_a_world_writable_directory():
-    """The old fallback was a flat `/tmp/lintranslator-<uid>.sock`, which another user
-    can create first - and whoever holds the path receives the commands. A
-    candidate inside a private subdirectory is fine; a direct child of the
-    shared temp root is not."""
+    """The socket must never be a direct child of the shared temp root."""
     import tempfile
     from pathlib import Path
 

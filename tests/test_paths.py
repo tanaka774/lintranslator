@@ -1,9 +1,4 @@
-"""Where lintranslator keeps its state, and how it writes it.
-
-The config can hold an API key in plain text, so the thing checked here is the
-mode the file is *created* with: a file that exists for even a moment as 0644 has
-already leaked its contents, and no later `chmod` undoes that.
-"""
+"""Where lintranslator keeps its state, and how it writes it."""
 from __future__ import annotations
 
 import json
@@ -17,9 +12,6 @@ from lintranslator import paths
 from lintranslator.config import Config
 
 
-# --------------------------------------------------------------------------- #
-# Modes
-# --------------------------------------------------------------------------- #
 def test_a_private_file_is_created_0600(tmp_path):
     target = tmp_path / "secret.json"
     paths.write_private(target, "{}\n")
@@ -27,11 +19,7 @@ def test_a_private_file_is_created_0600(tmp_path):
 
 
 def test_the_mode_is_set_at_creation_not_afterwards(tmp_path):
-    """`write_private` must not create the file wide and chmod it down.
-
-    Sampled from the mode passed to `os.open`, which is the only way to see the
-    difference: the finished file looks the same either way.
-    """
+    """`write_private` must not create the file wide and chmod it down."""
     seen: list[int] = []
     real_open = os.open
 
@@ -80,9 +68,6 @@ def test_a_failed_write_leaves_no_partial_file(tmp_path):
     assert list(tmp_path.iterdir()) == [target]
 
 
-# --------------------------------------------------------------------------- #
-# Config save/load
-# --------------------------------------------------------------------------- #
 def test_saving_the_config_is_private(tmp_path):
     cfg = Config()
     cfg.translate.api_key = "sk-or-v1-secret"
@@ -98,9 +83,6 @@ def test_saving_through_an_explicit_path_still_writes_there(tmp_path):
     assert target.exists()
 
 
-# --------------------------------------------------------------------------- #
-# Directories
-# --------------------------------------------------------------------------- #
 def test_the_socket_fallback_lives_with_the_rest_of_the_state(monkeypatch, tmp_path):
     monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
     from lintranslator.control import candidate_paths

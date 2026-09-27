@@ -1,27 +1,8 @@
-"""What does the pipeline see in the seconds after Start is pressed?
-
-The panel's worker starts capturing the instant `_on_start` runs, while the
-picker window (the one that was just clicked) and the freshly-presented panel are
-both still on screen. This probe drives that exact code path - the real
-`RegionPicker._on_start`, the real `PipelineThread`, the real portal grabber and
-tesseract - and records, per grab:
-
-  * wall time since the click
-  * whether the picker and panel windows were mapped at that instant
-  * what tesseract reads from the crop
-  * the full frame, so an early crop can be compared with a late one
-
-Then it hides the app's own windows, one at a time, and keeps capturing. If the
-early reads differ from the late ones, the app was reading itself.
-
-Run:  .venv/bin/python probe/handoff_timing.py
-"""
+"""Record what the pipeline sees in the seconds after Start is pressed."""
 import sys
 import time
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -108,7 +89,6 @@ class Probe:
         GLib.timeout_add(int(HIDE_PANEL_AT * 1000), self._hide_panel)
         GLib.timeout_add(int((WATCH_AT + RUN_SECONDS) * 1000), self._finish)
 
-    # -- main-thread actions ---------------------------------------------- #
     def _sample(self):
         p = self.picker
         panel = getattr(p, "_panel", None)
@@ -154,7 +134,6 @@ class Probe:
         self.app.quit()
         return False
 
-    # -- helpers ----------------------------------------------------------- #
     def _state_at(self, t):
         """Last sampled window state at or before `t`."""
         last = (None, None, None, None, None, None)
@@ -165,7 +144,6 @@ class Probe:
                 break
         return last
 
-    # -- report ------------------------------------------------------------ #
     def _report(self):
         from lintranslator.ocr import TesseractOcr
 
@@ -216,7 +194,6 @@ class Probe:
                 crop.save(f"{DATA}/probe_first_crop.png")
                 g["full"].save(f"{DATA}/probe_first_full.png")
 
-        # Quantitative: how much of the region changed once our windows went away?
         if len(crops) > 2:
             from lintranslator.detect import changed_fraction
 

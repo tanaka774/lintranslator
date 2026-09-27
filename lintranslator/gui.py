@@ -1,21 +1,4 @@
-"""GTK4 application entry point for the lintranslator GUI.
-
-Two windows, one process:
-
-    lintranslator gui            region picker (capture, drag a box, preview OCR);
-                                 its Start button opens the panel below
-    lintranslator gui --panel    translation panel (always-on-top, runs the pipeline)
-
-The picker never opens the panel by itself: a second window while a region is
-still being chosen is in the way, and it would land in the picker's own
-screenshot of the screen. `lintranslator gui --panel --no-start` is the way to
-put the card up early and place it by hand.
-
-The panel is a normal keep-above window rather than a layer-shell surface: the
-`gtk4-layer-shell` binding is not installable here, and Wayland forbids clients
-from positioning themselves. See `panel.py` for the consequences and the
-`GDK_BACKEND=x11` escape hatch.
-"""
+"""GTK4 application entry point for the lintranslator GUI."""
 from __future__ import annotations
 
 from .config import Config
@@ -43,8 +26,7 @@ class LinTranslatorApp:
         self.config = config
         self.mode = mode
         self.position = position
-        # None means "use the config" - the default is to start translating
-        # immediately, because an idle window reads as a broken one.
+        # None means "use the config"
         self.autostart = config.gui.autostart if autostart is None else autostart
         self.capture_delay = capture_delay
         self.screenshot_to = screenshot_to
@@ -59,19 +41,15 @@ class LinTranslatorApp:
         gi.require_version("Gtk", "4.0")
         from gi.repository import Gio, GLib, Gtk
 
-        # NOT using Gtk.Application's own uniqueness: the picker and the panel
-        # must be able to run side by side.
+        # not Gtk.Application's own uniqueness: the picker and the panel must be
+        # able to run side by side
         app = Gtk.Application(
             application_id="dev.lintranslator.translator",
             flags=Gio.ApplicationFlags.NON_UNIQUE,
         )
 
         def on_activate(_app: Gtk.Application) -> None:
-            # Before any window is built. Installing the stylesheet used to be a
-            # side effect of the panel's constructor, so anything that opened
-            # without a panel (the picker on its own, the settings dialog in a
-            # probe) came out in the desktop theme instead - light, on an app
-            # whose panel is a dark card.
+            # before any window is built
             from . import theme
 
             theme.install_for(self.config)
@@ -82,8 +60,8 @@ class LinTranslatorApp:
                 window = RegionPicker(app, self.config, from_file=self.from_file)
                 window.present()
                 self._window = window
-                # Grab after the window maps, and hide it for the shot so the
-                # picker does not capture itself.
+                # grab after the window maps; it hides itself for the shot so the
+                # picker does not capture itself
                 if self.initial_capture and not self.from_file:
                     GLib.timeout_add(
                         int(self.capture_delay * 1000), self._initial_capture, window
@@ -98,15 +76,12 @@ class LinTranslatorApp:
                 if self.autostart:
                     window.start_pipeline()
                 else:
-                    # `--no-start`: the card is up, nothing is reading, and the
-                    # status line has to say so rather than "starting…" forever.
                     window.show_idle()
                 self._window = window
 
             if self.screenshot_to:
-                # Render the window to a PNG and exit. Wayland gives no way to
-                # screenshot one's own window from outside, so this is the only
-                # practical way to verify the UI in a headless-ish check.
+                # Wayland gives no way to screenshot one's own window from
+                # outside, so this is the only way to verify the UI
                 GLib.timeout_add(2500, self._dump_and_quit, app, window)
 
         def on_shutdown(_app: Gtk.Application) -> None:
@@ -127,12 +102,7 @@ class LinTranslatorApp:
 
     @staticmethod
     def _demo_event():
-        """A representative translation, for checking the panel layout.
-
-        Written for this demo rather than copied from a game: the panel needs a
-        two-line source and a two-line target of realistic length, and that is
-        all it needs.
-        """
+        """A representative translation, for checking the panel layout."""
         from .pipeline import Event
 
         return Event(
@@ -153,11 +123,7 @@ class LinTranslatorApp:
         )
 
     def _dump_and_quit(self, app, window) -> bool:
-        """Render the window to a PNG and exit.
-
-        Wayland offers no way to screenshot one's own window from outside, so
-        this is the practical way to verify the UI renders correctly.
-        """
+        """Render the window to a PNG and exit."""
         from gi.repository import Gtk
 
         try:
@@ -173,7 +139,7 @@ class LinTranslatorApp:
             if native is not None:
                 renderer = native.get_renderer()
             if renderer is None:
-                # No GPU in this environment: use the cairo renderer instead.
+                # no GPU renderer here: fall back to cairo
                 from gi.repository import Gsk
 
                 renderer = Gsk.CairoRenderer.new()
@@ -184,8 +150,8 @@ class LinTranslatorApp:
                 f"({texture.get_width()}x{texture.get_height()})"
             )
         except Exception as exc:  # noqa: BLE001
-            # Rendering needs a working GPU renderer; without one this is a
-            # verification aid only, so it must never take the app down.
+            # rendering needs a working GPU renderer; this is a verification aid
+            # only, so it must never take the app down
             print(f"could not render window here: {type(exc).__name__}: {exc}")
         finally:
             closer = getattr(window, "close_pipeline", None)

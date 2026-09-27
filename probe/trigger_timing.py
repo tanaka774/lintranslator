@@ -1,22 +1,7 @@
-"""When exactly does a translation fire? A timeline, on your own settings.
-
-Runs the real pipeline on a virtual clock (no screen, no network) so every decision
-is visible:
-
-  A. a normal line, revealed in steps, then left on screen
-  B. a line that pauses mid-sentence - does the fragment get translated?
-  C. a line on a screen that never changes a pixel
-
-The knobs it exercises are the ones in config.json: capture.fps, settle_window,
-incomplete_grace, settle_max_wait, refresh_interval, ocr_min_interval.
-
-Run:  .venv/bin/python probe/trigger_timing.py
-"""
+"""Print a timeline of when a translation fires, on the configured settings."""
 import sys
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -34,19 +19,13 @@ STEP_TWO = "The inspector is the proverbial poster child of company"
 
 
 class Screen:
-    """Changes pixels only when the text changes (unless told to blink).
-
-    `frame_reading` is the text *of the frame that was just grabbed*, so the OCR
-    stub reads what the pixels actually show. An earlier version truncated the
-    rendered text but returned the full string from OCR, which made the change
-    detector and the OCR text disagree - and the timings it produced were of the
-    fixture, not the pipeline.
-    """
+    """Changes pixels only when the text changes (unless told to blink)."""
 
     def __init__(self, readings: list[str], blinking: bool = False) -> None:
         self.readings = readings
         self.blinking = blinking
         self.i = -1
+        # OCR stub reads this: it must be the text of the frame just grabbed
         self.frame_reading = ""
 
     def grab(self):
@@ -155,7 +134,6 @@ def run(title: str, readings: list[str], *, blinking: bool = False,
 
 
 def main() -> int:
-    # A reveal in three steps, then the line sits still.
     run(
         "A. normal line: revealed in steps, then left on screen",
         [STEP_ONE, STEP_TWO, FULL] + [FULL] * 12,
@@ -163,7 +141,6 @@ def main() -> int:
         note="the model call itself is 0.6s in this run; a real one is 0.3-1.5s",
     )
 
-    # The game pauses mid-sentence before finishing (the case the grace exists for).
     run(
         "B. the same line, but the game pauses mid-sentence for 4s",
         [STEP_ONE, FRAGMENT] + [FRAGMENT] * 8 + [FULL] * 8,
@@ -171,14 +148,12 @@ def main() -> int:
         note="an unfinished line ('...of Work') is held; how long?",
     )
 
-    # A screen that never changes a pixel: only the timed re-read can confirm it.
     run(
         "C. line appears on a screen that then never changes a pixel",
         [FULL] * 16,
         note="no pixel change after the first frame, so OCR is driven by refresh_interval",
     )
 
-    # A blinking caret: changes every poll, so OCR keeps running.
     run(
         "D. same, but with a blinking advance caret (a live game)",
         [FULL] * 16,

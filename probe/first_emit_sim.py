@@ -1,17 +1,7 @@
-"""What the panel translates first, and when, if the first frame is polluted.
-
-Takes the frame the pipeline really captured 10 ms after Start was pressed
-(`data/probe_first_crop.png`, which contains the picker's own widgets) and runs it
-through the real `Pipeline` on a virtual clock, with real tesseract and the
-echoing `none` backend. Deterministic - no screen, no network.
-
-Run:  .venv/bin/python probe/first_emit_sim.py
-"""
+"""What the panel translates first, and when, if the first frame is polluted."""
 import sys
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 

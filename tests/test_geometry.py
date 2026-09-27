@@ -1,9 +1,4 @@
-"""Tests for prompt templating.
-
-A user-written prompt with a stray brace in it must not raise at translate time,
-and a preset that forgets a placeholder would silently ask the model to translate
-"{source}" - both are pinned here.
-"""
+"""Tests for prompt templating."""
 from __future__ import annotations
 
 from lintranslator.geometry import (
@@ -40,14 +35,10 @@ def test_every_preset_uses_the_language_placeholders():
 
 
 def test_the_default_preset_is_the_builtin_default_and_is_named_for_it():
-    """It is what an empty `translate.prompt` falls back to, not one choice among
-    three: "Generic game dialogue" read as a genre option while actually being
-    the prompt in force, and the Settings dialog pre-fills the box with it."""
     assert PROMPT_PRESETS["Default prompt"] == DEFAULT_PROMPT
 
 
 def test_limbus_preset_names_the_game_and_its_terms():
-    """The whole point of the preset is telling the model which game this is."""
     preset = PROMPT_PRESETS["Limbus Company"]
     assert "Limbus Company" in preset
     # The terms that the local model actually gets wrong.

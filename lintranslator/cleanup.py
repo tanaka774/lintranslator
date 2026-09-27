@@ -1,20 +1,4 @@
-"""What lintranslator has put on disk, and how to get the space back.
-
-The app downloads two things, and neither is big:
-
-* the language data tesseract reads - the app's only *automatic* download;
-* the translation cache, if one is configured - the only file the app writes
-  that contains screen text, so it is here for a different reason than the rest.
-
-A translation model is not on that list: this app serves no model and owns none,
-so a model the user runs is theirs to place and to delete.
-
-`remove` with no argument is a report: the paths and their sizes, nothing
-touched. Naming a target deletes it. The deletion is deliberately narrow - only
-paths under this app's own directories are ever removed, so a config pointing
-`cache_path` somewhere else cannot turn this into an `rm -rf` of the user's own
-data.
-"""
+"""What lintranslator has put on disk, and how to get the space back."""
 from __future__ import annotations
 
 import os
@@ -38,11 +22,7 @@ def format_size(size: int) -> str:
 
 
 def tree_size(path: Path) -> int:
-    """Bytes under `path`, counting each real file once.
-
-    Symlinks are not followed and not counted, so the number reported is what
-    this app actually put there and not what some link points at elsewhere.
-    """
+    """Bytes under `path`, counting each real file once."""
     if path.is_file() and not path.is_symlink():
         try:
             return path.stat().st_size
@@ -71,8 +51,8 @@ class Target:
     detail: str
     #: What removing it costs the user next time, or "" when it is free.
     cost: str = ""
-    #: Something the user should know before deciding - a stale path, a
-    #: mismatch between the config and the disk.
+    #: Something the user should know before deciding, such as a config/disk
+    #: mismatch.
     note: str = ""
 
     @property
@@ -120,12 +100,7 @@ def _allowed_roots() -> list[Path]:
 
 
 def refusal(path: Path) -> str | None:
-    """Why `path` must not be removed, or None when it is safe.
-
-    The config can point `cache_path` anywhere. Removing a path the user chose
-    themselves is their business, not this command's, so it only ever touches
-    what the app's own directories contain.
-    """
+    """Why `path` must not be removed, or None when it is safe."""
     try:
         resolved = path.expanduser().resolve()
     except OSError:

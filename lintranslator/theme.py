@@ -1,31 +1,11 @@
-"""One stylesheet for the whole app.
-
-Before this module the panel was the only window with any CSS at all: the picker
-and the settings dialog were stock Adwaita next to a custom dark card, so the app
-had two visual languages. Everything visual now comes from the tokens below.
-
-Two rules keep this safe to apply globally:
-
-* **Nothing is styled by bare element name.** Every rule is scoped to a
-  `.lintranslator-*` class or to a window class, so the picker's cairo drawing area and
-  any widget nobody has classified keep the toolkit's own look. A broad
-  `button { ... }` would repaint controls the picker draws by hand.
-* **The panel's card is the one translucent surface.** It sits over a game, so
-  the game must show through it; every other surface is opaque.
-
-Sizes for the panel's two text lines are substituted in, because they follow
-`display.base_font_size * display.font_scale` and change live from Settings.
-"""
+"""One stylesheet for the whole app."""
 from __future__ import annotations
 
-# -- tokens ---------------------------------------------------------------- #
 # Surfaces
 SURFACE = "rgba(16, 17, 20, 0.94)"  # the panel card: the game shows through
 SURFACE_SOLID = "#101114"  # windows that should not be see-through
 SURFACE_RAISED = "rgba(255, 255, 255, 0.055)"
 SURFACE_SUNKEN = "rgba(0, 0, 0, 0.28)"
-# Every popover, in either window. A popover is its own surface over the game,
-# so it is opaque rather than see-through like the panel's card.
 SURFACE_POPOVER = "#16171b"
 BORDER = "rgba(255, 255, 255, 0.14)"
 BORDER_SOFT = "rgba(255, 255, 255, 0.07)"
@@ -42,8 +22,7 @@ WARN = "#ffd479"
 ERROR = "#ff9c8a"
 OK = "#8fe0a8"
 
-# Spacing scale, in px. Used through CSS `padding`/`margin` on classes rather
-# than through Gtk.Box spacing, so one number changes both windows.
+# Spacing scale, in px
 SPACE_XS = 4
 SPACE_SM = 6
 SPACE_MD = 10
@@ -57,17 +36,12 @@ FONT_CAPTION = 10
 FONT_SMALL = 11
 FONT_BODY = 13
 
-# The panel's control row is a fixed height by design (see display lines below),
-# so the buttons in it are sized to sit inside it rather than to pad it out.
+# Panel control row height, in px
 CONTROL_H = 24
 
 
 def build_css(*, target_px: int, source_px: int) -> str:
-    """The whole app's stylesheet.
-
-    `target_px` / `source_px` are the panel's translation and original-text font
-    sizes, already scaled. Everything else is a fixed token.
-    """
+    """The whole app's stylesheet."""
     return f"""
 /* ===================== shared ===================== */
 .lintranslator-card {{
@@ -410,29 +384,7 @@ button.lintranslator-tool {{
 
 
 def install(css: str, display=None):
-    """Load `css` as the application stylesheet, replacing any previous one.
-
-    Adding a provider at the same priority replaces the one already there, so
-    repeated calls (every Settings apply) do not stack stylesheets.
-
-    The app asks for the dark variant of the desktop theme as well. Every window
-    here is a dark tool that sits over a game, and the fallback is not neutral:
-    the desktop theme is Breeze *light* on this machine, so a widget that nobody
-    has styled comes out white. Widgets this module does not classify still get a
-    theme, and this makes that theme the one the rest of the UI was designed
-    against.
-
-    It is a hint, not a mechanism. GTK deprecated
-    `gtk-application-prefer-dark-theme` in 4.20 ("use GtkCssProvider properties
-    instead"), and it only ever applied to a theme that ships a dark variant - so
-    a light desktop, or a theme without one, leaves every widget this stylesheet
-    does not paint on the desktop's light colours. Popovers and the lists inside
-    them are painted above for exactly that reason; `probe/theme_check.py`
-    renders them under a forced light theme and fails if any comes out in the
-    theme's colours.
-
-    Returns the provider, which the caller must keep alive: GTK does not own it.
-    """
+    """Load `css` as the application stylesheet, replacing any previous one."""
     import gi
 
     gi.require_version("Gtk", "4.0")
@@ -443,9 +395,7 @@ def install(css: str, display=None):
         settings.set_property("gtk-application-prefer-dark-theme", True)
 
     provider = Gtk.CssProvider()
-    # `load_from_data` is deprecated in GTK 4.12+ in favour of the bytes form.
-    # Kept as a fallback rather than a hard requirement: the project supports
-    # whatever GTK the machine has, and a warning is better than a crash.
+    # load_from_data is deprecated in GTK 4.12+; kept as a fallback for older GTK
     if hasattr(provider, "load_from_bytes"):
         provider.load_from_bytes(GLib.Bytes.new(css.encode()))
     else:  # pragma: no cover - only on GTK < 4.12
@@ -455,6 +405,7 @@ def install(css: str, display=None):
         provider,
         Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
     )
+    # The caller must keep the provider alive: GTK does not own it
     return provider
 
 

@@ -1,11 +1,4 @@
-"""`lintranslator install-desktop`: the menu entry and its launcher.
-
-These two files are the only part of the setup the app cannot do at run time.
-The compositor grants the global hotkey only to a caller that has an application
-id, and an application id comes from being started by a `.desktop` file. A source
-checkout could copy them by hand; an installed wheel had no way to reach them, so
-they ship as package data and this command puts them where the desktop looks.
-"""
+"""`lintranslator install-desktop`: the menu entry and its launcher."""
 from __future__ import annotations
 
 from lintranslator.cli import cmd_install_desktop
@@ -23,12 +16,11 @@ def test_install_desktop_writes_both_files(monkeypatch, tmp_path):
     assert desktop.is_file()
     assert launcher.is_file()
 
-    # The desktop entry runs the launcher by name, so it has to be executable.
+    # the desktop entry runs the launcher by name, so it has to be executable
     assert launcher.stat().st_mode & 0o111
     entry = desktop.read_text()
     assert "Exec=lintranslator-gui" in entry
-    # KDE matches a window to this file by application id, and the id lives in
-    # this key - without it the window does not group under its launcher icon.
+    # KDE matches the window to this file by application id, which lives in this key
     assert "StartupWMClass=dev.lintranslator.translator" in entry
     assert launcher.read_text().startswith("#!/bin/sh")
 
@@ -45,7 +37,6 @@ def test_it_falls_back_to_dot_local_without_the_xdg_variables(monkeypatch, tmp_p
 
 
 def test_the_two_templates_ship_inside_the_package():
-    """A wheel install has no `packaging/` directory to copy from."""
     from importlib.resources import files
 
     data = files("lintranslator").joinpath("data")

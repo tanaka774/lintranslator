@@ -1,15 +1,4 @@
-"""End-to-end pipeline tests with the capture and OCR stages stubbed out.
-
-These exist because the live screen is not a reproducible input: it changes
-underneath the test (this project's own verification runs saw 24 "changes" in 26
-polls simply because a chat window was animating). Stubbing capture and OCR lets
-the real loop logic - change detection, settling, caching, event emission - be
-tested deterministically.
-
-The settler/change-detector interaction is the subtle part, and it already
-shipped one bug: requiring N identical consecutive OCR reads never fires on a
-static screen, because OCR only runs when pixels change.
-"""
+"""End-to-end pipeline tests with the capture and OCR stages stubbed out."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -119,18 +108,15 @@ class _NullCache:
     stats = {"entries": 0, "hits": 0, "misses": 0}
 
 
-# --------------------------------------------------------------------------- #
 def test_translates_once_when_the_screen_goes_static():
-    """The regression case: text appears, the screen then stops changing, and the
-    line must still be translated via the time-based release."""
+    """A static screen must still translate via the time-based release."""
     frame = _frame("The reactor is overheating")
     pipe = _pipeline(["The reactor is overheating"] * 4, [frame])
 
     now = 0.0
     emitted = []
-    # Poll until the release fires or we run out of patience.
     for _ in range(12):
-        # step() paces itself with monotonic time, so drive it with real sleeps
+        # step() paces itself on monotonic time, so drive it with real sleeps
         event = pipe.step()
         if event:
             emitted.append(event)
@@ -146,7 +132,6 @@ def test_translates_once_when_the_screen_goes_static():
 
 
 def test_no_translation_while_text_keeps_changing():
-    """A typewriter reveal must not produce a translation per character."""
     frames = [_frame(f"The react{'x' * i}") for i in range(6)]
     texts = [f"The react{'x' * i}" for i in range(6)]
     pipe = _pipeline(texts, frames)
@@ -163,7 +148,6 @@ def test_no_translation_while_text_keeps_changing():
 
 
 def test_identical_static_frames_do_not_re_ocr():
-    """OCR is the expensive stage; a frozen screen must not pay for it."""
     frame = _frame("static text")
     pipe = _pipeline(["static text"] * 10, [frame])
     for _ in range(6):
@@ -185,24 +169,15 @@ def test_error_in_one_stage_does_not_kill_the_loop():
         raise RuntimeError("portal exploded")
 
     pipe.grabber.grab = boom  # type: ignore[method-assign]
-    assert pipe.step() is None  # no exception escapes
+    assert pipe.step() is None
     assert errors, "the failure was swallowed without reporting"
     assert "portal exploded" in str(errors[0])
     assert pipe.stats.errors == 1
     pipe.close()
 
 
-# --------------------------------------------------------------------------- #
-# Change-driven emission: one translation per new line
-# --------------------------------------------------------------------------- #
 class _ScriptedScreen:
-    """Feeds a fixed sequence of OCR readings, one per grab.
-
-    Decoupled from timing on purpose. An earlier version derived the reading
-    from a frame counter and blinked a cursor, which meant the OCR text depended
-    on how many polls had happened - so the test measured the fixture's timing
-    rather than the pipeline's behaviour.
-    """
+    """Feeds a fixed sequence of OCR readings, one per grab."""
 
     def __init__(self, readings: list[str], blinking: bool = False) -> None:
         self.readings = readings
@@ -217,8 +192,7 @@ class _ScriptedScreen:
         self.i = min(self.i + 1, len(self.readings) - 1)
         img = Image.new("RGB", (200, 40), (40, 40, 40))
         if self.blinking:
-            # A blinking advance cursor: the frame changes on every poll even
-            # though the text does not, which is what a live game does.
+            # A blinking advance cursor changes pixels though the text does not
             ImageDraw.Draw(img).rectangle(
                 [180, 8, 188, 32], fill=(255, 255, 255) if self.i % 2 else (0, 0, 0)
             )
@@ -240,14 +214,11 @@ class _ScriptedOcr:
     def __init__(self, screen: _ScriptedScreen, confidence: float = 92.0) -> None:
         self.screen = screen
         self.calls = 0
-        # Settable per test: how sure OCR is of what it read decides whether a
-        # short or thin read is treated as dialogue (see `selftext.noise_reason`).
+        # Per test: confidence decides whether a short read counts as dialogue
         self.confidence = confidence
-        # The gate the real engine applies, read by the pipeline when it has to
-        # explain a read that produced no text.
+        # The confidence gate the real engine applies; read to explain a no-text read
         self.min_confidence = 40.0
-        # When set, the scripted read comes back as a line the gate rejected
-        # instead of as text: the box is fine and the gate is what is in the way.
+        # When set, the read comes back as a gate-rejected line instead of text
         self.rejected_at: float | None = None
 
     def ensure_ready(self):
@@ -296,11 +267,7 @@ def _pipeline_for(readings: list[str], blinking: bool = False, **overrides):
 
 
 def _drive(pipe, screen, events, ticks: int | None = None, step: float = 0.5):
-    """Advance the virtual clock, polling until the script is exhausted.
-
-    `ticks` extra polls run after the last reading so the settle window can
-    elapse on a now-static screen, which is how a real line gets confirmed.
-    """
+    """Advance the virtual clock, polling until the script is exhausted."""
     total = len(screen.readings) + (ticks if ticks is not None else 8)
     now = 0.0
     for _ in range(total):
@@ -309,13 +276,7 @@ def _drive(pipe, screen, events, ticks: int | None = None, step: float = 0.5):
     return now
 
 
-# --------------------------------------------------------------------------- #
 def test_each_new_line_is_translated_exactly_once():
-    """Regression: every line used to be emitted twice.
-
-    The tick path released the held text without recording it, so the same line
-    was re-observed and re-emitted a moment later.
-    """
     readings = ["AAAA first line."] * 3 + ["BBBB second line."] * 3 + ["CCCC third line."] * 3
     pipe, screen, events = _pipeline_for(readings)
     _drive(pipe, screen, events)
@@ -324,8 +285,7 @@ def test_each_new_line_is_translated_exactly_once():
 
 
 def test_jittering_reads_do_not_duplicate_a_translation():
-    """Regression: OCR reading the same line as 'x' then 'x l' (a cursor
-    artefact) must not count as a new line. Exact-match dedupe failed this."""
+    """A trailing cursor artefact must not make one line look like two."""
     from lintranslator.detect import is_same_reading
 
     assert is_same_reading(
@@ -333,10 +293,7 @@ def test_jittering_reads_do_not_duplicate_a_translation():
     )
     assert not is_same_reading("AAAA first line.", "BBBB second line.")
 
-    # The same line, jittering every poll, then a genuinely new line. The stub
-    # OCR stands in for the real one, which strips the caret glyph before the
-    # pipeline ever sees it (see `strip_trailing_cursor`), so the reads below are
-    # what a scripted screen would actually deliver.
+    # The real OCR strips the caret glyph before the pipeline sees it
     readings = ["AAAA first line.", "AAAA first line. l"] * 3 + ["BBBB second line."] * 4
     readings = [strip_trailing_cursor(r) for r in readings]
     pipe, screen, events = _pipeline_for(readings)
@@ -347,14 +304,7 @@ def test_jittering_reads_do_not_duplicate_a_translation():
 
 
 def test_the_blinking_caret_is_not_part_of_the_line():
-    """Live reads of one unchanged line ended in " l", " +", " O", " |" - the
-    advance caret, not text. It polluted the translation and made consecutive
-    reads look like different lines.
-
-    The rule is deliberately narrow: stripping any lone trailing character broke
-    real lines during live testing ("needed maintenance." lost its period for a
-    moment when the caret was read as ".").
-    """
+    """The advance caret is stripped even when it arrives after the punctuation."""
     for raw, clean in [
         ("AAAA first line. l", "AAAA first line."),
         ("See you around. +", "See you around."),
@@ -367,8 +317,6 @@ def test_the_blinking_caret_is_not_part_of_the_line():
         ('He said, "no."', 'He said, "no."'),    # closing quote must survive
         ("1 2 3", "1 2 3"),                      # a real trailing number
         ("Gregor But because | was sponsored", "Gregor But because | was sponsored"),
-        # The caret is drawn next to the finished sentence, so it often arrives
-        # AFTER the punctuation - and was then sent to the translator as text.
         (
             "their flames dominated the entire battlefield. f",
             "their flames dominated the entire battlefield.",
@@ -381,13 +329,7 @@ def test_the_blinking_caret_is_not_part_of_the_line():
 
 
 def test_a_pause_mid_reveal_does_not_emit_a_fragment():
-    """Regression from the panel: the game reveals a line, pauses mid-sentence,
-    then finishes. The pause is not the end of the line, so the fragment must not
-    be translated - and the finished line must still arrive exactly once.
-
-    The overrides match production (`config.json`); the shared fixture defaults
-    (1s windows) are deliberately tighter than the real ones.
-    """
+    """A mid-reveal pause is not the end of the line, so no fragment is emitted."""
     partial = "The inspector is the proverbial poster child of company"
     full = "The inspector is the proverbial poster child of company-sponsored contractors."
     # The partial sits on screen for 3s (6 polls) before the rest appears.
@@ -402,21 +344,18 @@ def test_a_pause_mid_reveal_does_not_emit_a_fragment():
 
 
 def test_a_finished_line_is_not_delayed_by_the_reveal_grace():
-    """The unfinished-text grace must not cost normal dialogue its timing."""
     pipe, screen, events = _pipeline_for(["The reactor is overheating."] * 4)
     _drive(pipe, screen, events)
     assert [e.source for e in events] == ["The reactor is overheating."]
 
 
 def test_static_screen_produces_no_repeat_translations():
-    """A line sitting on screen must not be retranslated every settle window."""
     pipe, screen, events = _pipeline_for(["AAAA only line."] * 25)
     _drive(pipe, screen, events)
     assert len(events) == 1, [e.source for e in events]
 
 
 def test_ocr_is_skipped_when_nothing_changes():
-    """Change detection must gate OCR, or an idle screen burns CPU."""
     readings = ["AAAA line."] * 12 + ["BBBB line."] * 12
     pipe, screen, events = _pipeline_for(readings)
     _drive(pipe, screen, events)
@@ -427,15 +366,9 @@ def test_ocr_is_skipped_when_nothing_changes():
 
 
 def test_blinking_screen_still_translates_and_does_not_stall():
-    """A blinking cursor keeps pixels changing, so the screen never settles.
-
-    This is the "nothing ever translates" bug reported from a live screen: every
-    poll looks like a change, so the text is re-read constantly. It must still
-    produce exactly one translation and must not re-read on every single poll.
-    """
+    """A blinking cursor keeps pixels changing, so the screen never settles."""
     readings = ["AAAA held line."] * 24
-    # 10fps so the poll gap (0.1s) is shorter than the throttle (0.25s); at 2fps
-    # the gap already exceeds it and the throttle would never be exercised.
+    # 10fps so the poll gap (0.1s) is shorter than the throttle (0.25s)
     pipe, screen, events = _pipeline_for(
         readings, blinking=True, ocr_min_interval=0.25
     )
@@ -449,52 +382,29 @@ def test_blinking_screen_still_translates_and_does_not_stall():
 
 
 def test_ocr_throttle_limits_re_reads_on_a_blinking_screen():
-    """Checked directly with explicit times: a fast poll loop over a screen that
-    changes every poll must not run OCR every poll."""
     pipe, screen, events = _pipeline_for(["AAAA line."] * 4, blinking=True)
     pipe._ocr_min_interval = 0.25
     pipe._last_ocr_at = 10.0
-    assert pipe._ocr_throttled(10.1) is True   # 0.1s later - too soon
+    assert pipe._ocr_throttled(10.1) is True
     assert pipe._ocr_throttled(10.25) is False  # exactly at the interval
-    assert pipe._ocr_throttled(11.0) is False   # well past it
-    # Disabling the throttle restores one OCR per change.
+    assert pipe._ocr_throttled(11.0) is False
     pipe._ocr_min_interval = 0.0
     assert pipe._ocr_throttled(10.0001) is False
 
 
 def test_timed_refresh_re_reads_a_held_line():
-    """The refresh mechanism must actually fire while a line is held.
-
-    Verified directly rather than through an end-to-end emission, so it cannot
-    pass for the wrong reason (e.g. the tick releasing the line instead).
-    """
     readings = ["AAAA held line."] * 12
     pipe, screen, events = _pipeline_for(readings, blinking=True)
-    # Hold the line explicitly and ask whether a re-read is due.
     pipe.settler._held_text = "AAAA held line."
     pipe._last_ocr_at = 0.0
     pipe._last_settled_text = None
     assert pipe._refresh_due(now=5.0) is True, "refresh never becomes due"
     assert pipe._refresh_due(now=5.0) is not None
-    # And it must not re-read something already translated.
     pipe._last_settled_text = "AAAA held line."
     assert pipe._refresh_due(now=99.0) is False
 
 
-# --------------------------------------------------------------------------- #
-# Capture timing: never read the screen while our own windows are on it
-# --------------------------------------------------------------------------- #
 def test_our_own_window_on_screen_stops_capture_entirely():
-    """The measured regression.
-
-    The first capture after Start happened 10 ms after the click, with the
-    picker still over the box. It read the picker's own status line -
-    "captured 2560x1440 — drag over the dialogue text" - at 93% confidence, while
-    the dialogue line the picker covered fell to 54.7% and was dropped by
-    `ocr.min_confidence`. A real line, lost to our own window.
-
-    So while a lintranslator window is on screen, nothing is captured at all.
-    """
     pipe, screen, events = _pipeline_for(["AAAA a line."] * 6)
     reasons = []
     pipe.on_gate = reasons.append
@@ -511,12 +421,7 @@ def test_our_own_window_on_screen_stops_capture_entirely():
 
 
 def test_reading_starts_the_moment_the_window_is_gone():
-    """No fixed delay: the pause lifts as soon as the window unmaps.
-
-    The picker minimises itself when watching starts, and this is what makes that
-    enough - there is no sleep long enough to be safe and short enough to feel
-    instant, so the pipeline waits for the actual condition instead.
-    """
+    """No fixed delay: the pause lifts as soon as the window unmaps."""
     reason = {"value": "the region picker is on screen"}
     pipe, screen, events = _pipeline_for(["AAAA a line."] * 12)
     pipe.gate = lambda: reason["value"]
@@ -529,7 +434,7 @@ def test_reading_starts_the_moment_the_window_is_gone():
         pipe.step(now)
     assert screen.i == -1
 
-    reason["value"] = None  # the picker unmapped
+    reason["value"] = None
     now += 0.5
     pipe.step(now)
     assert screen.i == 0, "reading did not start as soon as the window was gone"
@@ -538,19 +443,13 @@ def test_reading_starts_the_moment_the_window_is_gone():
 
 
 def test_a_pause_does_not_release_the_text_it_was_holding():
-    """Held text must not survive a pause.
-
-    While paused, time passes with no evidence about the screen, so a release
-    timer that kept running would emit a line that is already gone - or release a
-    paused reveal's fragment the instant reading resumed.
-    """
     partial = "The inspector is the proverbial poster child of company"
     pipe, screen, events = _pipeline_for([partial] * 20)
     gate = {"value": None}
     pipe.gate = lambda: gate["value"]
 
     now = 0.0
-    for _ in range(2):  # a line is read and held
+    for _ in range(2):
         now += 0.5
         pipe.step(now)
     assert pipe.settler.held, "nothing was held to begin with"
@@ -569,12 +468,6 @@ def test_a_pause_does_not_release_the_text_it_was_holding():
 
 
 def test_the_region_can_be_changed_while_the_loop_runs():
-    """A new selection re-points the running loop instead of being ignored.
-
-    Measured before this: dragging a new box and pressing Start again left
-    the pipeline reading the OLD area while the picker showed the new one as
-    live - only Save applied it, and that restarted (and re-positioned) the panel.
-    """
     from lintranslator.config import Region
 
     pipe, screen, events = _pipeline_for(["AAAA a line."] * 6)
@@ -591,11 +484,6 @@ def test_the_region_can_be_changed_while_the_loop_runs():
 
 
 def test_a_new_area_is_read_as_a_new_context():
-    """The same text in a different box is a new reading.
-
-    Otherwise re-pointing the loop at another part of the screen would silently
-    skip whatever is already there, because it looks like the line just done.
-    """
     from lintranslator.config import Region
 
     pipe, screen, events = _pipeline_for(["AAAA a line."] * 24)
@@ -610,9 +498,6 @@ def test_a_new_area_is_read_as_a_new_context():
     pipe.close()
 
 
-# --------------------------------------------------------------------------- #
-# Self-reads: lintranslator's own UI must never reach the translator
-# --------------------------------------------------------------------------- #
 def test_our_own_ui_read_is_never_translated():
     """The exact string the live capture produced, gate and all."""
     polluted = (
@@ -639,11 +524,7 @@ def test_our_own_ui_read_is_never_translated():
 
 
 def test_the_panel_showing_its_own_translation_is_not_translated_again():
-    """The panel cannot be gated - it has to stay on screen while watching.
-
-    If it sits over the box, its own output is read straight back, and left alone
-    that loops: the translation is translated again, forever.
-    """
+    """The panel cannot be gated - it has to stay on screen while watching."""
     source = "AAAA the source line."
     echo = "[ja] AAAA the source line."
     pipe, screen, events = _pipeline_for([source] * 4 + [echo] * 8)
@@ -656,12 +537,8 @@ def test_the_panel_showing_its_own_translation_is_not_translated_again():
     pipe.close()
 
 
-# --------------------------------------------------------------------------- #
-# Timing that tells the truth
-# --------------------------------------------------------------------------- #
 def test_event_timing_is_measured_not_stubbed():
-    """`total_elapsed` used to be hardcoded 0.0, so `lintranslator run --json` reported
-    "total_ms": 0 for every line, and `capture_ms` did not exist at all."""
+    """`capture_ms` and `total_ms` report the measured stage costs."""
     import time as _time
 
     from lintranslator.capture import Frame
@@ -717,14 +594,7 @@ def test_event_timing_is_measured_not_stubbed():
 
 
 def test_a_mixed_read_keeps_the_game_line():
-    """Regression: our window clipping the box must not cost the dialogue line.
-
-    The panel is the one window that cannot be gated, so when it overlaps the box
-    the read contains both its text and the game's. Dropping the whole read - the
-    first version of this guard - is what "it stopped detecting" looked like:
-    the panel's own status line kept changing, every read was discarded, and the
-    dialogue line underneath never settled.
-    """
+    """Our window clipping the box must not cost the dialogue line."""
     from lintranslator.ocr import OcrLine, OcrResult
 
     class MixedOcr:
@@ -799,12 +669,6 @@ def test_a_mixed_read_keeps_the_game_line():
 
 
 def test_a_shorter_line_after_a_long_one_is_still_translated():
-    """The full-loop version of the settler regression.
-
-    A long line appears and is replaced, before it ever settled, by a shorter
-    one. The shorter line has to be adopted and translated - the pipeline used to
-    hold the longer text forever and go silent.
-    """
     long_line = (
         "For lack of any meaningful help they could provide; given the nature of this trial."
     )
@@ -819,16 +683,8 @@ def test_a_shorter_line_after_a_long_one_is_still_translated():
     pipe.close()
 
 
-# --------------------------------------------------------------------------- #
-# Re-read: the button, the in-app shortcut and the global hotkey all land here
-# --------------------------------------------------------------------------- #
 def test_reread_reads_the_same_line_again():
-    """A re-read must do what a person means by "do that again".
-
-    Change detection, the settle window and the "already translated" check all
-    exist to suppress repeats; a re-read is the user asking for one, so it skips
-    all of them and captures immediately rather than at the next poll.
-    """
+    """A re-read must do what a person means by "do that again"."""
     readings = ["AAAA only line."] * 20
     pipe, screen, events = _pipeline_for(readings)
     now = _drive(pipe, screen, events, ticks=12)
@@ -849,7 +705,6 @@ def test_reread_reads_the_same_line_again():
 
 
 def test_reread_ignores_the_ocr_throttle_and_the_pacing():
-    """Pressed at a moment the loop would otherwise skip, it still acts now."""
     pipe, screen, events = _pipeline_for(["AAAA a line."] * 12, blinking=True)
     _drive(pipe, screen, events, ticks=6)
     # A poll that would be early, throttled or unchanged.
@@ -863,7 +718,6 @@ def test_reread_ignores_the_ocr_throttle_and_the_pacing():
 
 
 def test_a_reread_while_reading_is_paused_is_not_lost():
-    """The hotkey is most likely to be pressed while the picker is up."""
     reason = {"value": "the region picker is on screen"}
     pipe, screen, events = _pipeline_for(["AAAA a line."] * 12)
     pipe.gate = lambda: reason["value"]
@@ -876,7 +730,7 @@ def test_a_reread_while_reading_is_paused_is_not_lost():
     assert screen.i == -1, "captured while our own window was on screen"
     assert notes == ["re-read queued — reading is paused"], notes
 
-    reason["value"] = None  # the picker went away
+    reason["value"] = None
     now += 0.5
     event = pipe.step(now)
     assert event is not None, "the queued re-read never happened"
@@ -886,7 +740,6 @@ def test_a_reread_while_reading_is_paused_is_not_lost():
 
 
 def test_a_reread_of_an_empty_box_says_so():
-    """Nothing to translate is a real answer, not silence."""
     pipe, screen, events = _pipeline_for([""] * 8)
     notes = []
     pipe.on_note = notes.append
@@ -899,12 +752,6 @@ def test_a_reread_of_an_empty_box_says_so():
 
 
 def test_a_reread_the_gate_rejected_says_which_gate():
-    """The other half of "nothing readable", and the opposite advice.
-
-    `ocr.min_confidence` has no row in Settings, so this note is the only place
-    its effect is visible - and "check the region" is wrong advice when the
-    region is right and the gate is what threw the line away.
-    """
     pipe, screen, events = _pipeline_for(["你从昨天12点吃到还没吃饱"] * 8)
     pipe.ocr.rejected_at = 41.0
     pipe.ocr.min_confidence = 55.0
@@ -921,8 +768,7 @@ def test_a_reread_the_gate_rejected_says_which_gate():
 
 
 def test_a_read_back_translation_is_reported_as_such():
-    """The echo case is not "our window is in the box" - the text matched, which
-    is a different (and more specific) diagnosis for the user."""
+    """The echo case is not "our window is in the box" - the text matched."""
     source = "AAAA the source line."
     echo = "[ja] AAAA the source line."
     pipe, screen, events = _pipeline_for([source] * 4 + [echo] * 8)
@@ -938,9 +784,7 @@ def test_a_read_back_translation_is_reported_as_such():
 
 
 def test_confident_nonsense_is_not_translated():
-    """Background art reads as a glyph or two at 60-80% confidence - above the OCR
-    gate. Translating "e¢" is worse than saying nothing, so the read is dropped
-    and the reason is shown."""
+    """Background art reads as a glyph or two at 60-80% confidence, above the gate."""
     pipe, screen, events = _pipeline_for(["e¢ ¢"] * 8)
     pipe.ocr.confidence = 62.5
     notes = []
@@ -954,8 +798,6 @@ def test_confident_nonsense_is_not_translated():
 
 
 def test_a_clean_short_line_still_gets_translated():
-    """The rail must not cost a real short line: "Yes." in a clean font is high
-    confidence, so it passes."""
     pipe, screen, events = _pipeline_for(["Yes."] * 8)
     pipe.ocr.confidence = 93.0
     _drive(pipe, screen, events)

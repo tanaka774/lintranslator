@@ -1,32 +1,8 @@
-"""Can the selected box be resized? Every edge, in both directions.
-
-The behaviour being checked: grabbing an edge or a corner of the selection and
-dragging it *inwards* did nothing at all. `SelectionMath.apply_drag` rebuilt the
-moving edge from `min`/`max` of the two pointer positions, so an edge could only
-travel *away* from the one opposite it: dragging the right edge left pinned it to
-where the pointer went down, and it never followed the drag. Growing the box
-worked; shrinking it did not. That is the whole of "I can't resize the box".
-
-This probe drives the real `RegionPicker` handlers (`_on_drag_begin` /
-`_on_drag_update` / `_on_drag_end`) with the cumulative offsets a GtkGestureDrag
-reports, and compares the box that comes back with the box the pointer describes.
-It also measures the second half of the problem: how close to an edge the pointer
-had to land to grab it at all (8 px of a 2560-wide screenshot is under 4 px on
-screen once the shot is letterboxed into the canvas, which is a hard target).
-
-The canvas is forced to a 1:1 mapping - widget pixel == screenshot pixel - so the
-expected boxes can be read straight off the pointer positions. The scaled and
-letterboxed mapping is covered by tests/test_selection.py. No window is presented
-and no screen is captured: this is drag arithmetic, not pixels.
-
-Run:  .venv/bin/python probe/region_resize_check.py
-"""
+"""Check the selected box can be resized on every edge, in both directions."""
 import sys
 from io import BytesIO
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -43,8 +19,7 @@ from lintranslator.picker import RegionPicker  # noqa: E402
 from lintranslator.selection import SelectionMath  # noqa: E402
 
 SCREEN = (2560, 1440)
-# The box every case starts from: a wide dialogue box, so every edge is long
-# enough to grab at its midpoint.
+# The box every case starts from (x, y, w, h).
 BOX = (1000, 700, 400, 200)
 STEP = 120  # how far the pointer travels in a resize case
 GRAB = 8  # the picker's HANDLE: px inside edge that still counts as grabbing it
@@ -94,8 +69,7 @@ def build_picker(app, cfg) -> RegionPicker:
 
 
 def gesture(picker, press, release, events: int = 4):
-    """A press-and-drag the way GtkGestureDrag reports it: drag-begin at the press
-    point, then cumulative offsets, then drag-end."""
+    """A press-and-drag as GtkGestureDrag reports it: begin, cumulative offsets, end."""
     picker.sel = BOX
     picker._on_drag_begin(None, press[0], press[1])
     mode = picker._drag_mode
@@ -154,12 +128,7 @@ def edge_cases(picker) -> list[tuple[str, bool]]:
 
 
 def handle_reach() -> tuple[float, float, bool]:
-    """How close to an edge the pointer has to land, in *screen* pixels.
-
-    The tolerance is what the user aims with, so it is reported in widget px: the
-    canvas is where the aiming happens, and the same 8 screenshot px is a much
-    smaller target once the shot is scaled into the canvas.
-    """
+    """How close to an edge the pointer has to land, in *screen* pixels."""
     # The picker sizes itself from the monitor: clamp(0.78 * geometry) on both
     # axes, minus the 320px sidebar.
     geo_w, geo_h = 2560, 1440
@@ -167,7 +136,7 @@ def handle_reach() -> tuple[float, float, bool]:
     window_h = max(600, min(980, int(geo_h * 0.78)))
     canvas_w, canvas_h = window_w - 320, window_h - 20
     m = SelectionMath(geo_w, geo_h, float(canvas_w), float(canvas_h))
-    previous = GRAB * m.scale  # the old rule: 8 screenshot px, scaled, full stop
+    previous = GRAB * m.scale
     now, _ = m.handle_tolerance(GRAB)
     print("\nhow close the pointer must land to grab an edge:")
     print(f"  canvas {canvas_w}x{canvas_h} for a {geo_w}x{geo_h} screen "

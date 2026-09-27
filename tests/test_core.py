@@ -1,11 +1,4 @@
-"""Tests for the logic that is easy to get subtly wrong.
-
-The settler/change-detector interaction in particular already shipped one bug:
-requiring N identical consecutive OCR reads never fires on a static screen,
-because OCR only runs when pixels change. These tests pin that down.
-
-Run:  .venv-gi/bin/python -m pytest tests/ -v
-"""
+"""Tests for the logic that is easy to get subtly wrong."""
 from __future__ import annotations
 
 import json
@@ -34,9 +27,6 @@ def _frame(text: str = "", size=(320, 60)) -> Image.Image:
     return img
 
 
-# --------------------------------------------------------------------------- #
-# Change detection
-# --------------------------------------------------------------------------- #
 def test_first_frame_always_counts_as_change():
     det = ChangeDetector()
     assert det.update(_frame("hello")) is True
@@ -59,14 +49,10 @@ def test_different_text_is_a_change():
 
 
 def test_incremental_typewriter_change_is_detected():
-    """Regression: a mean-difference metric missed this, because appending a few
-    characters changes so little of the frame that the average stays flat. The
-    typewriter reveal is precisely this kind of localized change."""
+    """A localized typewriter reveal is a change a mean-difference metric misses."""
     det = ChangeDetector()
     det.update(_frame("The reactor is"))
-    # one more word revealed in an otherwise identical frame
     assert det.update(_frame("The reactor is overheat")) is True
-    # repeating the same frame is still not a change
     assert det.update(_frame("The reactor is overheat")) is False
 
 
@@ -94,32 +80,19 @@ def test_signature_and_delta_are_sane():
     assert mean_abs_delta(a, c) > 0
 
 
-# --------------------------------------------------------------------------- #
-# Settler: the typewriter case
-# --------------------------------------------------------------------------- #
 def test_partial_typewriter_text_is_held_then_released():
-    """Mid-reveal text must not be translated, but the final text must be.
-
-    Release is measured from the last *change*, so the final line needs to hold
-    still for `settle_window` - not merely be seen twice.
-    """
+    """Mid-reveal text is held; release is measured from the last change."""
     settler = TextSettler(settle_frames=2, settle_max_wait=2.0, settle_window=1.2)
-    # Typewriter reveal, one OCR sample at a time.
     assert settler.observe("The react", 0.0) is False
     assert settler.observe("The reactor is", 0.5) is False
     assert settler.observe("The reactor is overheating.", 1.0) is False
-    # Still inside the stability window: the reveal only just finished.
     assert settler.observe("The reactor is overheating.", 1.5) is False
-    # Past the window -> final.
     assert settler.observe("The reactor is overheating.", 2.3) is True
 
 
 def test_oscillating_text_still_settles():
-    """Regression from a live screen: if the OCR result jitters between two
-    values, a timer that restarts on every change never expires. Stability
-    measured from the last change settles anyway."""
+    """Stability measured from the last change settles jittering text."""
     settler = TextSettler(settle_frames=2, settle_max_wait=2.0, settle_window=1.0)
-    # Alternating reads, never the same twice in a row.
     now = 0.0
     released = False
     for i in range(12):
@@ -133,14 +106,7 @@ def test_oscillating_text_still_settles():
 
 
 def test_long_line_tolerates_real_ocr_jitter():
-    """Regression: jitter on a long line is not "a character or two".
-
-    Measured on the live screen (tesseract, conf 80-91, identical pixels): the
-    same 70-character Limbus line came back with 2-10 character edits between
-    polls - the leading em-dash run and a trailing cursor glyph are not stable.
-    An edit-distance-only rule rejected these, which reset the settle timer on
-    every read so the line was never translated at all.
-    """
+    """A long line tolerates multi-character OCR jitter."""
     reads = [
         "——— Ah, let me set it on your table, Master... It's hot—you",
         "° — Ah, etme setit on your table, Master... It's hot—you d",
@@ -155,7 +121,6 @@ def test_long_line_tolerates_real_ocr_jitter():
 
 
 def test_a_genuinely_different_line_is_still_a_new_line():
-    """The tolerance above must not swallow real dialogue changes."""
     a = "—— Ah, let me setit on your table, Master... It's hot—you"
     b = "Years have passed since that smoke faded into the grey sky."
     assert not is_same_reading(a, b)
@@ -163,11 +128,7 @@ def test_a_genuinely_different_line_is_still_a_new_line():
 
 
 def test_short_lines_still_decide_by_edit_distance():
-    """A ratio is meaningless on short lines, so it must not decide them.
-
-    "Yes." and "No." are 0.67 similar; a bare similarity threshold would call
-    them the same line and silently drop a real change.
-    """
+    """A ratio is meaningless on short lines, so it must not decide them."""
     assert is_same_reading("Yes.", "Yes,")
     assert not is_same_reading("Yes.", "No.")
     assert not is_same_reading("Wait!", "Wait...")
@@ -181,18 +142,13 @@ def test_typewriter_reveal_is_not_mistaken_for_jitter():
 
 
 def test_unfinished_text_waits_out_a_reveal_pause():
-    """Regression: a game pauses mid-reveal, and "stable for N seconds" cannot
-    tell that pause from the end of a line. Releasing on the pause put a fragment
-    in the panel ("...the proverbial poster child of company") and then translated
-    the line again when the rest arrived."""
+    """A mid-reveal pause must not be read as the end of a line."""
     settler = TextSettler(settle_frames=2, settle_max_wait=8.0, settle_window=1.2)
     partial = "The inspector is the proverbial poster child of company"  # no terminator
     assert settler.observe(partial, 0.0) is False
-    # Still unfinished 3s later (the pause a live game took), so it must be held.
     assert settler.tick(3.0) is False, "a paused reveal was released as final"
-    # The rest of the sentence arrives and the line is now complete.
     full = "The inspector is the proverbial poster child of company-sponsored contractors."
-    assert settler.observe(full, 3.5) is False   # reveal continues, window restarts
+    assert settler.observe(full, 3.5) is False
     assert settler.held == full, "the completed sentence must replace the fragment"
     assert settler.tick(4.6) is False            # settle_window is 1.2s from 3.5s
     assert settler.tick(4.8) is True, "the finished line must still be released"
@@ -207,17 +163,14 @@ def test_finished_line_is_released_on_the_normal_window():
 
 
 def test_unfinished_text_is_eventually_released():
-    """A line the game never punctuates must not be held forever."""
     settler = TextSettler(settle_frames=2, settle_max_wait=8.0, settle_window=1.2)
     assert settler.observe("Gotta keep your clientele more distinguished", 0.0) is False
     assert settler.tick(5.6) is False          # settle_window + incomplete_grace
-    assert settler.tick(5.8) is True           # released once the grace expires
+    assert settler.tick(5.8) is True
     assert settler.tick(8.1) is True           # and the cap is a ceiling, not a gate
 
 
 def test_looks_complete_reads_punctuation():
-    """Asymmetric on purpose: a fragment judged finished is worse than a finished
-    line judged unfinished, which only costs the grace period."""
     for finished in ["Done.", "Really?", "Stop!", "He said, \"no.\"", "wait...", "そうですね。"]:
         assert looks_complete(finished), finished
     for fragment in [
@@ -233,20 +186,17 @@ def test_looks_complete_reads_punctuation():
 
 
 def test_confirm_prevents_re_emitting_the_same_line():
-    # A finished line (terminal punctuation), so the release is governed by the
-    # settle window alone rather than by the unfinished-text grace.
+    # terminal punctuation, so the release is governed by the settle window alone
     settler = TextSettler(settle_frames=2, settle_max_wait=2.0, settle_window=1.0)
     assert settler.observe("The same line, finished.", 0.0) is False
     assert settler.observe("The same line, finished.", 1.5) is True
     settler.confirm(1.5)
     settler.reset()
-    # The line is still on screen; it must not be translated again immediately.
     assert settler.observe("The same line, finished.", 1.6) is False
     assert settler.tick(2.0) is False
 
 
 def test_a_reveal_converges_instead_of_being_discarded():
-    """A changing read must keep the newest text, not drop back to the first."""
     settler = TextSettler(settle_frames=2, settle_max_wait=5.0, settle_window=1.0)
     settler.observe("The react", 0.0)
     settler.observe("The reactor is overheating.", 0.3)
@@ -254,12 +204,11 @@ def test_a_reveal_converges_instead_of_being_discarded():
 
 
 def test_static_screen_still_releases_via_tick():
-    """The bug this guards: OCR stops when pixels stop changing, so a line that
-    appears and then sits still would never be translated without a timeout."""
+    """OCR stops when pixels stop changing, so a static line needs a timeout."""
     settler = TextSettler(settle_frames=2, settle_max_wait=2.0)
     assert settler.observe("A static line of dialogue.", 0.0) is False
-    assert settler.tick(1.0) is False  # not yet
-    assert settler.tick(2.5) is True  # released by time, not by a second read
+    assert settler.tick(1.0) is False
+    assert settler.tick(2.5) is True
 
 
 def test_empty_text_resets_the_settler():
@@ -275,9 +224,6 @@ def test_settle_frames_one_translates_immediately():
     assert settler.observe("Immediate", 0.0) is True
 
 
-# --------------------------------------------------------------------------- #
-# Empty guard
-# --------------------------------------------------------------------------- #
 def test_empty_guard_mutes_after_repeated_empty_reads():
     guard = EmptyGuard(limit=3)
     assert guard.observe(True) is True
@@ -285,14 +231,10 @@ def test_empty_guard_mutes_after_repeated_empty_reads():
     assert guard.observe(False) is False
     assert guard.observe(False) is False
     assert guard.muted is True
-    # Text returning must unmute.
     assert guard.observe(True) is True
     assert guard.muted is False
 
 
-# --------------------------------------------------------------------------- #
-# Cache
-# --------------------------------------------------------------------------- #
 def test_cache_roundtrip_and_stats(tmp_path):
     cache = TranslationCache(tmp_path / "c.json")
     assert cache.get("hello") is None
@@ -316,12 +258,7 @@ def test_cache_evicts_beyond_max_entries():
 
 
 def test_a_memory_only_cache_writes_nothing():
-    """What the default config uses.
-
-    The disk cache is a plaintext transcript of everything that passed through
-    the capture box - which is whatever was on screen, not only the game - so
-    persisting it is opt-in. Within a run it still collapses repeats.
-    """
+    """Memory-only by default: a disk cache is a plaintext transcript of the screen."""
     cache = TranslationCache(None)
     cache.put("hello", "こんにちは")
     assert cache.get("hello") == "こんにちは"
@@ -334,7 +271,6 @@ def test_the_default_config_does_not_persist_translations():
 
     cfg = Config()
     assert cfg.cache_path == ""
-    # No path at all, so `save()` cannot write one by accident.
     assert _cache_for(cfg).path is None
 
 
@@ -349,9 +285,6 @@ def test_a_configured_cache_path_still_persists(tmp_path):
     assert (tmp_path / "c.json").exists()
 
 
-# --------------------------------------------------------------------------- #
-# Config + preprocessing
-# --------------------------------------------------------------------------- #
 def test_region_fraction_and_pixel_resolution():
     frac = Region(0.5, 0.5, 0.25, 0.25, "fraction")
     assert frac.to_pixels(1000, 800) == (500, 400, 250, 200)
@@ -360,7 +293,6 @@ def test_region_fraction_and_pixel_resolution():
 
 
 def test_region_is_clamped_into_the_screen():
-    # A region hanging off the edge must not produce a negative/empty box.
     x, y, w, h = Region(900, 700, 500, 500, "pixels").to_pixels(1000, 800)
     assert (x, y, w, h) == (900, 700, 100, 100)
     assert w >= 1 and h >= 1
@@ -380,12 +312,7 @@ def test_config_roundtrip_preserves_nested_region(tmp_path):
 
 
 def test_an_old_single_api_key_migrates_to_the_configured_backend(tmp_path):
-    """The old field recorded no backend, so the configured one is the answer.
-
-    It is also the right answer for every config Settings wrote: the field was
-    filled in while that backend was selected. Without this the key would sit
-    there meaning "for all of them", which is the bug being fixed.
-    """
+    """The old single api_key recorded no backend, so the configured one is used."""
     path = tmp_path / "config.json"
     path.write_text(
         '{"translate": {"backend": "deepl", "api_key": "deepl-legacy"}}'
@@ -397,13 +324,7 @@ def test_an_old_single_api_key_migrates_to_the_configured_backend(tmp_path):
 
 
 def test_a_config_left_on_a_missing_backend_moves_to_none(tmp_path):
-    """`ct2` and `local` have no implementation, and the value is never validated.
-
-    Without this the config loaded fine and then raised "unknown translation
-    backend" on every line - a wall of errors from a setting the user cannot see
-    is wrong. `none` keeps the app alive (it still reads the screen) and the
-    warning says where that job went.
-    """
+    """`ct2` and `local` have no implementation, so the config moves to `none`."""
     path = tmp_path / "config.json"
     path.write_text(
         '{"translate": {"backend": "ct2", "model": "facebook/nllb-200-distilled-600M"}}'
@@ -423,12 +344,6 @@ def test_a_supported_backend_is_left_alone(tmp_path):
 
 
 def test_a_removed_setting_is_reported_rather_than_ignored(tmp_path):
-    """An old config's `ct2_model_dir` is not silently dropped.
-
-    It is an unknown key now, and the loader already says so for typos; the point
-    here is that the same mechanism covers a setting this version removed, so the
-    user is told rather than left wondering why the field disappeared.
-    """
     path = tmp_path / "config.json"
     path.write_text('{"translate": {"backend": "chat", "ct2_model_dir": "/tmp/x"}}')
     cfg = Config.load(path)
@@ -436,10 +351,7 @@ def test_a_removed_setting_is_reported_rather_than_ignored(tmp_path):
 
 
 def test_a_key_that_names_its_issuer_is_filed_under_that_backend(tmp_path):
-    """The case that prompted this: an OpenRouter key left in the shared field
-    while the backend was on `chat`, which sent it to a local Ollama server as a
-    bearer token. The configured backend is the only backend the old field
-    records, and here it is the wrong one - the key says so itself."""
+    """An OpenRouter key left in the shared field must not reach the configured backend."""
     path = tmp_path / "config.json"
     path.write_text('{"translate": {"backend": "chat", "api_key": "sk-or-v1-abc"}}')
     cfg = Config.load(path)
@@ -498,12 +410,7 @@ def test_preprocess_upscales_and_grayscales():
 
 
 def test_preprocess_inverts_and_cuts_the_input():
-    """The two recipe steps a game box needs and the config had no key for.
-
-    Inverting is what reads white dialogue on a black panel, and a cut is the
-    only way to separate grey glyphs from a background the contrast stretch
-    cannot: both change the image tesseract is handed, so both are pinned here.
-    """
+    """Inverting is what reads white dialogue on a black panel."""
     img = Image.new("RGB", (20, 10), (20, 20, 20))
     ImageDraw.Draw(img).rectangle([2, 2, 17, 7], fill=(210, 210, 210))
 
@@ -516,8 +423,7 @@ def test_preprocess_inverts_and_cuts_the_input():
     cut = preprocess(img, upscale=1.0, autocontrast=False, threshold=128)
     assert set(cut.getdata()) == {0, 255}
 
-    # The cut is applied last, so it separates the stretched image rather than
-    # the raw one: the same level still works when the contrast is stretched.
+    # the cut is applied last, so the same level works on the stretched image
     stretched = preprocess(img, upscale=1.0, autocontrast=True, threshold=128)
     assert set(stretched.getdata()) == {0, 255}
     assert stretched.getpixel((0, 0)) == 0
@@ -526,26 +432,14 @@ def test_preprocess_inverts_and_cuts_the_input():
 
 @pytest.mark.parametrize("bad", [0, -5, 300, "128", None, "wide"])
 def test_an_unusable_cut_means_no_cut(bad):
-    """`ocr.threshold` is a config value, and a hand-edited one may be nonsense.
-
-    Anything unusable has to mean "off" rather than fail the read - which is also
-    the default, so a config that was never edited and one that was edited badly
-    behave the same way.
-    """
+    """An unusable `ocr.threshold` means "off", never a failed read."""
     img = _frame("test", size=(40, 12))
     out = preprocess(img, upscale=1.0, autocontrast=False, threshold=bad)
     assert out.getextrema() != (0, 255), "a grey image, not an ink mask"
 
 
 def test_otsu_cut_separates_the_glyphs_from_the_panel():
-    """The cut the binarised preview draws when no cut is configured.
-
-    It has to land between the two levels rather than on one of them, or the
-    preview would show glyphs and paper in the same colour and say nothing about
-    whether a fixed cut helps. Noise is what makes this a real question: on a
-    perfect two-level image every cut between the levels scores the same, so the
-    answer is a tie rather than a valley.
-    """
+    """The cut the binarised preview draws when no cut is configured."""
     base = Image.new("L", (120, 40), 34)
     draw = ImageDraw.Draw(base)
     for x in range(8, 112, 16):
@@ -575,13 +469,7 @@ def test_the_ocr_recipe_survives_a_config_roundtrip(tmp_path):
 
 
 def test_the_confidence_gate_keeps_what_it_rejects(monkeypatch):
-    """`dropped` was a count, and a count cannot say *what* was dropped.
-
-    That is what made "no text found in this region" ambiguous: tesseract reading
-    nothing and tesseract reading a line the gate threw away looked the same, and
-    only the second one is a setting the user can move. So the rejected line is
-    kept whole - text, confidence and box - for the window to show.
-    """
+    """Rejected lines are kept whole so the window can show what was dropped."""
     import pytesseract
 
     from lintranslator.ocr import TesseractOcr
@@ -607,14 +495,12 @@ def test_the_confidence_gate_keeps_what_it_rejects(monkeypatch):
     assert [line.text for line in result.lines] == ["BBBB sure"]
     assert [line.text for line in result.rejected] == ["AAAA low"]
     assert result.rejected[0].confidence == 20.0
-    # In crop coordinates, not the upscaled ones: the box is there for a UI to
-    # draw on the region the user selected (40/3 x 10/3 at the default upscale).
+    # crop coordinates, not upscaled: the box is drawn on the user's region
     assert result.rejected[0].box == (0, 0, 13, 3)
     assert result.dropped == 1
     assert result.text == "BBBB sure"
 
-    # Our own UI being stripped out is counted the same way, and must not lose
-    # the lines the gate rejected on the way through.
+    # stripping our own line counts as dropped, and keeps the rejected ones
     stripped = result.without_lines(lambda text: text == "BBBB sure")
     assert stripped.lines == []
     assert stripped.dropped == 2
@@ -622,15 +508,6 @@ def test_the_confidence_gate_keeps_what_it_rejects(monkeypatch):
 
 
 def test_a_shorter_new_line_replaces_the_held_one():
-    """Regression: a shorter line could never replace a longer held one.
-
-    `_held_text` was only updated when the new read was at least as long as the
-    held one. A shorter line therefore differed from the held text on *every*
-    poll: the stability window restarted each time and nothing was translated
-    again until a longer line happened to appear. Measured on a live screen with
-    our own status line inside the box - dropping that line is exactly what makes
-    the game's text shorter than what was held.
-    """
     long_line = (
         "For lack of any meaningful help they could provide; given the nature of this trial."
     )
@@ -640,29 +517,22 @@ def test_a_shorter_new_line_replaces_the_held_one():
     assert settler.observe(long_line, 0.0) is False
     assert settler.held == long_line
 
-    # A different, shorter line must be adopted straight away...
     assert settler.observe(short_line, 0.5) is False
     assert settler.held == short_line, "the stale longer line is still held"
 
-    # ...and released on the normal window, not held forever.
     assert settler.observe(short_line, 1.2) is False
     assert settler.observe(short_line, 1.6) is True
 
 
 def test_jitter_of_one_line_is_still_not_a_new_line():
-    """The fix above must not undo the reason 'keep the longer read' exists:
-    OCR noise on one line must not restart the stability window."""
+    """OCR noise on one line must not restart the stability window."""
     settler = TextSettler(settle_frames=2, settle_window=1.0, settle_max_wait=8.0)
     settler.observe("The reactor is overheating, Captain.", 0.0)
-    # A jittering read, one character shorter, half a second in. If that counted
-    # as a new line the window would restart and the release would move to 1.5s.
     assert settler.observe("The reactor is overheating, Captain", 0.5) is False
     assert settler.observe("The reactor is overheating, Captain.", 1.2) is True
 
 
 def test_force_re_translates_instead_of_serving_the_cache(tmp_path):
-    """Re-read skips the cache: answering a "do that again" press with the same
-    cached string would look like the button did nothing."""
     from lintranslator.translate import CachedTranslator, Translation
 
     calls: list[str] = []
@@ -681,7 +551,7 @@ def test_force_re_translates_instead_of_serving_the_cache(tmp_path):
     translator = CachedTranslator(Backend(), cache=TranslationCache(tmp_path / "c.json"))
 
     assert translator.translate("hello").target == "attempt 1"
-    assert translator.translate("hello").target == "attempt 1"  # from the cache
+    assert translator.translate("hello").target == "attempt 1"
     assert translator.last_was_cached is True
     assert calls == ["hello"]
 
@@ -691,6 +561,5 @@ def test_force_re_translates_instead_of_serving_the_cache(tmp_path):
     assert translator.last_was_cached is False
     assert calls == ["hello", "hello"]
 
-    # The fresh result replaces the cached one, so the next repeat is cheap again.
     assert translator.translate("hello").target == "attempt 2"
     assert calls == ["hello", "hello"]

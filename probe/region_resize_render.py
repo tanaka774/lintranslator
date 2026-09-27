@@ -1,29 +1,8 @@
-"""Draw the region picker's canvas offscreen and check its grab handles.
-
-Two things this covers that nothing else does:
-
-* `RegionPicker._on_draw` is never exercised by the tests - they stub the preview
-  and the canvas is never allocated - so a mistake in the drawing code is a
-  runtime crash on the one screen the user needs to work;
-* the handles are the affordance for resizing. "You can drag the edges" is only
-  discoverable if the edges look grabbable, so where they land is checked in
-  pixels rather than by eye: a grip at every corner and at the middle of every
-  edge, and none in the middle of the box (that is the move handle).
-
-Each grip is sampled a couple of pixels *inside* the edge, at a point the 2px
-border cannot reach - sampling on the anchor itself would report the border and
-call a missing handle a pass.
-
-Writes .cache/region_resize_handles.png so the result can be looked at.
-
-Run:  .venv/bin/python probe/region_resize_render.py
-"""
+"""Draw the region picker's canvas offscreen and check its grab handles."""
 import sys
 from io import BytesIO
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -93,8 +72,8 @@ def main() -> int:
         picker.present = lambda: None
         picker._panel.hotkey_enabled = False
         picker.sel = BOX
-        # The canvas is never allocated without a presented window; pretend it
-        # was, so the draw path runs with real numbers.
+        # The canvas is never allocated without a presented window; fake it, so
+        # the draw path runs with real numbers.
         picker.area.get_width = lambda: CANVAS[0]
         picker.area.get_height = lambda: CANVAS[1]
 
@@ -113,7 +92,6 @@ def main() -> int:
         print(f"canvas {CANVAS[0]}x{CANVAS[1]} (scale {m.scale:.2f}), box {BOX}")
         print(f"box in widget space: {x0:.0f},{y0:.0f} to {x1:.0f},{y1:.0f}")
 
-        # A 3x3 grid of anchors, less the centre: corners and edge midpoints.
         for ax in (x0, mx, x1):
             for ay in (y0, my, y1):
                 if ax == mx and ay == my:

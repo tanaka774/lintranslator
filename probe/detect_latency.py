@@ -1,28 +1,8 @@
-"""Does the self-capture guard cost detection speed, or lose lines?
-
-Deterministic and screen-free: a scripted screen that changes on every poll (a
-blinking caret, like a live game), carrying one dialogue line at a time, and -
-in the overlap scenario - a line of lintranslator's own UI inside the same read.
-
-Three phases over the identical script, so the comparison is exact:
-
-  1. `before`    - no self-text handling at all (the original pipeline).
-  2. `drop read` - the first version of the guard: if any of our text is in the
-                   read, the whole read is discarded.
-  3. `per line`  - the current guard: only the lines that are ours are dropped.
-
-Reported per line: was it translated, and how long after it appeared. Phase 2 is
-the one that produced "it stopped detecting": the panel's status line changes
-constantly, so every read looked like ours and the dialogue never settled.
-
-Run:  .venv/bin/python probe/detect_latency.py
-"""
+"""Does the self-capture guard cost detection speed, or lose lines?"""
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -35,12 +15,11 @@ from lintranslator.ocr import OcrLine, OcrResult  # noqa: E402
 from lintranslator.pipeline import Pipeline  # noqa: E402
 from lintranslator.selftext import looks_like_own_ui  # noqa: E402
 
-# The panel's status line, changing every poll - the worst realistic intruder,
-# because each change makes the frame change and keeps OCR running.
+# The panel's status line - the app's own text, changing every poll.
 PANEL_LINE = "12:34:56 · conf 90 · {n} ms · openrouter · +2.1s"
 
-# Realistic Limbus-style lines, complete sentences so the normal settle window
-# applies (rather than the unfinished-text grace).
+# Complete sentences, so the normal settle window applies rather than the
+# unfinished-text grace.
 SCRIPT = [
     "Although the trial won't be open to the public, you may, as close associates, attend.",
     "Here, however... everyone seems to be mired... in ennui.",
@@ -63,10 +42,8 @@ class ScriptedScreen:
         draw = ImageDraw.Draw(image)
         draw.rectangle([10, 10, 380, 40], fill=(40, 40, 44))
         draw.text((14, 20), "dialogue", fill=(235, 235, 235))
-        # A blinking advance caret: a large, high-contrast change on every other
-        # poll, which is what keeps a live game's frame "changed" (a subtle tint
-        # shift is below the detector's noise floor, and the first version of this
-        # probe measured almost nothing because of it).
+        # A blinking advance caret, a large high-contrast change every other
+        # poll: a subtle tint shift is below the detector's noise floor.
         if self.i % 2:
             draw.rectangle([384, 12, 396, 38], fill=(250, 250, 250))
         return Frame(
@@ -150,10 +127,9 @@ def run(phase: str, overlap: bool) -> tuple[list[str], list[float], int]:
 
     original_guard = pipeline_mod.looks_like_own_ui
     if phase == "before":
-        # No self-text handling existed: nothing is ever recognised as ours.
         pipeline_mod.looks_like_own_ui = lambda text: False
     elif phase == "drop read":
-        # The first guard version checked the *joined* read and discarded all of it.
+        # The stub checks the joined read and discards all of it.
         state = {"joined": ""}
 
         def whole_read(text: str) -> bool:

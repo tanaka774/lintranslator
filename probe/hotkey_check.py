@@ -1,20 +1,7 @@
-"""Ask the compositor for a global shortcut and report what happens.
-
-Wayland forbids reading global keys, so the shortcut has to be granted by the
-compositor through `org.freedesktop.portal.GlobalShortcuts`. KDE shows its own
-binding dialog the first time (the app id is remembered after that), so this probe
-prints every step and waits for an answer rather than assuming one.
-
-If you press the bound key while this is running, it prints ACTIVATED - which is
-the whole mechanism the Re-read hotkey uses.
-
-Run:  .venv/bin/python probe/hotkey_check.py [seconds]
-"""
+"""Ask the compositor for a global shortcut and report what happens."""
 import sys
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -43,6 +30,7 @@ def main() -> int:
     app = Gtk.Application(
         application_id="dev.lintranslator.hotkeycheck", flags=Gio.ApplicationFlags.NON_UNIQUE
     )
+    # Wayland forbids reading global keys; the compositor grants the shortcut via a portal
     hotkey = GlobalHotkey(on_activated=on_activated, on_status=on_status)
 
     def on_activate(_app):

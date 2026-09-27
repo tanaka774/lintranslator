@@ -1,19 +1,4 @@
-"""What the picker tells the pipeline: which area to read, and when.
-
-Both bugs this covers were measured on a live screen, not imagined:
-
-* pressing Start again after moving the box left the running pipeline on
-  the OLD area, while the picker showed the new box as live;
-* reading started 10 ms after the click, with the picker still over the box, so
-  the first capture contained the picker's own status line and the dialogue line
-  underneath it was dropped by the confidence gate.
-
-Nothing here captures the screen or shows a window: the panel is built but never
-presented, the pipeline thread is replaced with a recorder, and OCR is stubbed
-out. What is tested is the wiring.
-
-Requires a GTK display; skips cleanly without one.
-"""
+"""What the picker tells the pipeline: which area to read, and when."""
 from __future__ import annotations
 
 import queue
@@ -40,8 +25,7 @@ from lintranslator.occlusion import GUARD  # noqa: E402
 from lintranslator.selection import SelectionMath  # noqa: E402
 
 SCREEN = (800, 600)
-# A colour the fixture's screenshot does not use, so "the canvas was replaced"
-# is visible in the pixels rather than only in the wiring.
+# a colour the fixture's screenshot does not use
 FRESH = (200, 40, 60)
 
 
@@ -114,9 +98,7 @@ def clean_guard():
 @pytest.fixture
 def picker(tmp_path, monkeypatch):
     monkeypatch.setattr(panel_mod, "PipelineThread", RecordingWorker)
-    # Never put a window on the real screen, and never run tesseract on a
-    # synthetic screenshot: this test is about wiring, not pixels. Presentations
-    # are recorded rather than dropped, so a test can ask what was on screen.
+    # never put a window on the real screen, or run tesseract on a synthetic shot
     presented: list = []
     monkeypatch.setattr(
         panel_mod.TranslatorPanel, "present", lambda self: presented.append(self)
@@ -152,7 +134,6 @@ def _drag_to(window, x, y, w, h) -> None:
     window._on_drag_end(None, 0.0, 0.0)
 
 
-# --------------------------------------------------------------------------- #
 def test_start_saves_the_box_and_starts_the_pipeline(picker):
     x, y, w, h = picker.sel
     picker._on_start()
@@ -172,7 +153,7 @@ def test_start_saves_the_box_and_starts_the_pipeline(picker):
 
 
 def test_start_gets_the_picker_off_the_screen(picker):
-    """The window must leave before reading starts - that is the whole fix."""
+    """The window must leave the screen before reading starts."""
     picker._on_start()
     assert picker.minimised == [True], "the picker stayed on screen while watching"
 
@@ -184,11 +165,7 @@ def test_the_picker_tells_the_guard_when_it_is_visible(picker):
 
 
 def test_the_card_names_the_language_pair_it_is_translating_into(picker):
-    """The pair is set in a dialog and then invisible for the whole session.
-
-    "This is translating into the wrong language" should be readable from the
-    card, not something to be discovered from the output.
-    """
+    """The pair is set in a dialog and then invisible for the whole session."""
     panel = picker._panel
     panel.config.translate.source_lang = "eng_Latn"
     panel.config.translate.target_lang = "kor_Hang"
@@ -197,7 +174,6 @@ def test_the_card_names_the_language_pair_it_is_translating_into(picker):
     assert "eng→kor" in label
     assert panel.config.translate.backend in label
 
-    # A hand-written code is shown as it is rather than dropped.
     panel.config.translate.target_lang = "Japanese"
     panel._refresh_backend_label()
     assert "eng→Japanese" in panel.backend_label.get_text()
@@ -209,12 +185,7 @@ def test_an_unmapped_picker_is_not_a_reason_to_pause(picker):
 
 
 def test_the_card_says_when_nothing_is_being_translated(picker):
-    """The pass-through backend shows the source where a translation belongs.
-
-    Measured confusion, not a hypothetical: with `backend: "none"` the card read
-    as a translator that had stopped working, because it named a model
-    ("gemini-2.5-flash-lite") that the selected backend never calls.
-    """
+    """The pass-through backend shows the source where a translation belongs."""
     panel = picker._panel
     panel.config.translate.backend = "none"
     panel.config.translate.model = "google/gemini-2.5-flash-lite"
@@ -223,19 +194,13 @@ def test_the_card_says_when_nothing_is_being_translated(picker):
     assert "no translation" in text and "none" in text
     assert "gemini" not in text, "an unused model must not be named as if it worked"
 
-    # A backend that does translate still names its model.
     panel.config.translate.backend = "openrouter"
     panel._refresh_backend_label()
     assert "gemini-2.5-flash-lite" in panel.backend_label.get_text()
 
 
 def test_pressing_start_again_re_points_the_running_pipeline(picker):
-    """Regression: the second press used to be ignored entirely.
-
-    The picker would show the new box as the live one while the pipeline kept
-    reading the old area - and only Save applied it, by restarting everything
-    (which reloaded the model and moved the card).
-    """
+    """Pressing Start again re-points the running pipeline."""
     picker._on_start()
     first = picker._panel.worker
 
@@ -268,22 +233,14 @@ def test_dragging_before_watching_does_not_start_anything(picker):
 
 
 def test_dragging_an_edge_inwards_shrinks_the_box(picker):
-    """Regression: the box could be grown but never shrunk.
-
-    Two halves had to agree for a resize to work, and neither did. The geometry
-    pinned the moving edge to where the pointer landed, and these handlers fed it
-    the box as it changed on every event - with cumulative drag offsets that
-    makes the edge accelerate away from the pointer. A resize is measured from the
-    box the drag started with, which is what this covers.
-    """
+    """Dragging an edge inwards shrinks the box."""
     # 1:1 mapping, so the numbers below are the pointer's own coordinates.
     picker.math = lambda: SelectionMath(SCREEN[0], SCREEN[1], float(SCREEN[0]), float(SCREEN[1]))
-    picker.sel = (100, 100, 200, 100)  # right edge at x=300
+    picker.sel = (100, 100, 200, 100)
 
     picker._on_drag_begin(None, 300.0, 150.0)
     assert picker._drag_mode == "e", "the press did not land on the right edge"
-    # Cumulative offsets, as GtkGestureDrag reports them: the pointer moves from
-    # 300 to 210, one event per few pixels.
+    # cumulative offsets, as GtkGestureDrag reports them
     for dx in (-30.0, -60.0, -90.0):
         picker._on_drag_update(None, dx, 0.0)
     picker._on_drag_end(None, -90.0, 0.0)
@@ -293,18 +250,13 @@ def test_dragging_an_edge_inwards_shrinks_the_box(picker):
 
 
 def test_a_new_drag_replaces_the_box_the_picker_opened_with(picker):
-    """A drag that starts away from the current box draws a new one.
-
-    The box a drag started from is remembered for resizing, and it must not leak
-    into the new-box maths: the picker opens on a seeded selection, so "draw a
-    fresh box" always means replacing one, never starting from nothing.
-    """
+    """A drag that starts away from the current box draws a new one."""
     picker.math = lambda: SelectionMath(SCREEN[0], SCREEN[1], float(SCREEN[0]), float(SCREEN[1]))
     picker.sel = (100, 100, 200, 100)
 
-    picker._on_drag_begin(None, 500.0, 400.0)  # nowhere near the existing box
+    picker._on_drag_begin(None, 500.0, 400.0)
     assert picker._drag_mode == "new"
-    picker._on_drag_update(None, -120.0, -80.0)  # up and to the left
+    picker._on_drag_update(None, -120.0, -80.0)
     picker._on_drag_end(None, -120.0, -80.0)
 
     assert picker.sel == (380, 320, 120, 80)
@@ -319,8 +271,7 @@ def test_the_panel_is_given_the_pause_reason_and_a_way_back(picker):
 
 
 def test_the_watch_button_says_what_it_will_do(picker):
-    """Idle it starts watching; while watching it applies the box and gets out of
-    the way. A button still reading "Watching…" would be a dead control."""
+    """Idle it starts watching; while watching it applies the box and gets out of the way."""
     assert picker.watch_btn.get_label() == "Start"
     picker._on_start()
     assert picker.watch_btn.get_label() == "Apply box"
@@ -328,12 +279,7 @@ def test_the_watch_button_says_what_it_will_do(picker):
 
 
 def test_the_picker_opens_without_the_card(picker):
-    """Picking a region is one window's job.
-
-    The card used to be presented at launch, so `lintranslator` put two windows
-    on screen at once - and the card, being mapped while the picker grabbed the
-    screen, landed in the picker's own screenshot. Start is what opens it.
-    """
+    """Picking a region is one window's job."""
     assert picker.presented == [], "the card was on screen before Start"
     picker._on_start()
     assert picker.presented == [picker._panel], "Start did not open the card"
@@ -348,12 +294,7 @@ def test_the_region_button_asks_the_picker_to_come_back(picker, monkeypatch):
 
 
 def test_the_region_button_reopens_on_a_fresh_screenshot(picker, fake_grabber, monkeypatch):
-    """Regression: Region came back on the shot taken when watching started.
-
-    Re-framing is the only reason to press it, and the game has moved on by
-    then, so the screen has to be captured again on the way back. The box is
-    kept: what is replaced is the screen underneath it, not the selection.
-    """
+    """Region reopens on a fresh screenshot, keeping the box."""
     monkeypatch.setattr(picker, "present", lambda: None)
     picker._on_start()
     picker.set_visible(False)  # what _minimise_for_watching ends up doing
@@ -365,14 +306,11 @@ def test_the_region_button_reopens_on_a_fresh_screenshot(picker, fake_grabber, m
     assert picker.screen_image.getpixel((0, 0)) == FRESH, "the old shot was reused"
     assert picker.sel == watched, "re-capturing threw the box away"
     assert picker.get_visible(), "the picker did not come back"
-    # The picker is off screen during the grab, so the panel has to say what the
-    # button is doing; otherwise it looks like nothing happened.
     assert "capturing" in picker._panel.status_label.get_text()
 
 
 def test_recapturing_waits_while_the_picker_is_still_on_screen(picker, fake_grabber, monkeypatch):
-    """A mapped picker has to leave the screen first, or the shot of the game
-    would contain the picker itself."""
+    """A mapped picker has to leave the screen first, or the shot would contain it."""
     scheduled = []
     monkeypatch.setattr(picker_mod.GLib, "timeout_add", lambda ms, cb: scheduled.append(ms))
     monkeypatch.setattr(picker, "get_mapped", lambda: True)
@@ -385,8 +323,7 @@ def test_recapturing_waits_while_the_picker_is_still_on_screen(picker, fake_grab
 
 
 def test_a_failed_capture_still_brings_the_picker_back(picker, monkeypatch):
-    """The window is hidden for the grab, so a failure that left it hidden would
-    leave the process with nothing on screen at all."""
+    """The window is hidden for the grab, so a failure must still bring it back."""
 
     class FailingGrabber:
         def __init__(self, *args, **kwargs):
@@ -408,16 +345,14 @@ def test_a_failed_capture_still_brings_the_picker_back(picker, monkeypatch):
 
 
 def test_recapturing_keeps_the_box_the_user_dragged(picker):
-    """Re-grabbing the screen is how you frame against the live screen, so it
-    must not throw away the box you just dragged in favour of the saved one."""
+    """Re-grabbing the screen must not throw away the box you just dragged."""
     _drag_to(picker, 33, 222, 333, 111)
     picker.set_screenshot(_png())
     assert picker.sel == (33, 222, 333, 111)
 
 
 def test_recapturing_at_another_resolution_reseeds_from_the_config(picker):
-    """Fractions still describe the saved box after a resolution change, but the
-    pixel selection has to be recomputed for the new screen size."""
+    """Fractions still describe the saved box after a resolution change, but the pixels are recomputed."""
     _drag_to(picker, 33, 222, 333, 111)
     picker.set_screenshot(_png((1280, 720)))
     region = picker.config.capture.region
@@ -425,9 +360,7 @@ def test_recapturing_at_another_resolution_reseeds_from_the_config(picker):
 
 
 def test_closing_the_panel_brings_the_picker_back(picker, monkeypatch):
-    """While watching, the picker is off screen. Closing the card must not leave
-    the process with no visible window - the orphaned-window failure this project
-    already shipped once."""
+    """Closing the card while watching must bring the picker back."""
     picker._on_start()
     picker.set_visible(False)  # what _minimise_for_watching ends up doing
     restored = []
@@ -441,21 +374,14 @@ def test_closing_the_panel_brings_the_picker_back(picker, monkeypatch):
 
 
 def test_the_panel_keeps_the_configured_width(picker):
-    """The card's width must come from display.width, not from the longest label.
-
-    Regression: the status line grew a timing suffix, and because an unwrapped
-    label's minimum width is its whole text, the card went 560 -> 664 px. A wider
-    card reaches further into the box it is reporting on, which is how it ends up
-    being captured and (with the self-text guard) how a line stops being read.
-    """
+    """The card's width must come from display.width, not from the longest label."""
     panel = picker._panel
     panel.enable_region_button(picker.restore)
     panel.status_label.set_text(
         "12:34:56 · conf 90 · 812 ms · openrouter · +2.1s"
     )
     panel.backend_label.set_text("openrouter · tencent/hy-mt2-1.8b · box 0.459×0.115")
-    # The longest thing that can land in the card, and the reason the two text
-    # areas had to stop dictating the width.
+    # the longest thing that can land in the card
     panel._show_event(
         Event(
             source="[The committee has resolved that this entry warrants retention as a "
@@ -475,9 +401,6 @@ def test_the_panel_keeps_the_configured_width(picker):
     minimum = panel.measure(Gtk.Orientation.HORIZONTAL, -1).minimum
     configured = picker.config.display.width
     assert minimum <= configured, f"card needs {minimum}px, configured {configured}px"
-    # The mechanism: the long labels are bounded rather than dictating the width.
-    # The status line ellipsises (it shares one fixed-height row with the
-    # buttons) and each text area scrolls instead of asking for its full width.
     assert panel.status_label.get_ellipsize() != Pango.EllipsizeMode.NONE
     assert panel.backend_label.get_ellipsize() != Pango.EllipsizeMode.NONE
     assert panel.target_scroll.get_propagate_natural_width() is False
@@ -485,13 +408,7 @@ def test_the_panel_keeps_the_configured_width(picker):
 
 
 def test_the_panel_height_does_not_follow_its_text(picker):
-    """The card's height must be the configured budget, whatever the line is.
-
-    Regression: the card was content-sized, so it grew with the translation and
-    GTK never shrank a resizable window back. Measured, a four-line reply took it
-    from 172 px to 312 px and it stayed there even when the next line was two
-    characters long - so one long line permanently covered more of the game.
-    """
+    """The card's height must be the configured budget, whatever the line is."""
     panel = picker._panel
     display_cfg = picker.config.display
 
@@ -528,8 +445,6 @@ def test_the_panel_height_does_not_follow_its_text(picker):
     long = height()
     assert short == long, f"card height moved {short} -> {long} with the text"
 
-    # And the reserved space really is the configured number of lines, so a
-    # taller budget is the only thing that can make the card taller.
     def reserved(label, lines):
         return panel._reserved_height(label, lines)
 
@@ -539,14 +454,11 @@ def test_the_panel_height_does_not_follow_its_text(picker):
     assert panel.source_scroll.get_size_request().height == reserved(
         panel.source_label, display_cfg.source_lines
     )
-    # Each extra line costs the same leading, and the first line costs more than
-    # that because it also carries the font's ascent and descent. Reserving
-    # `leading * n` instead came up a pixel short and clipped the last line.
+    # each extra line costs one leading; the first also carries ascent and descent
     one, two, three = (reserved(panel.target_label, n) for n in (1, 2, 3))
     assert 0 < one < two < three
     assert two - one == three - two, "line spacing is not constant"
-    # The original text sits below the translation, not above it. The card is
-    # wrapped in a Gtk.Overlay that carries the resize grips, so walk that.
+    # source sits below the translation; the card is wrapped in a Gtk.Overlay, so walk that
     card = panel.card
     children = []
     child = card.get_first_child()
@@ -573,16 +485,11 @@ def test_hiding_the_source_shrinks_the_card_by_its_reserved_lines(picker):
     )
     assert panel.source_scroll.get_visible() is False
 
-    # And turning it back on restores the same height, so the toggle is not a
-    # one-way ratchet of its own.
     display_cfg.show_source = True
     panel.apply_display_settings()
     assert panel.measure(Gtk.Orientation.VERTICAL, display_cfg.width).natural == with_source
 
 
-# --------------------------------------------------------------------------- #
-# Re-read: the button, the in-app shortcut and the control socket
-# --------------------------------------------------------------------------- #
 def test_the_reread_button_asks_the_pipeline_to_read_again(picker):
     picker._on_start()
     worker = picker._panel.worker
@@ -594,8 +501,7 @@ def test_the_reread_button_asks_the_pipeline_to_read_again(picker):
 
 
 def test_the_in_window_shortcut_does_the_same(picker):
-    """Ctrl+R and F5 are the in-window shortcuts; the global one comes from the
-    compositor. Both must land in the same place."""
+    """Ctrl+R and F5 are the in-window shortcuts; the global one comes from the compositor."""
     picker._on_start()
     worker = picker._panel.worker
     assert picker._panel._on_shortcut_reread(None, None) is True
@@ -603,7 +509,7 @@ def test_the_in_window_shortcut_does_the_same(picker):
 
 
 def test_reread_starts_a_stopped_pipeline(picker):
-    """Pressing Re-read on a paused panel should do the obvious thing."""
+    """Pressing Re-read on a paused panel starts the pipeline."""
     assert picker._panel.worker is None
     picker._panel.request_reread()
     assert picker._panel.worker is not None
@@ -626,15 +532,11 @@ def test_the_panel_reports_when_the_global_hotkey_is_unavailable(picker):
     """A missing hotkey must be explained, not silently absent."""
     panel = picker._panel
     panel._on_hotkey_status(False, "no portal")
-    # It is three lines long, so it goes in the card's text area rather than the
-    # one-line status row, where it would be ellipsised to a few characters.
     text = panel.target_label.get_text()
     assert "No global hotkey" in text
     assert "lintranslator shortcut" in text, "the fix has to be named"
     assert "Ctrl+R" in text, "the in-window fallback has to be named"
-    # A notice must not be mistaken for a translation.
     assert panel.target_label.has_css_class("lintranslator-notice")
-    # The full text stays reachable once a translation displaces the notice.
     assert "lintranslator shortcut" in (panel.status_label.get_tooltip_text() or "")
 
 
@@ -655,22 +557,11 @@ def test_a_notice_never_replaces_a_translation(picker):
     panel._note_keep_above(False, "native Wayland")
     assert panel.target_label.get_text() == "はい。"
     assert not panel.target_label.has_css_class("lintranslator-notice")
-    # The short form still reaches the status row, so it is not swallowed. It is
-    # split on the em dash: what lands there is the statement, and the pointer to
-    # the ⋮ menu is dropped, because the menu is a click away from either place.
     assert "Not always-on-top" in panel.status_label.get_text()
 
 
-# --------------------------------------------------------------------------- #
-# Always-on-top: silent where it cannot work, one line where it failed
-# --------------------------------------------------------------------------- #
 class _FakeWaylandDisplay:
-    """Stands in for GdkWaylandDisplay.
-
-    The check is by class name on purpose (see `_apply_keep_above`): the X11
-    typelib is not present everywhere, so the panel may not touch
-    `Gdk.X11Display` to find out what it is running on.
-    """
+    """Stands in for GdkWaylandDisplay; the code checks the class name only."""
 
 
 class _FakeX11Display:
@@ -678,26 +569,15 @@ class _FakeX11Display:
 
 
 def test_native_wayland_says_nothing_about_always_on_top(picker, monkeypatch):
-    """A request that cannot be made is not reported.
-
-    The notice this replaces ran to three lines with the whole fix in it, on every
-    launch of every native Wayland session, and stayed until the first
-    translation - telling users who had already added the KWin window rule to go
-    and add it, and clearable only by a translation. Nothing was attempted here,
-    so the card says nothing; the fix is in the README.
-    """
+    """A request that cannot be made is not reported."""
     panel = picker._panel
     monkeypatch.setattr(panel, "get_display", lambda: _FakeWaylandDisplay())
 
     panel._apply_keep_above()
 
     assert panel.last_event is None
-    # Whatever the card was showing, it is not this notice: the picker's own idle
-    # line is what a panel that has never translated holds.
     assert "always-on-top" not in panel.target_label.get_text().lower()
     assert not panel.target_label.has_css_class("lintranslator-notice")
-    # An X11 panel on the same session would have set the tooltip; this one must
-    # not have, or the status row would explain a problem the card is not showing.
     assert not (panel.status_label.get_tooltip_text() or "").lower().startswith(
         "not always-on-top"
     )
@@ -706,9 +586,7 @@ def test_native_wayland_says_nothing_about_always_on_top(picker, monkeypatch):
 def test_an_x11_failure_still_reports_on_the_card(picker, monkeypatch):
     """The X11 path can fail in ways the user can fix, so it says so - in a line."""
     panel = picker._panel
-    # The X11 branch is only reachable from an X11 window, and this test machine
-    # may be running Wayland - the CI one is. The backend is a class name to the
-    # code, so a stand-in class is enough to get there.
+    # the X11 branch needs an X11 window; a stand-in class name reaches it
     monkeypatch.setattr(panel, "get_display", lambda: _FakeX11Display())
     monkeypatch.delenv("DISPLAY", raising=False)
 
@@ -717,15 +595,10 @@ def test_an_x11_failure_still_reports_on_the_card(picker, monkeypatch):
     text = panel.target_label.get_text()
     assert "Not always-on-top in this session" in text
     assert "no DISPLAY" in text, "why it failed is part of the fix"
-    # One line, not the three the instructions used to take.
     assert "\n" not in text
-    # The steps are in the README, and the notice names it.
     assert "the README" in text
 
 
-# --------------------------------------------------------------------------- #
-# A worker that died must not look like a worker that is watching
-# --------------------------------------------------------------------------- #
 class _DeadWorker:
     """A worker whose thread has exited, as the panel sees one."""
 
@@ -745,14 +618,7 @@ class _DeadWorker:
 
 
 def test_a_dead_worker_is_reported_instead_of_claimed_as_watching(picker):
-    """The failure this was written for: the thread died and the card said nothing.
-
-    On a live screen that read as a working translator with nothing to translate.
-    The button still said Pause, the status row kept the picker's last message,
-    and the translation area kept the setup notice it was given at startup -
-    which is only displaced by a translation, so it stayed there for the whole
-    session.
-    """
+    """A dead worker is reported instead of being claimed as watching."""
     panel = picker._panel
     picker._on_start()
     panel.worker = _DeadWorker("RuntimeError: grab failed")
@@ -768,7 +634,7 @@ def test_a_dead_worker_is_reported_instead_of_claimed_as_watching(picker):
 
 
 def test_a_dead_worker_is_not_reported_as_watching_over_the_control_socket(picker):
-    """`lintranslator status` said "watching, reading" for a dead thread."""
+    """The status command reports a dead worker as stopped."""
     panel = picker._panel
     picker._on_start()
     panel.worker = _DeadWorker()
@@ -776,13 +642,7 @@ def test_a_dead_worker_is_not_reported_as_watching_over_the_control_socket(picke
 
 
 def test_a_worker_that_cannot_even_start_says_why(monkeypatch):
-    """A startup failure used to kill the thread with nothing said at all.
-
-    `Pipeline(...)` is built outside the warmup guard, so an exception there
-    ended the worker before any message could be posted: no error, no status,
-    no translation, for the life of the window. Driven directly rather than
-    through the `picker` fixture, which stands a recorder in for this class.
-    """
+    """A startup failure before the warmup guard must still say why."""
 
     def explode(*_args, **_kwargs):
         raise RuntimeError("no tessdata")
@@ -813,20 +673,13 @@ def test_an_error_shares_the_status_row_instead_of_adding_a_line(picker):
     assert panel.error_label.get_visible() is True
     assert panel.status_label.get_visible() is False, "two labels share one slot"
 
-    # Clearing it gives the status line back.
     panel._show_error("")
     assert panel.error_label.get_visible() is False
     assert panel.status_label.get_visible() is True
 
 
 def test_applying_settings_does_not_wipe_the_translation(picker):
-    """Re-measuring the line height must put the label's text back.
-
-    `_reserved_height` temporarily writes "Mg"/"Mg\\nMg" into the label it is
-    measuring. It used to leave the label empty, so changing the font size in
-    Settings - which re-applies the layout budget - silently erased whatever
-    translation was on screen.
-    """
+    """Re-measuring the line height must put the label's text back."""
     panel = picker._panel
     panel._show_event(
         Event(
@@ -844,8 +697,6 @@ def test_applying_settings_does_not_wipe_the_translation(picker):
 
     assert panel.target_label.get_text() == "はい、わかりました。"
     assert panel.source_label.get_text() == "Yes, sir."
-    # The card is still a fixed size at the new font, and the reserved space
-    # grew with the font rather than staying at the old size and clipping.
     width = picker.config.display.width
     short_h = panel.measure(Gtk.Orientation.VERTICAL, width).natural
     panel._show_event(
@@ -868,13 +719,7 @@ def test_applying_settings_does_not_wipe_the_translation(picker):
 
 
 def test_each_menu_item_fires_exactly_once(picker, monkeypatch):
-    """One click, one action.
-
-    The items are wired in `_build_menu`, which wraps the handler so the menu
-    also closes. They were *also* wired in `_menu_item`, so every item fired
-    twice - which opened two Settings dialogs, and would have restored the
-    picker twice.
-    """
+    """One click, one action."""
     panel = picker._panel
     calls = []
     monkeypatch.setattr(picker, "restore", lambda: calls.append("restore"))
@@ -907,11 +752,7 @@ def test_choosing_a_menu_item_closes_the_menu(picker, monkeypatch):
 
 
 def test_a_wide_card_shows_every_action_and_needs_no_menu(picker):
-    """Given the width, the row holds everything and ⋮ disappears.
-
-    An empty overflow menu is a lie: it promises actions that are all already on
-    the card.
-    """
+    """Given the width, the row holds everything and ⋮ disappears."""
     panel = picker._panel
     picker.config.display.width = 1200
     panel._relayout_controls()
@@ -924,11 +765,7 @@ def test_a_wide_card_shows_every_action_and_needs_no_menu(picker):
 
 
 def test_a_narrow_card_overflows_from_the_right(picker):
-    """Narrowing moves the lowest-priority actions into the menu, in order.
-
-    Region is first on the card and so last to leave it: it is the only way back
-    to the picker once the panel owns the box.
-    """
+    """Narrowing moves the lowest-priority actions into the menu, in order."""
     panel = picker._panel
     picker.config.display.width = 380
     panel._relayout_controls()
@@ -939,8 +776,6 @@ def test_a_narrow_card_overflows_from_the_right(picker):
     def in_menu(button):
         return button.get_parent() is menu
 
-    # Region outranks everything, so it is still on the card while other actions
-    # have already gone.
     assert panel.region_btn.get_parent() is row, "Region left the card first"
     assert in_menu(panel.quit_btn), "Quit should be the first to overflow"
     assert panel.menu_btn.get_visible() is True
@@ -963,7 +798,6 @@ def test_narrowing_further_evicts_in_priority_order(picker):
     narrow = on_card(300)
 
     assert wide == order, "a wide card should hold every action"
-    # Each narrower width keeps a prefix of the order - never a different set.
     assert middle == order[: len(middle)]
     assert narrow == order[: len(narrow)]
     assert len(narrow) <= len(middle) <= len(wide)
@@ -1018,15 +852,8 @@ def test_every_action_button_is_unaccented(picker):
     assert not panel.menu_btn.has_css_class("lintranslator-primary")
 
 
-# --------------------------------------------------------------------------- #
-# Resizing the card by its edge
-# --------------------------------------------------------------------------- #
 def test_the_resize_grips_do_not_change_the_cards_size(picker):
-    """The grips live in an overlay, which must add nothing to the card.
-
-    Otherwise dragging support would quietly undo the fixed-size property that
-    `test_the_panel_height_does_not_follow_its_text` exists to protect.
-    """
+    """The grips live in an overlay, which must add nothing to the card."""
     panel = picker._panel
     width = picker.config.display.width
 
@@ -1040,12 +867,7 @@ def test_the_resize_grips_do_not_change_the_cards_size(picker):
 
 
 def test_the_grips_are_on_the_edges_that_wayland_allows(picker):
-    """East, south and south-east only.
-
-    A Wayland client cannot move its own window, so a drag on the north or west
-    edge could not keep the opposite edge still - the card would grow rightward
-    while the pointer moved left.
-    """
+    """East, south and south-east only: a Wayland client cannot move its own window."""
     panel = picker._panel
     model = panel.get_child().observe_children()
     grips = [
@@ -1054,8 +876,7 @@ def test_the_grips_are_on_the_edges_that_wayland_allows(picker):
         if model.get_item(i).has_css_class("lintranslator-grip-area")
     ]
     assert len(grips) == 3, f"expected three grips, found {len(grips)}"
-    # Every grip must be hit-testable: GTK4 picks through render nodes, so a grip
-    # that painted nothing would never see the drag.
+    # GTK4 picks through render nodes, so a grip that painted nothing would never see the drag
     for grip in grips:
         assert grip.get_visible() is True
 
@@ -1079,7 +900,7 @@ def test_a_drag_resizes_along_its_own_axis_only(picker):
 
 
 def test_a_drag_cannot_shrink_the_card_below_its_contents(picker):
-    """A card too small for its own controls is not a size, it is a bug."""
+    """A drag cannot shrink the card below the size its contents need."""
     panel = picker._panel
     cfg = picker.config.display
     floor_w, floor_h = panel._card_minimum()
@@ -1089,12 +910,11 @@ def test_a_drag_cannot_shrink_the_card_below_its_contents(picker):
     assert cfg.width == floor_w, "the width the card is at must be recorded"
     assert floor_w > 0 and floor_h > 0
 
-    # And the floor is the real one: the card still reports a usable size.
     assert panel.card.measure(Gtk.Orientation.HORIZONTAL, -1).minimum <= floor_w
 
 
 def test_a_dragged_size_is_remembered_and_restored(picker):
-    """The size the user dragged to must survive, or the drag is pointless."""
+    """The size the user dragged to must survive."""
     panel = picker._panel
     cfg = picker.config.display
     panel._resize_from = (600, 300)
@@ -1105,17 +925,11 @@ def test_a_dragged_size_is_remembered_and_restored(picker):
     assert written.display.width == 720
     assert written.display.height == 380
 
-    # A fresh panel for the same config opens at that size rather than at the
-    # line budget, which is what `_restore_size` is for.
     assert written.display.height > 0
 
 
 def test_a_sideways_drag_leaves_the_height_on_the_budgets(picker):
-    """Dragging the east edge must not pin a height the user never chose.
-
-    Otherwise the first sideways drag freezes the card at whatever the line
-    budgets happened to add up to, and those sliders stop doing anything.
-    """
+    """Dragging the east edge must not pin a height the user never chose."""
     panel = picker._panel
     cfg = picker.config.display
     assert cfg.height == 0
@@ -1140,14 +954,8 @@ def test_a_vertical_drag_does_pin_the_height(picker):
     assert cfg.height == 390, f"expected the dragged height, got {cfg.height}"
 
 
-# --------------------------------------------------------------------------- #
-# OCR preparation
-# --------------------------------------------------------------------------- #
 def test_the_picker_prepares_ocr_on_a_background_thread(picker):
-    """The preview reads the screen on the main loop, so preparing for it there
-    froze the window on a first run, while `ensure_ready` fetched language data.
-    The preparation is a thread now, and this is what the preview waits on.
-    """
+    """Preparing OCR must not run on the main loop, or the window freezes."""
     assert picker._ocr_ready.wait(5.0), "preparation never finished"
     assert picker._ocr_blocked_reason() is None
 
@@ -1175,20 +983,8 @@ def test_skipping_the_preview_does_not_lose_it(picker):
 
 
 def test_applying_settings_rebuilds_the_ocr_engine(picker, monkeypatch):
-    """Regression: the preview kept reading with the language it opened with.
-
-    Measured on a live screen. The source language was set to Korean, Settings
-    was applied, `ocr.langs` became `eng+kor` and `kor.traineddata` was fetched -
-    and this window still called tesseract with `eng`. That returns nothing at
-    all for a clean printed Korean line (92% confidence with `kor`), so a
-    correctly framed box was reported as "(no text found in this region)" while
-    `config.json` was right the whole time.
-
-    The live panel never had this bug: it restarts its pipeline on Apply, and
-    the pipeline builds its own engine from the config.
-    """
-    # The rebuild prepares language data on a thread; this test is about which
-    # engine the window ends up holding, not about the network.
+    """Applying settings rebuilds the engine the preview reads with."""
+    # the rebuild prepares language data on a thread; the network is stubbed here
     monkeypatch.setattr(
         picker_mod.TesseractOcr, "ensure_ready", lambda self: picker.config.path.parent
     )
@@ -1204,11 +1000,7 @@ def test_applying_settings_rebuilds_the_ocr_engine(picker, monkeypatch):
 
 
 def test_a_settings_apply_ocr_does_not_read_keeps_the_engine(picker):
-    """Only the engine's own settings rebuild it.
-
-    Nothing here is worth clearing `_ocr_ready` for: rebuilding on every Apply
-    would flash "preparing OCR language data…" at a font-size change.
-    """
+    """Only the engine's own settings rebuild it."""
     before = picker.ocr
     picker.config.display.font_scale = 1.4
     picker._on_settings_applied()
@@ -1216,13 +1008,7 @@ def test_a_settings_apply_ocr_does_not_read_keeps_the_engine(picker):
 
 
 def test_applying_settings_retries_a_failed_preparation(picker, monkeypatch):
-    """A failure is remembered so the preview stops calling into tesseract, but
-    it must not be permanent.
-
-    The fix for "no language data" is to install it - or to change the setting -
-    and apply that, which has to clear the remembered error or the window stays
-    unusable for the rest of the session.
-    """
+    """A failure is remembered so the preview stops calling into tesseract, but it must not be permanent."""
     monkeypatch.setattr(picker_mod.TesseractOcr, "ensure_ready", lambda self: None)
     picker._ocr_error = RuntimeError("tesseract has no model for it")
     picker.config.ocr.langs = "eng+kor"
@@ -1233,9 +1019,6 @@ def test_applying_settings_retries_a_failed_preparation(picker, monkeypatch):
     assert picker._ocr_blocked_reason() is None, "the old failure still blocks OCR"
 
 
-# --------------------------------------------------------------------------- #
-# The preview and the recipe
-# --------------------------------------------------------------------------- #
 def _box(size=(24, 12)) -> Image.Image:
     """A dark panel with a light block in it, the shape a dialogue box has."""
     img = Image.new("RGB", size, (20, 20, 20))
@@ -1250,13 +1033,7 @@ def _at(view: Image.Image, x: int, y: int) -> tuple:
 
 
 def test_the_preview_shows_the_image_ocr_is_handed(picker, monkeypatch):
-    """Regression: the preview drew its own grey autocontrast.
-
-    `ocr.invert` and `ocr.threshold` were therefore invisible in the one view
-    that exists to judge them - a box read inverted was previewed as if it were
-    not. The preview now asks the engine in hand for its recipe, so the two
-    cannot disagree.
-    """
+    """The preview must show the picture the OCR engine is handed."""
     monkeypatch.setattr(picker, "_prepare_ocr_async", lambda: None)
     crop = _box()
     picker.config.ocr.invert = True
@@ -1269,13 +1046,9 @@ def test_the_preview_shows_the_image_ocr_is_handed(picker, monkeypatch):
         crop.height * picker_mod.PREVIEW_SCALE,
     )
     assert shown.tobytes() == picker.ocr.prepared(crop).convert("RGB").tobytes()
-    # And it is the inverted picture, not the old fixed one: the panel comes out
-    # white and the glyph block black.
     assert _at(shown, 0, 0) == (255, 255, 255), "the panel is white once inverted"
     assert _at(shown, 10, 5) == (0, 0, 0), "the glyph block is the ink"
 
-    # Put the recipe back: the panel is dark again, so the two assertions above
-    # are about the settings rather than about the drawing.
     picker.config.ocr.invert = False
     picker.config.ocr.threshold = 0
     picker._rebuild_ocr()
@@ -1284,12 +1057,7 @@ def test_the_preview_shows_the_image_ocr_is_handed(picker, monkeypatch):
 
 
 def test_a_configured_cut_makes_the_threshold_view_the_same_picture(picker, monkeypatch):
-    """With a cut configured there is nothing left for the ink view to add.
-
-    Both modes then show the image OCR is handed, which is what the tooltip
-    says - a second name for the same picture would be a lie in the other
-    direction.
-    """
+    """With a cut configured there is nothing left for the ink view to add."""
     monkeypatch.setattr(picker, "_prepare_ocr_async", lambda: None)
     crop = _box()
     picker.config.ocr.threshold = 96
@@ -1300,8 +1068,7 @@ def test_a_configured_cut_makes_the_threshold_view_the_same_picture(picker, monk
 
 
 def test_the_threshold_view_is_ink_and_paper_only(picker):
-    """With no cut configured it shows tesseract's own cut, so a fixed one can be
-    judged against it - not a panel-invented level like the fixed 150 it was."""
+    """With no cut configured it shows tesseract's own cut."""
     view = picker._preview_image(_box(), 2).convert("L")
     assert set(view.getdata()) == {0, 255}
 
@@ -1314,13 +1081,7 @@ def test_the_raw_view_is_the_crop_as_captured(picker):
 
 
 def test_a_changed_recipe_rebuilds_the_engine(picker, monkeypatch):
-    """`invert` and `threshold` are part of what OCR reads, so they belong to the
-    set that decides whether the engine in hand is still the configured one.
-
-    Without this a box would keep being read with the recipe the window was
-    opened with, which is the bug `_rebuild_ocr` exists for - it was `ocr.langs`
-    then, and the same rule covers the rest of the recipe.
-    """
+    """`invert` and `threshold` are part of what OCR reads, so they rebuild the engine too."""
     monkeypatch.setattr(picker, "_prepare_ocr_async", lambda: None)
     before = picker.ocr
     picker.config.ocr.invert = True
@@ -1336,12 +1097,7 @@ def test_a_changed_recipe_rebuilds_the_engine(picker, monkeypatch):
 
 
 def test_the_readout_says_when_the_confidence_gate_ate_the_read(picker):
-    """The window used to say "(no text found in this region)" for this too.
-
-    It is the difference between "this OCR cannot read the language" and "the OCR
-    read it and a filter rejected it", and only the second is a setting - so the
-    read is shown, with the gate that threw it away named underneath.
-    """
+    """The readout says when the confidence gate rejected the read."""
     from lintranslator.ocr import OcrLine, OcrResult
 
     picker.ocr.min_confidence = 55.0
@@ -1361,8 +1117,7 @@ def test_the_readout_says_when_the_confidence_gate_ate_the_read(picker):
 
 
 def test_the_readout_names_the_recipe_when_nothing_was_read(picker, monkeypatch):
-    """With no read at all the recipe is the only thing that can be wrong with
-    the input, so the pane names it instead of leaving it to a tooltip."""
+    """With no read at all the readout names the recipe."""
     from lintranslator.ocr import OcrResult
 
     monkeypatch.setattr(picker, "_prepare_ocr_async", lambda: None)
@@ -1374,8 +1129,6 @@ def test_the_readout_names_the_recipe_when_nothing_was_read(picker, monkeypatch)
     shown, caption = picker._readout(result)
     assert "(no text found in this region)" in shown
     assert "inverted" in shown and "contrast untouched" in shown
-    # And the other thing that decides a read: on a one-line box the default
-    # layout reads nothing at all, which is not guessable from an empty pane.
     assert "layout: one block of text" in shown
     assert caption == ""
 

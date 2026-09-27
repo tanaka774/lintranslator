@@ -1,27 +1,9 @@
-"""Where does the time go between "start" and "seeing the selected area"?
-
-Two questions, measured rather than reasoned about:
-
-1. **Start of capturing.** From `Pipeline.start()` (what the panel's worker
-   calls) to the *first completed grab*, and to the first OCR result. At 2 fps
-   the poll loop itself can add up to `1/fps` before anything is captured, and
-   warmup happens first on the worker thread - so "pressed Start" and
-   "first pixel read" are not the same instant.
-
-2. **Area fidelity.** Does the crop the pipeline reads correspond exactly to the
-   rectangle the picker saved? Verified deterministically by feeding one captured
-   PNG through both paths (`Region.to_pixels` + `Image.crop` vs `ScreenGrabber.grab`),
-   so a mismatch cannot hide behind a live screen that moved between grabs.
-
-Run:  .venv/bin/python probe/capture_timing.py
-"""
+"""Measure start-of-capture latency and whether the crop matches the selected area."""
 import sys
 import time
 from io import BytesIO
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -66,8 +48,7 @@ print(f"  -> pixels x={x} y={y} w={w} h={h}   screen {full.size}")
 print(f"  -> fraction round-trip: x/w={x / full.size[0]:.6f}/{w / full.size[0]:.6f}")
 
 print("\n== area fidelity: one PNG through both paths ==")
-# Stub the portal so both paths see *identical* bytes. Any difference is then
-# geometry, not a screen that changed between two live grabs.
+# stub feeds both paths identical bytes, so any difference is geometry
 grabber = ScreenGrabber(region)
 
 
@@ -92,8 +73,7 @@ if not nested:
     print(f"  !! {diff} differing bytes")
 
 print("\n== start-of-capture latency (what the panel worker does) ==")
-# Exactly the sequence PipelineThread._run performs: construct, warmup, start,
-# then step. Warmup here is portal + tesseract only (no model load).
+# mirrors PipelineThread._run: construct, warmup, start, then step; no model load here
 from lintranslator.pipeline import Pipeline
 
 cfg.translate.backend = "none"

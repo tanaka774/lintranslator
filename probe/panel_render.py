@@ -1,31 +1,9 @@
-"""Render the two windows of the picker flow, to check the layout visually.
-
-Run:  .venv/bin/python probe/panel_render.py
-
-Renders the picker and the panel it owns exactly as `lintranslator gui` builds them, and
-exits. Used to confirm that the panel gained a reachable **Region** button (the
-way back to a picker that now minimises itself) without the control row
-overflowing, and that the picker's own chrome - sidebar and toolbar - reads
-correctly both idle and while watching.
-
-`render_picker_watching.png` is the second state: **Start** has become
-"Apply box", the picker has taken itself off the screen, and the sidebar says
-why it is paused. The picker is brought back on screen for that shot (a hidden
-window has no render node at all), in a timer slot of its own - changing a
-label and snapshotting it in the *same* slot gives "not paintable", because the
-cached node is invalidated and the compositor has not drawn the replacement.
-
-The picker no longer opens the card itself, so the probe opens it, in the state
-`gui --panel --no-start` leaves it in - which is why the idle shot is a slot of
-its own rather than part of the picker's.
-"""
+"""Render the two windows of the picker flow, to check the layout visually."""
 import os
 import sys
 from io import BytesIO
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -68,17 +46,12 @@ def main() -> int:
     cfg = Config.load()
     cfg.path = CONFIG
     cfg.translate.backend = "none"  # no network calls in a render probe
-    # And pin the model name, for the same reason the frame below is synthetic:
-    # the picker's backend line prints it, so a render meant to be published would
-    # otherwise drift with the developer's own config. It is the model the README
-    # documents for local translation.
+    # Pinned so a render meant to be published does not drift with the
+    # developer's own config; the README's model for local translation.
     cfg.translate.model = "hy-mt2:1.8b"
 
     # `LINTRANSLATOR_RENDER_SOURCE=<png>` renders over a supplied frame instead of
-    # grabbing the screen. The default (the live screen) is fine for looking at
-    # layout while working, but it captures whatever else is open - terminals,
-    # browsers, someone's actual desktop - so it must never be the frame that ends
-    # up in the README, or anywhere else that gets published.
+    # grabbing the screen; a live grab must never be the frame that gets published.
     supplied = os.environ.get("LINTRANSLATOR_RENDER_SOURCE")
     if supplied:
         raw = Path(supplied).read_bytes()
@@ -86,9 +59,7 @@ def main() -> int:
             size = im.size
         png, elapsed = raw, 0.0
         # The synthetic frame draws its dialogue box at the app's default region
-        # (see `make_render_frame.py`), so point the picker at it: a render that
-        # is meant to be published should show the box on the text, not wherever
-        # the developer's own config happened to leave it.
+        # (see `make_render_frame.py`), so point the picker at it.
         cfg.capture.region = Region(0.10, 0.78, 0.80, 0.12, "fraction")
         print(f"rendering over {supplied} {size}", flush=True)
     else:
@@ -109,9 +80,9 @@ def main() -> int:
 
         def step_idle():
             shoot(picker, "render_picker_idle")
-            # The picker does not open the card, so the probe does: the state a
-            # card opened without `--start` is in. In its own slot below, because
-            # a window presented and snapshotted in the same slot is not painted.
+            # The probe opens the card, in the state a card opened without
+            # `--start` is in. Its own slot below: a window presented and
+            # snapshotted in the same slot is not painted.
             panel.show_idle()
             panel.present()
             GLib.timeout_add(400, step_idle_panel)
@@ -119,7 +90,6 @@ def main() -> int:
 
         def step_idle_panel():
             shoot(panel, "render_panel_idle")
-            # Now watch: the picker minimises itself and the panel takes over.
             picker._on_start()
             # This probe is about layout, not capture: stop the pipeline that
             # `_on_start` just started so it does not read the screen.
@@ -127,8 +97,8 @@ def main() -> int:
                 panel.worker.stop()
                 panel.worker = None
             # `_on_start` hides the picker a beat later (it must not be in the
-            # screenshot the pipeline reads). Bring it back for its own portrait
-            # - in this slot, so the snapshot slot below sees a drawn window.
+            # screenshot the pipeline reads); bring it back in this slot, so the
+            # snapshot slot below sees a drawn window.
             GLib.timeout_add(400, bring_picker_back)
             GLib.timeout_add(1000, step_watching)
             return False

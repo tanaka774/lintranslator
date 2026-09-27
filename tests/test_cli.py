@@ -1,10 +1,4 @@
-"""Starting the program: what a bare `lintranslator` means.
-
-A desktop app is expected to open when it is run. `gui` is labelled the default in
-`--help`, so an argument-less invocation has to reach it rather than print a usage
-error and exit 2 - that is the path a `.desktop` launcher takes when someone
-clicks the menu entry.
-"""
+"""Starting the program: what a bare `lintranslator` means."""
 from __future__ import annotations
 
 from lintranslator.cli import parse_argv
@@ -23,7 +17,6 @@ def test_no_arguments_means_the_gui():
 def test_a_subcommand_still_wins():
     assert parse_argv(["check"]).command == "check"
     assert parse_argv(["read", "--repeat", "2"]).command == "read"
-    # Including one that reads the same namespace the default does.
     assert parse_argv(["gui", "--panel"]).panel is True
 
 
@@ -35,12 +28,7 @@ def test_the_default_reads_arguments_as_well_as_the_absent_case():
 
 
 def test_the_ocr_recipe_can_be_set_for_one_run(tmp_path):
-    """`read` and `run` are how a box is tuned without the GUI.
-
-    `--psm` and `--langs` were already settable there, and the rest of the recipe
-    - invert, and a cut - is the same kind of knob: it changes what OCR is handed
-    for this run, and the config is the place it persists.
-    """
+    """`read` and `run` are how a box is tuned without the GUI."""
     from lintranslator.cli import _load
 
     path = tmp_path / "config.json"

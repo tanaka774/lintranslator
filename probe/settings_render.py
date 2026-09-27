@@ -1,16 +1,7 @@
-"""Render the settings dialog to PNGs so UI changes can be eyeballed.
-
-Run:  .venv/bin/python probe/settings_render.py
-
-Drives GTK with an explicit GLib.MainLoop rather than app.run(): the settings
-dialog is parented to nothing here, so an application would exit as soon as its
-loop settles. Not part of the package.
-"""
+"""Render the settings dialog to PNGs so UI changes can be eyeballed."""
 import sys
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -39,9 +30,8 @@ def shoot(widget: Gtk.Widget, name: str) -> None:
     paintable.snapshot(snap, w, h)
     node = snap.to_node()
     if node is None:
-        # The widget's cached render node is dropped when its content changes and
-        # is only restored by the next frame. Snapshotting in the same callback
-        # that changed something lands here.
+        # The cached render node is dropped on a content change and only restored
+        # by the next frame, so snapshotting in the callback that changed it lands here.
         print(f"  {name}: no render node yet", flush=True)
         return
     surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
@@ -51,14 +41,15 @@ def shoot(widget: Gtk.Widget, name: str) -> None:
 
 
 def main() -> int:
+    # An explicit loop, not app.run(): the dialog is parented to nothing here, so
+    # an application would exit as soon as its loop settles.
     loop = GLib.MainLoop()
     cfg = Config.load()
     # The real app installs this in gui.on_activate, before any window.
     theme.install_for(cfg)
     dlg = SettingsDialog(None, cfg)
-    # Deliberately not resized: the dialog now measures its own column, and a
-    # fixed frame here would hide the thing worth eyeballing - whether the
-    # toolbar sits under the content or in a band of dead space.
+    # Not resized: a fixed frame would hide whether the dialog measures its own
+    # column, and whether the toolbar sits under the content or in dead space.
     dlg.present()
 
     steps = list(RENDER)

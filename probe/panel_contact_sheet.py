@@ -1,23 +1,9 @@
-"""Render the panel in every state it can be in, as PNGs, to look at them.
-
-Run:  .venv/bin/python probe/panel_contact_sheet.py
-
-The panel is the one window that floats over a game, so its size and its button
-placement cannot be judged from the source. This presents the real window and
-renders it, once per state, into `data/panel_*.png`. Nothing is captured or
-translated: the states are injected directly.
-
-Order matters. The last two states are the ones that used to break: a long
-translation (which ratcheted the card taller and never gave the height back) and
-a return to a short one (which used to stay tall).
-"""
+"""Render the panel in every state it can be in, as PNGs, to look at them."""
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -95,7 +81,6 @@ def main() -> int:
     cfg = Config.load()
     cfg.translate.backend = "none"
     cfg.gui.autostart = False
-    # The real config's font scale, so the render matches the user's screen.
     print(
         f"card width {cfg.display.width}  target_lines={cfg.display.target_lines} "
         f"source_lines={cfg.display.source_lines} "
@@ -123,8 +108,7 @@ def main() -> int:
             return step
 
         def state_idle():
-            # What the card looks like on this machine at startup: the keep-above
-            # notice, since native Wayland cannot raise a window.
+            # Startup card: the keep-above notice, since native Wayland cannot raise a window.
             panel.queue_draw()
 
         def state_short():
@@ -153,15 +137,14 @@ def main() -> int:
 
         def state_overflow():
             # The popover is its own surface, so it is rendered on its own rather
-            # than as part of the card. Region is revealed first, since a picker
+            # than as part of the card; region is revealed first, since a picker
             # owns the panel in normal use.
             panel.enable_region_button(lambda: None)
             panel._on_menu(panel.menu_btn)
 
-        # Each state is set in one timer slot and shot in the next. Snapshotting
-        # in the same slot returns no render node: changing a label invalidates
-        # the widget's cached node, and the compositor has not drawn the new one
-        # yet. Measured, the node is back within ~500 ms of the change.
+        # Each state is set in one timer slot and shot in the next: snapshotting
+        # in the same slot returns no render node, since changing a label
+        # invalidates the widget's cached node before the compositor redraws it.
         sequence = [
             ("idle", state_idle),
             ("short", state_short),
@@ -193,10 +176,9 @@ def main() -> int:
                 f"source={panel._reserved_height(panel.source_label, cfg.display.source_lines)}px"
             )
             by_name = {name: (w, h) for name, w, h in sizes}
-            # Only the states that differ *by content* are evidence about the
-            # card's size. `no_source` is a deliberate configuration change and
-            # `menu` is a different surface altogether, so folding them into this
-            # check would make it cry wolf on every run.
+            # Only the states that differ by content are evidence about the card's
+            # size; `no_source` is a configuration change and `menu` is a
+            # different surface, so folding them in would make this cry wolf.
             content = [
                 "idle", "short", "two_lines", "verbose", "back_to_short", "paused", "error",
             ]

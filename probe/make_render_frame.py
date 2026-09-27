@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""Draw a synthetic frame to render the GUI over.
-
-`panel_render.py` is happy to grab the real screen, which is the right thing
-while working on layout and the wrong thing to publish: the picker displays the
-frame it is given, so a live grab puts whatever else is open on the desktop -
-terminals, browsers, chat windows - into the screenshot.
-
-This draws a stand-in instead: an abstract dark scene with a dialogue box where
-the default region sits, carrying the same synthetic two-line passage the demo
-translations use. Nothing here is from a game.
-
-    .venv/bin/python probe/make_render_frame.py [out.png]
-    LINTRANSLATOR_RENDER_SOURCE=data/render_frame.png .venv/bin/python probe/panel_render.py
-"""
+"""Draw a synthetic frame to render the GUI over."""
 from __future__ import annotations
 
 import sys
@@ -48,7 +35,7 @@ def background() -> Image.Image:
     """A dark scene with a soft bloom, drawn rather than photographed."""
     im = Image.new("RGB", (W, H), (14, 15, 22))
     draw = ImageDraw.Draw(im, "RGBA")
-    # A few large translucent discs, so the frame has some structure for the
+    # A few large translucent discs, so the frame has some structure for a
     # selection rectangle to sit on without being a picture of anything.
     for (cx, cy, r, colour) in (
         (300, 300, 380, (44, 58, 96, 90)),
@@ -69,8 +56,7 @@ def dialogue_box(im: Image.Image) -> None:
     )
     draw.rounded_rectangle((x, y, x + w, y + h), radius=10, fill=(10, 10, 14, 210))
 
-    # Speaker plate, offset up and to the left of the box, the way most of these
-    # games do it.
+    # Speaker plate, offset up and to the left of the box.
     name_font = font(22)
     tw = draw.textlength(SPEAKER, font=name_font)
     draw.rounded_rectangle(

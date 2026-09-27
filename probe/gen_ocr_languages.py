@@ -1,25 +1,4 @@
-"""Regenerate `lintranslator/ocr_languages.py`: what tesseract can be told to read.
-
-The Settings dialog offers the OCR languages as a list to tick, and that list has
-to be the real one. `lintranslator/languages.py` cannot supply it: that table is
-keyed by FLORES-200 code, so it names only the 100 traineddata files reachable
-from a translation language and misses 24 that tesseract ships anyway
-(`chi_sim_vert`, `deu_latf`, `enm`, `grc`, `lat`, ...). A chooser built from it
-would quietly hide a fifth of the models.
-
-Sources, both checkable:
-
-  * the `tessdata_fast` file list at the revision `ocr.TESSDATA_REVISION` pins,
-    which is the same revision every download is checksummed against
-  * ISO 639-3 names from the system iso-codes data, which is where the model
-    file names come from in the first place
-
-Called with `--check` it verifies the generated file is current without writing,
-which is what CI and `tests/test_ocr_languages.py` care about.
-
-    .venv/bin/python probe/gen_ocr_languages.py            # needs network
-    .venv/bin/python probe/gen_ocr_languages.py --check
-"""
+"""Regenerate `lintranslator/ocr_languages.py`: what tesseract can be told to read."""
 from __future__ import annotations
 
 import json
@@ -39,9 +18,7 @@ ISO_CODES_639_3 = Path("/usr/share/iso-codes/json/iso_639-3.json")
 # Not language models: the script/orientation detector and the equation model.
 NOT_LANGUAGES = {"osd", "equ"}
 
-# tesseract's own suffixes on a file name, in the words the chooser should use.
-# These are the 11 files whose name is a language plus a qualifier rather than a
-# language; everything else is either an exact ISO 639-3 code or a FLORES name.
+# tesseract's own suffixes on a file name, in the words the chooser should use
 SUFFIX_NAMES = {
     "cyrl": "Cyrillic script",
     "latn": "Latin script",
@@ -50,15 +27,11 @@ SUFFIX_NAMES = {
     "old": "old",
 }
 
-# Names neither ISO nor the FLORES table can supply, because the file is neither
-# a plain ISO code nor reachable from a translation language. Hand-written and
-# deliberately short: the generator fails rather than guess, so every entry here
-# is a decision someone made.
+# names neither ISO nor the FLORES table can supply
 NAME_OVERRIDES = {
     "chi_sim": "Chinese (simplified)",
     "chi_tra": "Chinese (traditional)",
-    # The vertical forms of the same two. `chi` is an ISO 639-2 code, not 639-3,
-    # so the suffix rule cannot reach a base name for these.
+    # `chi` is ISO 639-2, not 639-3, so the suffix rule cannot name these
     "chi_sim_vert": "Chinese (simplified), vertical",
     "chi_tra_vert": "Chinese (traditional), vertical",
 }

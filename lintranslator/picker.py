@@ -1,17 +1,4 @@
-"""Visual region picker: drag a rectangle over a screenshot of the screen.
-
-Why this design rather than a transparent fullscreen overlay: capturing the
-mouse over a live fullscreen game requires either an override-redirect surface or
-a compositor grab, both of which are restricted on Wayland. Showing a frozen
-screenshot in a normal window sidesteps that entirely, works on every compositor,
-and has a real advantage - the image does not move while you drag.
-
-The picker shows what the pipeline will see:
-  * a **Preview** choice of the crop itself, the autocontrasted crop, or a
-    threshold view - the two derived views exist so it is obvious when a region
-    is mostly background art, and neither one changes what OCR reads
-  * live OCR text and confidence, so framing is judged by the actual result
-"""
+"""Visual region picker: drag a rectangle over a screenshot of the screen."""
 from __future__ import annotations
 
 import threading
@@ -37,25 +24,16 @@ from .occlusion import GUARD  # noqa: E402
 from .selection import HANDLE_WIDGET_MIN, SelectionMath  # noqa: E402
 
 HANDLE = 8  # px grab tolerance for dragging an existing edge
-# How big the preview draws the crop, whatever the recipe's own upscale is: the
-# frame is 340px wide, and the recipe's upscale is a setting about OCR quality
-# rather than about what the eye needs to judge the box.
+# preview magnification, not the recipe's OCR upscale
 PREVIEW_SCALE = 3
 PICKER_WINDOW = "picker"
-# How long a *mapped* picker waits before it grabs: long enough for the
-# compositor to take this window off the screen (it would otherwise be captured
-# as part of the screenshot) and for the user to switch to the game. Only spent
-# when this window is on screen - see `_capture_screen`.
+# ms to wait for the compositor to unmap this window before grabbing, so the
+# picker is not captured as part of the screenshot
 CAPTURE_DELAY_MS = 1000
 
 
 class RegionPicker(Gtk.ApplicationWindow):
-    """Pick a rectangle; preview its OCR; save it as a fraction region.
-
-    The screenshot is captured on demand rather than once at construction, so
-    you can alt-tab to the game, hit "Capture again", and frame the real
-    dialogue box instead of whatever was on screen when the app launched.
-    """
+    """Pick a rectangle; preview its OCR; save it as a fraction region."""
 
     def __init__(
         self,
@@ -65,9 +43,6 @@ class RegionPicker(Gtk.ApplicationWindow):
         from_file: str | None = None,
     ):
         super().__init__(application=app, title="LinTranslator — select the dialogue box")
-        # Size to the screen so the canvas is never the cramped minimum: the
-        # screenshot is letterboxed into whatever the canvas gets, and a small
-        # window makes precise selection needlessly hard.
         monitor = Gdk.Display.get_default().get_monitors().get_item(0)
         if monitor is not None:
             geo = monitor.get_geometry()
@@ -78,26 +53,16 @@ class RegionPicker(Gtk.ApplicationWindow):
         else:
             self.set_default_size(1320, 820)
 
-        # Everything visual comes from lintranslator/theme.py. Without this the picker
-        # was stock Adwaita/Breeze next to an already-styled panel - two visual
-        # languages in one app - and on this desktop that means Breeze *light*,
-        # so any widget nobody classified came out white.
         self.add_css_class("lintranslator-app")
 
         self.config = config
         self.screen_image: Image.Image | None = None
         self.screen_size: tuple[int, int] = (0, 0)
 
-        # The engine reads `config.ocr`, and Settings can move those values while
-        # this window is open, so it is built here and rebuilt by `_rebuild_ocr`.
-        # `_ocr_built_from` is the settings the current engine was built from.
         self._ocr_built_from = self._ocr_kwargs()
         self.ocr = self._build_ocr()
-        # The first OCR may have to fetch language data. Doing that here, on the
-        # main loop, froze the whole window - the picker is the one place that
-        # reads the screen *on* the main loop (the panel's pipeline has its own
-        # thread), so its preparation is moved off it. Until this is set, the
-        # preview says what it is waiting for instead of calling into tesseract.
+        # until this is set the preview must not call into tesseract: doing the
+        # first fetch on the main loop froze the whole window
         self._ocr_ready = threading.Event()
         self._ocr_error: Exception | None = None
         self._prepare_ocr_async()
@@ -116,31 +81,21 @@ class RegionPicker(Gtk.ApplicationWindow):
         self._translator = None
         self._last_ocr_text = ""
 
-        # Closing the window (the X, or the WM's close) must shut everything
-        # down. Previously only the Close *button* quit the app, so closing the
-        # picker left the translation panel on screen with its pipeline still
-        # running - an orphaned "Waiting for dialogue…" window.
         self.connect("close-request", self._on_close_request)
 
-        # This window must not be captured. Report when it is on screen so the
-        # pipeline pauses instead of reading its own UI; the map/unmap pair also
-        # keeps the status line honest about whether reading is live.
+        # this window must not be captured: report map/unmap so the pipeline
+        # pauses instead of reading its own UI
         self.connect("map", lambda *_: self._on_mapped(True))
         self.connect("unmap", lambda *_: self._on_mapped(False))
 
         self._build()
         self._set_watching(False)
-        # Built here, opened by Start: this wires the card to this window
-        # without putting it on screen while a region is still being picked.
         self._prepare_panel()
         if from_file:
-            # Useful for re-framing from an existing screenshot, and for testing
-            # without grabbing the live screen.
             self.set_screenshot(Path(from_file).read_bytes())
         elif screenshot_png:
             self.set_screenshot(screenshot_png)
 
-    # -- screenshot -------------------------------------------------------- #
     def set_screenshot(self, png: bytes) -> None:
         with Image.open(BytesIO(png)) as im:
             self.screen_image = im.convert("RGB")
@@ -154,8 +109,6 @@ class RegionPicker(Gtk.ApplicationWindow):
         if self.sel is None or previous_size != self.screen_size:
             self._seed_from_config()
         else:
-            # Re-capturing to reframe must not throw away the box the user just
-            # dragged: they are re-grabbing *to* frame it against the live screen.
             x, y, w, h = self.sel
             self.sel = (
                 max(0, min(x, self.screen_size[0] - 1)),
@@ -166,22 +119,9 @@ class RegionPicker(Gtk.ApplicationWindow):
             GLib.idle_add(self._refresh_preview)
         self.area.queue_draw()
 
-    # -- construction ------------------------------------------------------ #
     def _build(self) -> None:
-        # Vertical root: the canvas and the sidebar share the top, and one
-        # toolbar owns the bottom of the window.
-        #
-        # The buttons used to live at the bottom of the sidebar in two
-        # homogeneous rows of full-width buttons - five controls of equal width
-        # and therefore equal weight, so the primary action ("Start")
-        # looked exactly like "Close", and the split between the rows (capture
-        # and save, then watch, settings and close) said nothing. Five buttons
-        # do not fit one row in a 340px sidebar, so the row spans the window
-        # instead, which is also where a one-line status readout belongs.
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        # The root must expand to fill the window. Without this the box keeps its
-        # natural size (the sum of its children's requests) and GTK centres it,
-        # so the canvas never gets the space the window appears to offer.
+        # must expand or GTK keeps the box at its natural size and centres it
         root.set_hexpand(True)
         root.set_vexpand(True)
         root.set_halign(Gtk.Align.FILL)
@@ -196,14 +136,12 @@ class RegionPicker(Gtk.ApplicationWindow):
         self.area = Gtk.DrawingArea()
         self.area.set_hexpand(True)
         self.area.set_vexpand(True)
-        # FILL alignment is required: a DrawingArea's natural size is tiny, and
-        # without it the canvas can be allocated (and drawn at) a stale, much
-        # smaller size than the space it is given.
+        # FILL is required: a DrawingArea's natural size is tiny, so without it
+        # the canvas can be allocated a stale, much smaller size
         self.area.set_halign(Gtk.Align.FILL)
         self.area.set_valign(Gtk.Align.FILL)
-        # Without a minimum width the fixed-width sidebar plus its margins claims
-        # the whole window and the canvas is allocated 0px wide, which renders
-        # nothing at all - a silent failure that looks like a drawing bug.
+        # without a minimum width the sidebar claims the whole window and the
+        # canvas is allocated 0px wide, rendering nothing at all
         self.area.set_size_request(520, -1)
         self.area.set_draw_func(self._on_draw)
 
@@ -221,9 +159,8 @@ class RegionPicker(Gtk.ApplicationWindow):
         self.canvas_box = self.area
         body.append(self.area)
 
-        # The sidebar must be wrapped: without this its wrapping labels report
-        # their unwrapped width as the natural size and the sidebar requests
-        # ~960px, starving the canvas down to a useless sliver.
+        # must be wrapped: a wrapping label reports its unwrapped width as its
+        # natural size, which would starve the canvas
         side_scroller = Gtk.ScrolledWindow()
         side_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         side_scroller.set_propagate_natural_width(False)
@@ -239,40 +176,18 @@ class RegionPicker(Gtk.ApplicationWindow):
 
     @staticmethod
     def _rule() -> Gtk.Widget:
-        """A 1px rule whose colour and spacing come from the theme.
-
-        A Gtk.Separator would be the same line in a colour this app does not
-        own; the theme paints `.lintranslator-rule`, and stood on end in the toolbar the
-        same class is what separates the groups of buttons.
-        """
+        """A 1px rule whose colour and spacing come from the theme."""
         rule = Gtk.Box()
         rule.add_css_class("lintranslator-rule")
         return rule
 
     def _build_toolbar(self) -> Gtk.Widget:
-        """The window's one control row: status, then every action.
-
-        The primary action carries the theme's accent and stands at the end of the
-        row, past a gap: it is the reason the window exists, and it must not look
-        like its neighbours. There is no **Save** any more: it wrote the region to
-        `config.json` and stopped there, which **Start** does on its way to opening
-        the card, while `lintranslator region --x --y --w --h` is how a region is
-        stored without reading anything. A button that only wrote the file had
-        nothing of its own to do.
-        The separators are gone too: at four buttons the row reads on its own, and
-        a vertical bar between every pair was more furniture than grouping. The gap
-        in front of Start stays, because **Quit** ends the session and must not sit
-        flush against the button that begins one - it is what the second separator
-        was really there for.
-        """
+        """The window's one control row: status, then every action."""
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         bar.add_css_class("lintranslator-toolbar")
 
-        # The status line lives here rather than at the bottom of the sidebar:
-        # it is one line of state ("captured 2560x1440 - drag over the dialogue
-        # text", "the box is live"), it has to be visible without scrolling, and it
-        # has room here. Ellipsised rather than wrapped, because this row is a
-        # fixed height and a two-line status would make the whole window jump.
+        # ellipsised, not wrapped: this row is a fixed height and a two-line
+        # status would make the whole window jump
         self.status_label = Gtk.Label(label="", xalign=0)
         self.status_label.add_css_class("lintranslator-hint")
         self.status_label.set_ellipsize(Pango.EllipsizeMode.END)
@@ -307,40 +222,19 @@ class RegionPicker(Gtk.ApplicationWindow):
         self.watch_btn.connect("clicked", lambda *_: self._on_start())
         bar.append(self.watch_btn)
 
-        # One class for the row, so the buttons are one size and one weight...
         for button in (self.capture_btn, settings, self.quit_btn, self.watch_btn):
             button.add_css_class("lintranslator-btn")
             button.add_css_class("lintranslator-tool")
-        # ...and one exception, which is the whole point of the row.
         self.watch_btn.add_css_class("lintranslator-primary")
         return bar
 
     def _build_sidebar(self) -> Gtk.Widget:
         side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         side.add_css_class("lintranslator-side")
-        # A request, not a floor. It was set from the widest control in the
-        # column - the "Re-translate when I adjust the box" checkbox, which
-        # measured 309px - plus the theme's 14px padding on each side. That
-        # checkbox is gone (see `_refresh_preview`) and its successor, the
-        # Preview dropdown, measures 197px, so this floor is now roomier than
-        # anything under it needs. Lowering it would mean re-measuring the
-        # column, which is what this comment exists to warn about.
-        #
-        # This number used to be meaningless: the coordinate readout was one
-        # unwrapped line whose 539px minimum became the sidebar's minimum, so
-        # the column took 769px of the 1500px window and the canvas - the whole
-        # point of the window - was left with 731px. Wrapping that readout is
-        # what makes the request the real width.
+        # 340px width request, not a floor - a child's minimum can still exceed it
         side.set_size_request(340, -1)
         side.set_valign(Gtk.Align.FILL)
 
-        # One line, and only the part that cannot be seen. "Drag over the dialogue
-        # text" was written three times in this window - as a title here, again as
-        # "cover the whole text block" below it, and a third time in the toolbar's
-        # status line, which also says how big the capture is - and its tooltip
-        # still pointed at a "Find box" button that no longer exists. What is left
-        # is the trap: a box that cuts a line still reads plausibly, so the OCR
-        # text below looks right and only the crop shows what was missed.
         hint = Gtk.Label(
             label=(
                 "A box that is slightly too short still produces plausible OCR "
@@ -352,30 +246,14 @@ class RegionPicker(Gtk.ApplicationWindow):
         hint.add_css_class("lintranslator-hint")
         side.append(hint)
 
-        # The box, in a sunken readout: it changes on every drag, and a number
-        # that moves belongs in a fixed frame rather than in a line of prose.
         self.coords_label = Gtk.Label(label="no selection", xalign=0, wrap=True)
         self.coords_label.add_css_class("lintranslator-readout")
         self.coords_label.add_css_class("lintranslator-dim")
         side.append(self.coords_label)
 
-        # Which image the preview shows is one choice with three answers, so it
-        # is one control. It used to be two checkboxes - "Show OCR input
-        # (autocontrast)" and "Show threshold view" - which could both be
-        # ticked while only one of them did anything (`if threshold / elif
-        # autocontrast`), and which together left the raw crop unreachable
-        # without unticking both. A dropdown cannot express that contradiction.
-        #
-        # Two of the three are now the same image OCR is handed: "OCR input" is
-        # `self.ocr.prepared(crop)` itself, and "threshold" is that image cut
-        # into ink and paper. They were the panel's own drawings before, which
-        # made the one view meant to judge `ocr.invert` and `ocr.threshold` the
-        # one view that ignored both - see `_preview_image`.
         self.preview_choice = Gtk.DropDown.new_from_strings(
             ["Preview: raw", "Preview: OCR input", "Preview: threshold"]
         )
-        # Index 1 keeps the old default (the OCR input), which is the view the
-        # eye judges glyphs by.
         self.preview_choice.set_selected(1)
         self.preview_choice.set_tooltip_text(self._preview_explanation(1))
         self.preview_choice.connect("notify::selected", lambda *_: self._refresh_preview())
@@ -383,26 +261,14 @@ class RegionPicker(Gtk.ApplicationWindow):
 
         side.append(self._rule())
 
-        # The crop itself. Height only: a width request here is a floor under
-        # the whole sidebar, and the picture fills whatever the frame is given.
+        # height only: a width request here would be a floor under the whole sidebar
         self.preview = Gtk.Picture()
         self.preview.set_size_request(-1, 110)
         self.preview.set_content_fit(Gtk.ContentFit.CONTAIN)
-        # NOT hexpand, and that is load-bearing out of proportion to its size.
-        # GtkBox decides which children get the window's spare width with
-        # `gtk_widget_compute_expand`, which is true for a widget whose *any*
-        # descendant expands. So this one flag propagated up through the sidebar
-        # and its scroller, made the whole column count as expanding, and split
-        # the surplus evenly with the canvas: measured, the column took 660px of
-        # a 1500px window and the canvas - the entire point of the window - was
-        # left with 840px, while the sidebar's own 340px request was ignored.
-        # The frame still gives the picture its full width, because a Gtk.Box
-        # fills its children by default.
+        # NOT hexpand: expansion propagates up through the sidebar and its
+        # scroller, so the column splits the spare width with the canvas
         self.preview.set_hexpand(False)
-        # A Gtk.Picture's natural width is the image's own, 3186px for a
-        # 2560-wide screenshot. `set_size_request` only lowers the minimum, so
-        # the natural width is capped here instead, by the same scroller trick
-        # the sidebar itself uses.
+        # a Picture's natural width is the image's own, so cap it with a scroller
         preview_clip = Gtk.ScrolledWindow()
         preview_clip.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.NEVER)
         preview_clip.set_propagate_natural_width(False)
@@ -413,11 +279,6 @@ class RegionPicker(Gtk.ApplicationWindow):
         preview_frame.append(preview_clip)
         side.append(preview_frame)
 
-        # The OCR text is what the box is judged by, and it is the pane that
-        # takes the column's leftover height. Before this, the sidebar's content
-        # ended 310px above the bottom of a 960px column and the gap was simply
-        # empty; here it becomes text room. Top-aligned, so more height shows
-        # more of the reading rather than the same reading lower down.
         self.ocr_label = Gtk.Label(label="", xalign=0, wrap=True)
         self.ocr_label.set_selectable(True)
         self.ocr_label.set_yalign(0)
@@ -436,14 +297,10 @@ class RegionPicker(Gtk.ApplicationWindow):
         head = Gtk.Label(label="Translation", xalign=0)
         head.add_css_class("lintranslator-section")
         trans_head.append(head)
-        # A caption rather than <small> markup: the type scale is the theme's,
-        # and "preview only" is exactly what `.lintranslator-caption` is for.
         note = Gtk.Label(label="preview only", xalign=0)
         note.add_css_class("lintranslator-caption")
-        # Not hexpand. It used to push Translate to the far right, but it also
-        # propagated "expands" up to the sidebar's scroller and cost the canvas
-        # half the window's spare width (see the picture above). The button sits
-        # beside the caption instead, next to the thing it acts on.
+        # not hexpand: expansion would propagate up and cost the canvas half the
+        # window's spare width
         trans_head.append(note)
         self.translate_btn = Gtk.Button(label="Translate")
         self.translate_btn.add_css_class("lintranslator-btn")
@@ -454,20 +311,12 @@ class RegionPicker(Gtk.ApplicationWindow):
         trans_head.append(self.translate_btn)
         side.append(trans_head)
 
-        # Translating as the region is adjusted is the whole point of this
-        # panel, so it is not optional. The debounce in `_translate_async` and
-        # the translator's cache are what keep that from being expensive; the
-        # checkbox that used to live here only added a way to be surprised by a
-        # stale translation (see `_refresh_preview` and `_on_settings_applied`).
         self.backend_label = Gtk.Label(label="", xalign=0, wrap=True)
         self.backend_label.add_css_class("lintranslator-caption")
         self.backend_label.set_max_width_chars(34)
         side.append(self.backend_label)
         self._refresh_backend_label()
 
-        # The state readout. It stays empty while nothing is being read - the
-        # button below is the instruction - and speaks up only when the box is
-        # being read, or when it is not and the reason is not the user's to guess.
         self.watch_status = Gtk.Label(label="", xalign=0, wrap=True)
         self.watch_status.add_css_class("lintranslator-hint")
         self.watch_status.set_max_width_chars(34)
@@ -480,8 +329,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         self.trans_label.add_css_class("lintranslator-body")
         side.append(self.trans_label)
 
-        # Second line of defence: a wrapping label's natural width is its
-        # unwrapped width, so cap it explicitly.
+        # a wrapping label's natural width is its unwrapped width, so cap it
         child = side.get_first_child()
         while child is not None:
             if isinstance(child, Gtk.Label):
@@ -499,7 +347,6 @@ class RegionPicker(Gtk.ApplicationWindow):
         self.sel = (x, y, w, h)
         GLib.idle_add(self._refresh_preview)
 
-    # -- geometry ---------------------------------------------------------- #
     def math(self) -> SelectionMath:
         """Coordinate mapping for the current widget size."""
         return SelectionMath(
@@ -526,14 +373,11 @@ class RegionPicker(Gtk.ApplicationWindow):
         return self.math().hit_test(x, y, self.sel, HANDLE)
 
 
-    # -- interaction ------------------------------------------------------- #
     def _on_drag_begin(self, _gesture, x: float, y: float) -> None:
         self._drag_mode = self._hit_test(x, y)
         self._drag_origin = (x, y)
         self._drag_last = (x, y)
-        # The box this drag starts from. A resize edge is placed at its original
-        # position plus the pointer's total travel, so the box cannot drift as
-        # events arrive and the edge keeps the offset it was grabbed with.
+        # the box this drag started from, so a resize edge cannot drift
         self._drag_sel = self.sel
         if self._drag_mode == "new":
             sx, sy = self._widget_to_screen(x, y)
@@ -543,10 +387,9 @@ class RegionPicker(Gtk.ApplicationWindow):
         if self._drag_origin is None or self._drag_mode is None or self.screen_image is None:
             return
         ox, oy = self._drag_origin
-        # GestureDrag offsets are cumulative from the drag start, which is what
-        # edge resizing wants. A *move* must instead shift by the change since
-        # the previous update, or the selection would advance by the total drag
-        # distance on every event and run away from the pointer.
+        # GestureDrag offsets are cumulative from the drag start; a move must
+        # shift by the delta since the last update or it would run away from the
+        # pointer
         cursor = (ox + dx, oy + dy)
         last = getattr(self, "_drag_last", (ox, oy))
 
@@ -577,10 +420,8 @@ class RegionPicker(Gtk.ApplicationWindow):
         self._drag_last = None
         self._drag_sel = None
         self._refresh_preview()
-        # Keep a running pipeline pointed at the box the user can see. Nothing is
-        # written to the config file here - `_on_start` is the one place that saves
-        # it - but the area being read follows the drag, so the rectangle on screen
-        # is never a lie about what is being read.
+        # re-point a running pipeline, but never save the config here -
+        # `_on_start` is the only writer
         if self._stage_region():
             self.status_label.set_text("box changed — press Apply box to keep watching it")
 
@@ -617,11 +458,9 @@ class RegionPicker(Gtk.ApplicationWindow):
         }.get(self._hit_test(x, y), "crosshair")
         self.area.set_cursor(Gdk.Cursor.new_from_name(cursor, None))
 
-    # -- drawing ----------------------------------------------------------- #
     def _on_draw(self, area, cr, width: int, height: int) -> None:
-        # Use the widget's real allocation, not the callback's width/height:
-        # those can be the DrawingArea's natural size (its size request), which
-        # is much smaller than the space it was actually given.
+        # use the real allocation: the callback's size can be the DrawingArea's
+        # natural (requested) size
         width = area.get_width()
         height = area.get_height()
         if self.screen_image is None:
@@ -636,13 +475,8 @@ class RegionPicker(Gtk.ApplicationWindow):
 
         ox, oy, draw_w, draw_h = self._image_rect()
 
-        # Paint the screenshot at FULL resolution under a cairo transform.
-        #
-        # Deliberately not a pre-scaled buffer: keeping one means two places
-        # compute the displayed size (the buffer and the transform) and they can
-        # silently disagree, which shows up as an image drawn far smaller than
-        # the selection rectangle. Scaling here means the image always fills
-        # exactly the rect that the selection maths uses.
+        # full-resolution surface under a cairo transform, so the image always
+        # fills exactly the rect the selection maths uses
         surface = self._source_surface()
         if surface is not None:
             cr.save()
@@ -661,7 +495,6 @@ class RegionPicker(Gtk.ApplicationWindow):
             wx0, wy0 = self._screen_to_widget(x0, y0)
             wx1, wy1 = self._screen_to_widget(x0 + w, y0 + h)
 
-            # Dim everything outside the selection.
             cr.set_source_rgba(0, 0, 0, 0.55)
             cr.rectangle(ox, oy, draw_w, max(0.0, wy0 - oy))
             cr.rectangle(ox, wy1, draw_w, max(0.0, oy + draw_h - wy1))
@@ -674,11 +507,7 @@ class RegionPicker(Gtk.ApplicationWindow):
             cr.rectangle(wx0, wy0, wx1 - wx0, wy1 - wy0)
             cr.stroke()
 
-            # Handles at the corners and at the middle of each edge. The whole
-            # border is grabbable - that is what the resize cursor promises - but
-            # a bare 2px outline does not look it, and a corner-only affordance
-            # reads as "you can move this, maybe". Sized to the pointer
-            # tolerance, so the thing you aim at is the thing that answers.
+            # handles at the corners and mid-edges, sized to the pointer tolerance
             half = HANDLE_WIDGET_MIN / 2.0
             middle_x, middle_y = (wx0 + wx1) / 2.0, (wy0 + wy1) / 2.0
             for hx in (wx0, middle_x, wx1):
@@ -706,11 +535,7 @@ class RegionPicker(Gtk.ApplicationWindow):
 
     @staticmethod
     def _to_texture(image: Image.Image):
-        """PIL image -> Gdk.Texture, which is a Gdk.Paintable.
-
-        Gtk.Picture.set_paintable rejects a GdkPixbuf, so previews must go
-        through a texture.
-        """
+        """PIL image -> Gdk.Texture; Gtk.Picture rejects a GdkPixbuf."""
         if image.mode != "RGB":
             image = image.convert("RGB")
         return Gdk.MemoryTexture.new(
@@ -721,23 +546,12 @@ class RegionPicker(Gtk.ApplicationWindow):
             image.width * 3,
         )
 
-    # -- OCR preparation ---------------------------------------------------- #
     def _ocr_progress(self, message: str) -> None:
-        """Show what the background preparation is doing.
-
-        Called from the setup thread, so the label is touched through the main
-        loop rather than from that thread.
-        """
+        """Show preparation progress from the setup thread via the main loop."""
         GLib.idle_add(self.status_label.set_text, message)
 
     def _ocr_kwargs(self) -> dict:
-        """The config values the OCR engine is built from.
-
-        Kept in one place so "build the engine" and "did anything the engine
-        reads move?" cannot disagree about what those values are. The preview
-        does not use this dict: it calls `self.ocr.prepared`, so it shows the
-        recipe of the engine in hand rather than a second copy of the settings.
-        """
+        """The config values the OCR engine is built from."""
         ocr = self.config.ocr
         return {
             "langs": ocr.langs,
@@ -756,22 +570,13 @@ class RegionPicker(Gtk.ApplicationWindow):
         return TesseractOcr(on_progress=self._ocr_progress, **self._ocr_kwargs())
 
     def _prepare_ocr_async(self) -> None:
-        """Prepare the current engine off the main loop.
-
-        Re-runnable, because `_rebuild_ocr` installs a new engine and this has to
-        run again for it. Clearing `_ocr_ready` first is what makes that safe:
-        until the new engine's language data is known to be there, the preview
-        says what it is waiting for rather than letting `read` call
-        `ensure_ready` on the main loop - the freeze this thread exists to avoid.
-        """
+        """Prepare the current engine off the main loop, re-runnable for a rebuilt one."""
         self._ocr_ready.clear()
-        # A retry is a deliberate act (Settings were just applied), so an earlier
-        # failure must not stick: `_ocr_blocked_reason` reports `_ocr_error`
-        # forever otherwise.
+        # a retry must clear an earlier failure, or `_ocr_blocked_reason` would
+        # report it forever
         self._ocr_error = None
-        # Handed to the thread instead of read from `self` inside it: a rebuild
-        # while this is in flight must not have its result attributed to the
-        # engine it was not preparing for.
+        # pass the engine in: a rebuild in flight must not be attributed to the
+        # wrong engine
         engine = self.ocr
         threading.Thread(
             target=self._prepare_ocr,
@@ -781,20 +586,9 @@ class RegionPicker(Gtk.ApplicationWindow):
         ).start()
 
     def _rebuild_ocr(self) -> None:
-        """Install the engine the current config describes.
-
-        Called when Settings are applied. Without it this window kept the engine
-        it was opened with: setting the source language to Korean wrote
-        `ocr.langs` and fetched `kor.traineddata`, while the preview went on
-        reading with `eng` - which returns nothing at all for a clean printed
-        Korean line, so a correct box was reported as "(no text found in this
-        region)". The live panel never had this bug, because it restarts its
-        pipeline and the pipeline builds its own engine from the config.
-        """
+        """Install the engine the current config describes, rebuilt when Settings apply."""
         settings = self._ocr_kwargs()
         if settings == self._ocr_built_from:
-            # Nothing the engine reads has moved - the box, the display or an
-            # unrelated setting changed - so the preview only needs re-running.
             GLib.idle_add(self._repreview_if_selected)
             return
         self._ocr_built_from = settings
@@ -802,16 +596,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         self._prepare_ocr_async()
 
     def _prepare_ocr(self, ocr: TesseractOcr) -> None:
-        """Fetch and validate the language data before the first read needs it.
-
-        Off the main loop on purpose: `ensure_ready` can spend seconds on the
-        network the first time, and this window is the one that reads the screen
-        on the main loop - a picker frozen mid-drag with no explanation is worse
-        than one that says what it is waiting for.
-
-        A preparation whose engine has since been replaced reports nothing: the
-        newer preparation owns the ready flag, the error and the status row.
-        """
+        """Fetch and validate the language data off the main loop before the first read."""
         try:
             ocr.ensure_ready()
         except Exception as exc:  # noqa: BLE001 - surfaced through the status row
@@ -830,19 +615,13 @@ class RegionPicker(Gtk.ApplicationWindow):
         return False
 
     def _ocr_blocked_reason(self) -> str | None:
-        """Why OCR cannot run yet, or None when it can.
-
-        A failure is reported rather than retried: `ensure_ready` would raise
-        again on the main loop, and a network failure can take a minute to say
-        so.
-        """
+        """Why OCR cannot run yet, or None when it can."""
         if self._ocr_error is not None:
             return f"OCR unavailable: {self._ocr_error}"
         if not self._ocr_ready.is_set():
             return "preparing OCR language data…"
         return None
 
-    # -- preview ----------------------------------------------------------- #
     def _schedule_preview(self) -> None:
         self._preview_token += 1
         token = self._preview_token
@@ -895,47 +674,22 @@ class RegionPicker(Gtk.ApplicationWindow):
 
         if result.lines:
             self._last_ocr_text = result.text
-            # Always translate. This was behind a "Re-translate when I adjust
-            # the box" checkbox, which was doing more harm than good: the
-            # debounce below coalesces a drag into one request and the
-            # translator's cache makes unchanged text free, so the checkbox was
-            # not holding back a flood - but the same flag also gated the
-            # Settings re-translate, so switching model and pressing Apply with
-            # it unticked left the old model's translation on screen under the
-            # new settings. It also meant the picker could not answer "is the
-            # box right?" the one way that settles the question - the text.
             self._translate_async(result.text, debounce_ms=700)
 
     def _readout(self, result) -> tuple[str, str]:
-        """What the OCR pane and its caption say about one read.
-
-        Split out of `_refresh_preview` so the empty case can be tested without
-        running tesseract or drawing anything, because that case is where the
-        window used to lie: "(no text found in this region)" was the whole message
-        both when tesseract read nothing and when it read something the
-        confidence gate rejected. From the outside those look identical, and only
-        the second is a setting the user can move - so a box that reads fine at
-        41% under a gate of 55% reads as "this OCR cannot read Chinese".
-        """
+        """What the OCR pane and its caption say about one read."""
         if result.lines:
             caption = f"confidence {result.confidence:.0f}   {len(result.lines)} line(s)"
             if result.dropped:
                 caption += f"   {result.dropped} dropped"
             return result.display_text, caption
         if result.rejected:
-            # Show the read itself: whether the gate is too strict (clean text at
-            # 41%) or the recipe is wrong (garbage) is visible in the text and in
-            # nothing else.
             best = max(line.confidence for line in result.rejected)
             return (
                 "\n".join(line.text for line in result.rejected if line.text),
                 f"read {len(result.rejected)}, best {best:.0f}% — "
                 f"under the {self.ocr.min_confidence:.0f}% gate",
             )
-        # Nothing at all, so the two things that decide the read - what OCR is
-        # handed, and what it is told to expect - are named here rather than left
-        # to tooltips. A one-line box read as "one block of text" comes back as
-        # nothing, and that is not a thing a user can guess from an empty pane.
         return (
             "(no text found in this region)\ninput: "
             + ", ".join(self._recipe_steps())
@@ -949,8 +703,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         return PSM_NAMES.get(int(self.ocr.psm), f"psm {self.ocr.psm}")
 
     def _recipe_steps(self) -> list[str]:
-        """The recipe in force, as words - one source for the caption and the
-        preview tooltip."""
+        """The recipe in force, as words, for the caption and the preview tooltip."""
         steps = ["grey"]
         if self.ocr.invert:
             steps.append("inverted")
@@ -963,16 +716,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         return steps
 
     def _preview_image(self, crop: Image.Image, mode: int) -> Image.Image:
-        """What the preview shows, always at `PREVIEW_SCALE` times the crop.
-
-        0 is the crop as captured, 1 is the exact image OCR is handed, 2 is that
-        image cut into ink and paper.
-
-        Modes 1 and 2 come from `self.ocr.prepared` rather than from a second
-        copy of the settings, which is the point: the preview used to draw its
-        own grey autocontrast whatever the config said, so `ocr.invert` and
-        `ocr.threshold` were invisible in the one view that exists to judge them.
-        """
+        """What the preview shows: 0 raw crop, 1 OCR input, 2 threshold, at `PREVIEW_SCALE`."""
         if mode == 2:
             view = self._cut_into_ink(crop)
         elif mode == 1:
@@ -988,18 +732,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         return view.convert("RGB")
 
     def _cut_into_ink(self, crop: Image.Image) -> Image.Image:
-        """The OCR input cut into ink and paper.
-
-        At the configured cut - in which case `prepared` has already applied it,
-        and this is the same picture as mode 1 - or, when no cut is set, at the
-        one tesseract would choose for itself. That comparison is what answers
-        "would a fixed cut help here?".
-
-        The cut is read from the engine rather than from the config, like the
-        rest of the recipe: the engine is what OCR actually reads with, and a
-        config that had moved ahead of it would make this view describe a read
-        that is not happening.
-        """
+        """The OCR input cut into ink and paper, at the configured cut or tesseract's own."""
         prepared = self.ocr.prepared(crop)
         if threshold_value(self.ocr.threshold):
             return prepared
@@ -1007,8 +740,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         return prepared.point(lambda p: 255 if p > cut else 0)
 
     def _preview_explanation(self, mode: int) -> str:
-        """The tooltip for the preview chooser: what this view is, in the terms
-        the recipe is set in."""
+        """The tooltip for the preview chooser: what this view is, in the recipe's terms."""
         if mode == 0:
             return "The crop as it was captured."
         steps = self._recipe_steps()
@@ -1026,21 +758,8 @@ class RegionPicker(Gtk.ApplicationWindow):
             "pick for itself. Set a cut in Settings to override it."
         )
 
-    # -- start watching ---------------------------------------------------- #
     def _on_start(self) -> None:
-        """Save the region, open (or re-point) the panel, and get out of the way.
-
-        Deliberately in-process: the panel is another window of the same
-        application rather than a second `lintranslator gui` run. That keeps the
-        picker-to-watching flow inside the GUI, with no command to type.
-
-        The order matters and used to be wrong. Reading started instantly, while
-        this window was still on screen over the box: the first capture contained
-        the picker's own status line ("captured 2560x1440 — drag over the dialogue
-        text") at 93% confidence, and the dialogue line underneath it was dropped
-        by the confidence gate. So now the pipeline is started paused and this
-        window takes itself off the screen, which is what lets reading begin.
-        """
+        """Save the region, then open the panel and leave the screen before reading starts."""
         if self.sel is None or self.screen_image is None:
             self.status_label.set_text("capture the screen and select a region first")
             return
@@ -1054,8 +773,6 @@ class RegionPicker(Gtk.ApplicationWindow):
         self.config.capture.region = region
         self.config.save()
 
-        # The panel was built with this window but kept off screen; this is what
-        # opens it. Only the first Start builds it.
         if getattr(self, "_panel", None) is None:
             self._prepare_panel()
         panel = self._panel
@@ -1064,19 +781,11 @@ class RegionPicker(Gtk.ApplicationWindow):
         if panel.worker is None:
             panel.start_pipeline()
         else:
-            # Already watching: re-point the running loop instead of rebuilding
-            # it. A rebuild would reload the model and move the card, and until
-            # it happened the picker would be showing one box while the pipeline
-            # read another.
             panel.worker.request_region(region)
         panel.toggle_btn.set_label("Pause")
-        # The picker stays reachable (panel's Region button) but leaves the
-        # screen: it is the only thing that shows which rectangle is being read,
-        # and it is also the easiest way to accidentally translate it.
         self._set_watching(True)
         self._minimise_for_watching()
 
-    # -- staying out of the capture ---------------------------------------- #
     def _on_mapped(self, mapped: bool) -> None:
         """Tell the pipeline whether this window is on screen."""
         if mapped:
@@ -1090,25 +799,9 @@ class RegionPicker(Gtk.ApplicationWindow):
         self._refresh_watch_status()
 
     def _minimise_for_watching(self) -> None:
-        """Get this window off the screen, then let the pipeline start reading.
-
-        The pipeline is gated on this window being unmapped, so this call is what
-        actually starts translation - no sleep, no guessing at a delay long
-        enough for the compositor.
-
-        Both a minimise and a hide are attempted, because minimising is what we
-        want (the taskbar entry stays, so the window can be brought back the usual
-        way) but it is not universally honoured: measured on kwin_wayland 6.7.4
-        with GTK 4, `minimize()` is ignored outright and the window stays mapped
-        (see `probe/minimise_check.py`). There the hide is what takes effect, and
-        the panel's Region button is the way back.
-        """
+        """Get this window off the screen; minimise is not honoured everywhere."""
         self.minimize()
-        # Long enough for a compositor that does honour minimise to have unmapped
-        # the window; short enough that the wait is not felt when it does not.
-        # Measured on kwin_wayland: minimise is ignored outright, so on this
-        # desktop the fallback is what runs and every millisecond here is latency
-        # before the first capture.
+        # 150ms: time for a compositor that honours minimise to unmap the window
         GLib.timeout_add(150, self._ensure_off_screen)
 
     def _ensure_off_screen(self) -> bool:
@@ -1118,26 +811,12 @@ class RegionPicker(Gtk.ApplicationWindow):
         return False
 
     def restore(self) -> None:
-        """Bring the picker back, re-grabbing the screen so the box can be reframed.
-
-        Wired to the panel's Region button. Reading pauses by itself while this
-        window is up, so the user can drag freely; pressing "Apply box" hides it
-        again and reading resumes on the new area.
-
-        The screen is captured again on the way back. Reopening on the shot taken
-        when watching started means framing the box against a screen the game has
-        long since moved on from - and reframing is the only reason to press
-        Region at all. The box itself is kept (`set_screenshot` re-seeds it only
-        when the screen size changed), so this is a reframe, not a reset.
-        """
+        """Bring the picker back, re-grabbing the screen so the box can be reframed."""
         if hasattr(self, "unminimize"):
             self.unminimize()
         self._refresh_watch_status()
-        # While watching, this window is already off screen - that is what
-        # watching means - so the grab can start at once. The wait is only owed
-        # when the window is somehow still mapped: it has to leave the screen
-        # first, or the "screenshot of the game" would contain the picker, and the
-        # countdown is also the moment to switch to the game.
+        # wait only when still mapped: the window must leave the screen first or
+        # the grab would contain it
         if self.get_mapped():
             self._capture_screen(
                 delay_ms=CAPTURE_DELAY_MS,
@@ -1150,8 +829,8 @@ class RegionPicker(Gtk.ApplicationWindow):
         panel = getattr(self, "_panel", None)
         if panel is None:
             return
-        # Disconnect first: the panel's own close handler would otherwise try to
-        # re-show a picker that is going away.
+        # disconnect first: the panel's own close handler would otherwise re-show
+        # a picker that is going away
         try:
             panel.disconnect_by_func(self._on_panel_closed)
         except (TypeError, RuntimeError):
@@ -1168,28 +847,18 @@ class RegionPicker(Gtk.ApplicationWindow):
             closer()
         self._panel = None
         self._set_watching(False)
-        # Closing the panel while this window is off screen would leave the
-        # process with nothing visible at all - the orphaned-window failure this
-        # project has already shipped once. Closing the card brings the picker
-        # back, which is also where the user would expect to end up.
+        # the panel closing while this window is off screen would leave nothing
+        # visible at all, so bring the picker back
         if not self.get_visible():
             self.restore()
         return False  # let the panel actually close
 
     def _prepare_panel(self) -> None:
-        """Build the translation card, wired to this window but not shown.
-
-        Picking a region does not need the card - a second window on screen at
-        launch is one more thing in the way, and it lands in this window's own
-        screenshot of the screen - so it stays hidden until `_on_start` opens it.
-        Building it here rather than there keeps the control socket behind
-        `lintranslator status` alive for the whole session.
-        """
+        """Build the translation card, wired to this window but not shown."""
         from .panel import TranslatorPanel
 
         self._panel = TranslatorPanel(self.get_application(), self.config, position=None)
         self._panel.connect("close-request", self._on_panel_closed)
-        # Give the panel the pause reason and a way back to this window.
         self._panel.gate = GUARD.reason
         self._panel.enable_region_button(self.restore)
 
@@ -1205,7 +874,6 @@ class RegionPicker(Gtk.ApplicationWindow):
     def _refresh_watch_status(self) -> None:
         """Say whether the box is being read, and why not when it is not."""
         if not getattr(self, "_watching", False):
-            # Nothing to say before Start: the button says it.
             self.watch_status.set_text("")
             return
         if self.get_mapped():
@@ -1224,36 +892,20 @@ class RegionPicker(Gtk.ApplicationWindow):
                 "panel to re-capture and bring it back."
             )
 
-    # -- closing ----------------------------------------------------------- #
     def _on_quit_clicked(self, _button: Gtk.Button) -> None:
-        """The toolbar's Quit, which is the panel's Quit by another name.
-
-        Both end the session: the card and its worker go, and the picker closes,
-        which quits the application. It is called Quit rather than Close because
-        that is what it does - the window's own X closes the picker too, and a
-        button that says Close next to a titlebar that also closes reads as two
-        different outcomes for one action.
-        """
+        """The toolbar's Quit, which is the panel's Quit by another name."""
         self._shutdown_panel()
         self.close()
 
     def _on_close_request(self, _window) -> bool:
-        """Stop the panel and its worker before the picker goes away, then exit.
-
-        Returning False lets the window close; quitting afterwards matters
-        because a GTK application keeps running while any window exists, and a
-        hidden window counts. Without the quit, the process lingered with no
-        visible window at all.
-        """
+        """Stop the panel and its worker, then quit: a hidden GTK window keeps the app alive."""
         self._shutdown_panel()
         GUARD.clear(PICKER_WINDOW)
         application = self.get_application()
         if application is not None:
-            # After this window is gone there is nothing left to show.
             GLib.idle_add(application.quit)
         return False  # allow the picker itself to close
 
-    # -- settings ---------------------------------------------------------- #
     def _open_settings(self) -> None:
         from .settings import SettingsDialog
 
@@ -1264,34 +916,21 @@ class RegionPicker(Gtk.ApplicationWindow):
 
     def _on_settings_applied(self) -> None:
         """Install the saved settings: the OCR engine, the translator, the preview."""
-        # The OCR engine is built from the same config, so it is rebuilt here
-        # too: `ocr.langs` is what reads the box, and a window that kept the
-        # engine it was opened with went on reading a Korean box with `eng`
-        # after Settings said `eng+kor` - reported as "(no text found in this
-        # region)" while `config.json` was correct the whole time.
         self._rebuild_ocr()
         if self._translator is not None:
             self._translator.close()
             self._translator = None
         self._refresh_backend_label()
-        # Re-translate the current selection with the new settings immediately:
-        # changing the model and seeing nothing happen would look broken. This
-        # used to be conditional on the "Re-translate when I adjust the box"
-        # checkbox, which was indefensible - the setting had just been applied,
-        # so the old translation was no longer even the old model's answer to
-        # the current configuration.
         if self._last_ocr_text:
             self._translate_async(self._last_ocr_text, debounce_ms=0)
 
     def _refresh_backend_label(self) -> None:
         t = self.config.translate
         model = t.model or "(no model set)"
-        # Keep it short: long OpenRouter ids would dominate the sidebar.
         if len(model) > 34:
             model = model[:31] + "…"
         self.backend_label.set_text(f"backend: {t.backend} · {model}")
 
-    # -- translation preview ----------------------------------------------- #
     def _on_translate_clicked(self, _button: Gtk.Button) -> None:
         if not self._last_ocr_text:
             self.trans_label.set_text("no text in the region to translate")
@@ -1299,12 +938,7 @@ class RegionPicker(Gtk.ApplicationWindow):
         self._translate_async(self._last_ocr_text, debounce_ms=0)
 
     def _translate_async(self, text: str, debounce_ms: int = 0) -> None:
-        """Translate `text` on a worker thread and show the result.
-
-        Debounced and token-guarded: dragging produces a new selection many times
-        a second, and an un-debounced version would fire one API request per
-        mouse-move.
-        """
+        """Translate `text` on a worker thread, debounced and token-guarded."""
         self._trans_token += 1
         token = self._trans_token
         self._trans_pending = True
@@ -1351,32 +985,19 @@ class RegionPicker(Gtk.ApplicationWindow):
             )
         return self._translator
 
-    # -- actions ----------------------------------------------------------- #
     def _on_capture(self, _button: Gtk.Button) -> None:
-        """Re-grab the screen. The picker window itself must not be captured,
-        so hide it, wait for the compositor to actually remove it, then grab."""
+        """Re-grab the screen; the picker window itself must not be captured."""
         self._capture_screen(
             delay_ms=CAPTURE_DELAY_MS,
             note="capturing in 1s — switch to the game now…",
         )
 
     def _capture_screen(self, delay_ms: int, note: str) -> None:
-        """Put a fresh screenshot of the screen into the canvas.
-
-        Shared by the Capture button and the panel's Region button. This window
-        is hidden first and shown again when the grab lands, whatever happens:
-        leaving it hidden on a failed capture would leave the process with
-        nothing on screen at all. `delay_ms` is 0 when the window is already off
-        screen, in which case there is nothing to wait for and the shot lands in
-        the same click.
-        """
+        """Grab a fresh screenshot, hiding this window first and always restoring it."""
         from .capture import ScreenGrabber
 
         self.capture_btn.set_sensitive(False)
         self.status_label.set_text(note)
-        # The picker can be off screen while this runs (the panel's Region
-        # button), so say it on the panel too: a button that seems to do nothing
-        # for the length of a portal round trip reads as a broken one.
         panel = getattr(self, "_panel", None)
         if getattr(panel, "status_label", None) is not None:
             panel.status_label.set_text("capturing the screen for the picker…")
@@ -1404,12 +1025,7 @@ class RegionPicker(Gtk.ApplicationWindow):
             do_grab()
 
     def _apply_region_live(self) -> None:
-        """Point a running pipeline at the region in `config`, if we are watching.
-
-        A re-point and not a restart: rebuilding the worker reloaded the model and
-        moved the card, and until it finished the picker showed one box while the
-        pipeline read another.
-        """
+        """Point a running pipeline at the region in `config`, if we are watching."""
         if not getattr(self, "_watching", False):
             return
         panel = getattr(self, "_panel", None)

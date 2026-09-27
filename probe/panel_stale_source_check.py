@@ -1,15 +1,4 @@
-"""End-to-end: what the real panel's labels say after each new translation.
-
-`probe/stale_source_check.py` shows the pipeline emitting an event whose
-`display_source` belongs to an earlier line. This closes the loop through the
-actual widget: a real `TranslatorPanel`, fed the real events the real Pipeline
-emits, exactly as `TranslatorPanel._drain` does for an "event" message.
-
-Nothing is presented on screen and no pipeline thread is started, so this does
-not touch the live desktop or the screen capture path.
-
-Run:  .venv/bin/python probe/panel_stale_source_check.py
-"""
+"""End-to-end: what the real panel's labels say after each new translation."""
 from __future__ import annotations
 
 import sys
@@ -43,8 +32,8 @@ failures: list[str] = []
 
 
 def main() -> int:
-    cfg = Config.load()  # the settings the app is really running with
-    cfg.translate.backend = "none"  # no model, no network
+    cfg = Config.load()
+    cfg.translate.backend = "none"
     cfg.cache_path = ""  # never touch the real translation cache
 
     script = build_script()
@@ -63,7 +52,7 @@ def main() -> int:
         pipe.translator = StubTranslator()
         pipe.warmup = lambda: None
         pipe.start(0.0)
-        re_read_at = len(script) // 2  # one Re-read, as a user would press
+        re_read_at = len(script) // 2
 
         def poll() -> bool:
             nonlocal now

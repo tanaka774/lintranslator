@@ -1,20 +1,9 @@
-"""End-to-end live latency: scripted dialogue -> real capture -> translation.
-
-A fullscreen window draws one dialogue line at a time inside the configured
-region, while the real pipeline (real xdg-desktop-portal capture, real tesseract,
-echoing translator) runs in a worker thread. For each line it reports the time
-from the line appearing on screen to the translation being ready - the number a
-player actually feels.
-
-Run:  .venv/bin/python probe/live_lines.py [seconds-per-line]
-"""
+"""End-to-end live latency: scripted dialogue -> real capture -> translation."""
 import sys
 import threading
 import time
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -27,8 +16,7 @@ from lintranslator.config import Config  # noqa: E402
 from lintranslator.pipeline import Pipeline  # noqa: E402
 
 SECONDS_PER_LINE = float(sys.argv[1]) if len(sys.argv) > 1 else 5.0
-# --overlap draws a lintranslator status line inside the box, above the dialogue, which
-# is what a panel clipping the top of the region looks like to OCR.
+# --overlap draws a lintranslator status line inside the box, above the dialogue
 OVERLAP = "--overlap" in sys.argv
 
 LINES = [
@@ -41,7 +29,7 @@ state = {
     "line": "",
     "appeared": 0.0,
     "emitted": [],  # (line index, seconds after appearing, source)
-    "all": [],  # every emission, for diagnosis
+    "all": [],
     "t0": 0.0,
     "done": threading.Event(),
 }
@@ -63,7 +51,7 @@ class Screen(Gtk.ApplicationWindow):
         line = state["line"]
         if not line:
             return
-        # Draw where the pipeline is looking, so the region really contains it.
+        # draw inside the capture region, so the pipeline really sees the line
         region = self.config.capture.region
         x, y, w, h = region.to_pixels(width, height)
         cr.set_source_rgb(0.03, 0.03, 0.05)
@@ -73,8 +61,7 @@ class Screen(Gtk.ApplicationWindow):
         cr.select_font_face("DejaVu Sans", cairo_font_slant(), cairo_font_weight())
         cr.set_font_size(max(16, h * 0.32))
         if OVERLAP:
-            # Our own status line, changing every frame - the worst case: it keeps
-            # the read changing, so it can never settle on its own.
+            # status line changing every frame: the read can never settle on its own
             cr.set_source_rgb(0.85, 0.85, 0.88)
             cr.set_font_size(max(11, h * 0.19))
             cr.move_to(x + 8, y + h * 0.24)

@@ -1,18 +1,4 @@
-"""Change detection: skip identical frames, wait out the typewriter reveal.
-
-Two independent mechanisms that solve different problems:
-
-* `ChangeDetector` - cheap "are the pixels different at all?" gate. Sitting at
-  2 fps, most polls see an identical frame as long as no text is being drawn.
-  Comparing a strided grayscale signature is ~50x cheaper than OCR, so this gate
-  is what keeps an always-on poll loop affordable.
-
-* `TextSettler` - "has the text finished appearing?" gate. Games reveal dialogue
-  one character at a time, so a mid-reveal OCR result is a prefix of the final
-  line and translating it shows a truncated sentence. We therefore wait until the
-  text stops changing - where "stops changing" means near-identical reads, not
-  exactly identical ones, because OCR jitter never repeats exactly.
-"""
+"""Change detection: skip identical frames, wait out the typewriter reveal."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -32,28 +18,7 @@ def similarity(a: str, b: str) -> float:
 
 
 def is_same_reading(a: str, b: str, max_edits: int = 2, min_similarity: float = 0.85) -> bool:
-    """Whether two OCR reads are the same line seen twice, allowing for noise.
-
-    Two tests, either of which is sufficient, because they cover different
-    regimes:
-
-    * **Few edits** - decisive on short lines, where a ratio is meaningless
-      ("line" vs "line." scores 0.89 yet is obviously the same line).
-    * **High similarity** - decisive on long lines, where jitter is *not* "a
-      character or two". Measured on a live Limbus line (180-220 chars read off a
-      region with animated UI chrome), consecutive reads of one unchanged line
-      differed by a median of 5 characters and up to ~18% of the line, and their
-      similarity ran down to 0.896. An edit-distance-only rule calls those
-      different lines, which breaks the loop in two visible ways: the settle
-      timer is reset by noise so the line is never translated, and the duplicate
-      check lets the same line through twice.
-
-    The ratio test is length-gated because a short line can drift a large
-    *fraction* of itself while still being a different line; on lines that short
-    the edit test alone decides. A genuine line change sits far below the
-    threshold (measured: similarity 0.31 between two consecutive game lines,
-    against 0.896+ for noise on one line).
-    """
+    """Whether two OCR reads are the same line seen twice, allowing for noise."""
     if a == b:
         return True
     if not a or not b:
@@ -65,28 +30,17 @@ def is_same_reading(a: str, b: str, max_edits: int = 2, min_similarity: float = 
     return similarity(a, b) >= min_similarity
 
 
-# Characters that end a sentence or a quotation. Text ending in one of these is
-# treated as finished; anything else is probably still being revealed.
+# Characters that end a sentence or a quotation; text ending in one counts as
+# finished
 TERMINAL_CHARS = frozenset('."\'!?…。！？」』）)]}')
 
-# Characters that cannot end a sentence, so their presence at the end proves the
-# line is unfinished even if a later glyph of a longer reading is not visible yet.
+# Characters that cannot end a sentence; their presence at the end proves the
+# line is unfinished
 CONTINUATION_CHARS = frozenset(",:;—–-、")
 
 
 def looks_complete(text: str) -> bool:
-    """Whether OCR text looks like a finished sentence rather than a fragment.
-
-    Deliberately asymmetric. Calling a finished line "unfinished" only delays it
-    by `incomplete_grace`; calling a fragment "finished" puts a truncated
-    translation in front of the user and then translates the line again when the
-    rest appears. So the benefit of the doubt goes to unfinished, and a line is
-    considered finished only when it ends in sentence-ending punctuation.
-
-    Text ending in a continuation character (a comma, dash or colon) is always
-    unfinished: those are the exact points where games hold a reveal before
-    continuing.
-    """
+    """Whether OCR text looks like a finished sentence rather than a fragment."""
     stripped = text.strip()
     if not stripped:
         return False
@@ -140,13 +94,7 @@ def mean_abs_delta(a: bytes, b: bytes) -> float:
 
 
 def changed_ratio(a: bytes, b: bytes, pixel_delta: int = 12) -> tuple[float, int]:
-    """Return (fraction, count) of samples differing by at least `pixel_delta`.
-
-    Deliberately not the mean difference: a localized change (the typewriter
-    adding one word, a portrait appearing) barely moves the mean because most of
-    the region is unchanged, yet it is exactly the change we must react to.
-    Counting affected samples finds it regardless of area.
-    """
+    """Return (fraction, count) of samples differing by at least `pixel_delta`."""
     if len(a) != len(b):
         return 1.0, max(len(a), len(b))
     if not a:
@@ -165,17 +113,7 @@ def changed_fraction(a: bytes, b: bytes, pixel_delta: int = 12) -> float:
 
 @dataclass
 class ChangeDetector:
-    """Reports whether a frame differs enough from the previous one to re-OCR.
-
-    The threshold is `max(min_changed_samples, ceil(fraction * n))`. A pure
-    fraction is not enough: after 4x downsampling the region yields only ~1200
-    samples, and revealing a single character can move fewer than 0.1% of them.
-    An absolute floor keeps small regions as sensitive as large ones. The floor
-    defaults to 1 rather than 3: at stride 4 a single changed character resolves
-    to only ~1 sample, so a higher floor would silently miss it. False positives
-    are kept in check by `pixel_delta`, which ignores the sub-12-level noise that
-    video compression produces.
-    """
+    """Reports whether a frame differs enough from the previous one to re-OCR."""
 
     min_changed_fraction: float = 0.0005
     min_changed_samples: int = 1
@@ -222,45 +160,15 @@ class ChangeDetector:
 
 @dataclass
 class TextSettler:
-    """Decides when an OCR result is final enough to translate.
-
-    Two non-obvious requirements shaped this, both learned from live screens:
-
-    1. **OCR only runs when pixels change**, and a live game is rarely
-       pixel-stable (blinking advance cursor, animated portrait, drifting
-       particles, or just the mouse moving over the region). Waiting for a second
-       confirming read therefore waits forever. `tick` handles this: the caller
-       re-reads the same frame on a timer and feeds the result back in.
-
-    2. **An exact-match rule never settles a jittering read.** If OCR returns
-       "line" and "line." on alternating polls, the text differs on *every* poll,
-       so any timer keyed on "time since last change" is reset forever and nothing
-       is ever translated - exactly what was observed on a live screen. The fix is
-       to treat a near-identical read as the same line (`settle_max_edits` and the
-       similarity floor), while a genuine typewriter reveal keeps growing and so
-       differs by far more than that threshold.
-
-    3. **A pause in the reveal is not the end of the sentence.** Games reveal
-       dialogue in steps and hold briefly between them, so the text can sit still
-       for longer than `settle_window` while the sentence is still unfinished.
-       Releasing then puts a fragment in the panel ("...the proverbial poster
-       child of Work") and translates it a second time when the rest arrives.
-       Plain "stable for N seconds" cannot tell a finished line from a paused one,
-       so unfinished text waits longer: `incomplete_grace`.
-    """
+    """Decides when an OCR result is final enough to translate."""
 
     settle_frames: int = 2
     settle_max_wait: float = 8.0
     settle_window: float = 1.2
-    # Two reads within this many characters count as the same line. OCR noise is
-    # a character or two; a typewriter reveal grows by far more.
+    # Two reads within this many characters count as the same line
     settle_max_edits: int = 2
-    # How long unfinished text must sit still before it is released anyway.
-    #
-    # Measured from the last change, like `settle_window`, so a reveal that is
-    # still growing keeps pushing the deadline out. Longer than any pause a game
-    # takes mid-sentence (observed: ~3 s), and well under `settle_max_wait`, so a
-    # partial line surfaces eventually instead of being stuck forever.
+    # Seconds unfinished text must sit still before it is released anyway;
+    # measured from the last change, and must stay under settle_max_wait
     incomplete_grace: float = 4.5
     _held_text: str | None = field(default=None, repr=False)
     _changed_at: float = 0.0
@@ -274,48 +182,31 @@ class TextSettler:
             return False
 
         if self._held_text is None:
-            # First sighting: hold it and wait to see whether it stays put.
             self._held_text = text
             self._changed_at = now
             return self.settle_frames <= 1
 
         if self._is_reveal(text, self._held_text):
-            # The line is still being revealed: keep the longer read and restart
-            # the stability window, but do NOT treat it as a different line.
+            # Still being revealed: keep the longer read and restart the
+            # stability window
             self._held_text = text if len(text) >= len(self._held_text) else self._held_text
             self._changed_at = now
             return self._ready(now)
 
         if is_same_reading(text, self._held_text, self.settle_max_edits):
-            # The same line seen again (OCR noise): do NOT restart the stability
-            # window, or a jittering read would never settle.
+            # Same line seen again (OCR noise): do not restart the stability
+            # window
             return self._ready(now)
 
-        # A different line. It must be adopted whatever its length.
-        #
-        # "Keep the longer read" applies to a reveal and to jitter of one line -
-        # never here. Keeping a longer *stale* line meant a shorter new line
-        # could never replace it: the read differed from the held text on every
-        # poll, so the stability window restarted forever and nothing was ever
-        # translated again until a longer line happened to appear. Measured on a
-        # live screen with our own status line inside the box, where filtering
-        # that line out is exactly what makes the game's text shorter.
+        # A different line: adopt it whatever its length, so a shorter line can
+        # replace a longer stale one
         self._held_text = text
         self._changed_at = now
         return self._ready(now)
 
     @staticmethod
     def _is_reveal(text: str, held: str) -> bool:
-        """Whether `text` is `held` still being typed out, rather than a new line.
-
-        A game reveals a line in steps, and a step can add a lot at once (the next
-        word, not the next character). Judged by edit distance that is "a very
-        different line" - 20 edits, say - so the completed sentence was treated as
-        new, the paused fragment got translated first, and the panel showed the
-        truncation the user reported. Growth is therefore recognised by content:
-        the held text is a prefix of the new read, allowing for OCR noise at the
-        junction.
-        """
+        """Whether `text` is `held` still being typed out, rather than a new line."""
         if not text or not held or len(text) <= len(held):
             return False
         shared = len(held) - TextSettler.REVEAL_TAIL_ALLOWANCE
@@ -323,8 +214,7 @@ class TextSettler:
             return False
         return text[:shared] == held[:shared]
 
-    # Characters of the held text allowed to differ where the reveal continued,
-    # because the last glyph typed is the one OCR is most likely to misread.
+    # Characters of the held text allowed to differ where the reveal continued
     REVEAL_TAIL_ALLOWANCE = 4
 
     def tick(self, now: float) -> bool:
@@ -339,8 +229,8 @@ class TextSettler:
         if self._last_emit_at and (now - self._last_emit_at) < self.settle_window:
             return False  # do not re-emit a line we just translated
         stable_for = now - self._changed_at
-        # Unfinished text is not released just because it stopped moving: a game
-        # pauses mid-reveal, and translating the pause shows a fragment.
+        # Unfinished text waits longer: a game pauses mid-reveal, and translating
+        # the pause shows a fragment
         required = self.settle_window
         if not looks_complete(self._held_text):
             required += max(0.0, self.incomplete_grace)
@@ -361,12 +251,7 @@ class TextSettler:
         return self._held_text
 
     def stable_seconds(self, now: float) -> float:
-        """Seconds since the held text last changed, as of `now`.
-
-        Takes `now` rather than reading the clock, so the whole settler works on
-        one time base. Mixing an injected clock with wall-clock reads makes the
-        settle window behave differently under test than in production.
-        """
+        """Seconds since the held text last changed, as of `now`."""
         if self._held_text is None or not self._changed_at:
             return 0.0
         return now - self._changed_at
@@ -374,12 +259,7 @@ class TextSettler:
 
 @dataclass
 class EmptyGuard:
-    """Stops a region that lost its text from spamming the translator.
-
-    During transitions (scene change, menu, fade) the configured box can be
-    empty. Translating "nothing" is pure waste, so after a few consecutive empty
-    reads we stop reporting until text returns.
-    """
+    """Stops a region that lost its text from spamming the translator."""
 
     limit: int = 6
     _streak: int = 0

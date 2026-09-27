@@ -1,25 +1,9 @@
-"""Dump every live OCR read with a timestamp, then compare consecutive reads.
-
-Run:  .venv/bin/python probe/live_reads.py [seconds] > reads.txt
-
-Two numbers decide whether a line settles, and this measures both from real
-screen content:
-
-  * **intra-line** similarity - consecutive reads of one unchanged line. These
-    are noise and MUST be accepted as the same line.
-  * **inter-line** similarity - reads across a real dialogue change. These MUST
-    be rejected.
-
-The gap between the two is what makes a similarity threshold safe. Writes reads
-to stdout and a JSON dump for offline analysis.
-"""
+"""Dump every live OCR read with a timestamp, then compare consecutive reads."""
 import json
 import sys
 import time
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 

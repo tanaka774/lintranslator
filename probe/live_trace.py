@@ -1,22 +1,8 @@
-"""Live diagnostic: why did a line get translated, or not?
-
-Run:  .venv/bin/python probe/live_trace.py [seconds]
-
-Logs the pipeline's own settle state on every poll, so a dropped line can be
-attributed to a specific cause instead of guessed at:
-
-  * a genuinely new reading (the screen text really changed), vs
-  * a wild read of the same line (a bad OCR read resetting the settle window).
-
-Also flags the failure this was written to chase: a long stretch where the
-reading keeps changing but nothing is ever emitted.
-"""
+"""Live diagnostic for why a line was translated, or not."""
 import sys
 import time
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -27,7 +13,7 @@ from lintranslator.pipeline import Pipeline
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 90.0
 
 cfg = Config.load()
-cfg.translate.backend = "none"          # translation is not what is under test
+cfg.translate.backend = "none"
 p = Pipeline(cfg)
 p.warmup()
 
@@ -61,7 +47,6 @@ while time.monotonic() - t0 < SECONDS:
         elif held:
             note = "RESET (treated as a new line)"
             changed_since_emit += 1
-    # a reset while the screen text is unchanged is the expensive false positive
     if note.startswith("RESET"):
         print(
             f"{now-t0:6.1f} {p.last_decision:<18} {p.stats.ocr_runs:4d} {stable:6.2f}s  {note}"

@@ -1,24 +1,4 @@
-"""Term glossary: deterministic fixes on top of machine translation.
-
-Machine translation gets names, titles and invented jargon wrong in ways that are
-predictable and easy to correct. Measured examples from this project:
-
-    Manager!  ->  管理者        (should be a title, not "administrator")
-    Faust     ->  left alone, or transliterated inconsistently
-
-Two kinds of replacement are needed, and they are not interchangeable:
-
-* **pre**  - rewrite the source. Use for disambiguation, e.g. turning a bare
-  "Manager" into "Executive Manager" so the model stops reading it as a job title.
-* **post** - rewrite the output. Use when the model's rendering of a term is
-  known and wrong: `管理者` -> `マネージャー` is a direct output fix.
-
-A plain `"Term": "訳"` entry defaults to post, because fixing a known wrong
-output is the common case and needs no model cooperation.
-
-Matching is case-insensitive with word boundaries, and longer keys win so
-"Executive Manager" is not clobbered by "Manager".
-"""
+"""Term glossary: deterministic fixes on top of machine translation."""
 from __future__ import annotations
 
 import re
@@ -38,15 +18,9 @@ class Glossary:
     _pre_re: list[tuple[re.Pattern[str], str]] | None = field(default=None, repr=False)
     _post_re: list[tuple[re.Pattern[str], str]] | None = field(default=None, repr=False)
 
-    # -- construction ------------------------------------------------------ #
     @classmethod
     def from_config(cls, raw: Any) -> "Glossary":
-        """Build from the config's `translate.glossary` value.
-
-        Accepted shapes:
-            {"Manager": "マネージャー"}
-            {"pre": {...}, "post": {...}}
-        """
+        """Build from the config's `translate.glossary` value."""
         if not raw:
             return cls()
         if not isinstance(raw, dict):
@@ -59,22 +33,19 @@ class Glossary:
             )
         return cls(post={str(k): str(v) for k, v in raw.items()})
 
-    # -- compilation ------------------------------------------------------- #
     @staticmethod
     def _compile(mapping: Mapping, case_sensitive: bool) -> list[tuple[re.Pattern[str], str]]:
         if not mapping:
             return []
         flags = 0 if case_sensitive else re.IGNORECASE
-        # Longest key first so a specific phrase wins over its own substring.
+        # longest key first so a specific phrase wins over its own substring
         entries: list[tuple[re.Pattern[str], str]] = []
         for key in sorted(mapping, key=len, reverse=True):
             if not key:
                 continue
-            # Boundaries are ASCII-only on purpose. Python's \b treats CJK as
-            # word characters, so a \b-anchored entry for 管理者 fails to match
-            # inside 管理者異常 - the exact case this glossary exists to fix.
-            # Restricting the lookaround to ASCII stops English terms matching
-            # mid-word while letting Japanese terms match next to more Japanese.
+            # ASCII-only lookaround on purpose: \b treats CJK as word characters,
+            # so a \b-anchored 管理者 fails to match inside 管理者異常, and English
+            # terms would otherwise match mid-word.
             pattern = re.compile(
                 r"(?<![A-Za-z0-9_])" + re.escape(key) + r"(?![A-Za-z0-9_])", flags
             )
@@ -91,7 +62,6 @@ class Glossary:
             self._post_re = self._compile(self.post, self.case_sensitive)
         return self._post_re
 
-    # -- application ------------------------------------------------------- #
     def apply_pre(self, text: str) -> str:
         """Rewrite the source text before translation."""
         for pattern, replacement in self._pre_entries():
@@ -99,11 +69,7 @@ class Glossary:
         return text
 
     def apply_post(self, text: str) -> str:
-        """Rewrite translated output.
-
-        Single pass: a replacement is never rescanned, so glossary entries
-        cannot cascade into each other (A->B while B->C).
-        """
+        """Rewrite translated output in a single non-cascading pass."""
         if not self._post_entries():
             return text
         parts: list[str] = []
@@ -125,7 +91,6 @@ class Glossary:
             position = match.end()
         return "".join(parts)
 
-    # -- introspection ----------------------------------------------------- #
     def __bool__(self) -> bool:
         return bool(self.pre or self.post)
 
@@ -155,30 +120,9 @@ class Glossary:
         return cls(pre=pre, post=post, case_sensitive=case_sensitive)
 
 
-# --------------------------------------------------------------------------- #
-# A starting glossary for Limbus Company.
-#
-# Deliberately small and conservative: only terms whose machine rendering was
-# actually observed to be wrong. Guessing at flavour text does more harm than
-# good, and every entry here is one a user can edit in config.json.
-# --------------------------------------------------------------------------- #
 LIMBUS_GLOSSARY = Glossary(
     post={
-        # Measured: the title "Manager" comes back as the job word 管理者.
-        # Patching the output the model actually produces is the reliable fix.
         "管理者": "マネージャー",
     },
 )
 
-# NOTE: there is deliberately no pre-map for "Manager". Rewriting the source was
-# measured against the real model and made things worse, not better. The four
-# inputs below are short fragments of in-game lines, quoted only as the evidence
-# for that claim - a handful of words each, not script:
-#
-#   "Manager! The abnormality is approaching."  -> 管理者異常が近づいてる戦闘準備
-#   "Executive Manager! The abnormality ..."    -> 管理者異常が近づいてる戦闘準備  (no change)
-#   "Manager, the results are in."              -> 管理者結果が出ました
-#   "Executive Manager, the results are in."    -> 経営責任者成果が届きました      (worse: "CEO")
-#
-# The post entry fixes the rendering deterministically, which is both cheaper and
-# more predictable than steering the model.

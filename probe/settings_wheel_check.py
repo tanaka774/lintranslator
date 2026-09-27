@@ -1,34 +1,10 @@
-"""Check the wheel no longer changes the display sliders.
-
-Run:  .venv/bin/python probe/settings_wheel_check.py
-
-A `Gtk.Scale` changes value on every scroll it receives, and the settings dialog
-is a tall scrolling column of them, so wheeling down to the buttons at the bottom
-used to drag four style values with it. The guard is a capture-phase scroll
-controller on each slider: capture runs on the way *down* the widget tree, before
-the target's own (bubble-phase) handling, so the scale never sees the event.
-
-GTK4 has no way to inject a pointer or wheel event, so the delivery order itself
-cannot be exercised from a script. What this checks instead:
-
-  * the phases really are capture-guard against bubble-built-in, which is the
-    ordering the guard depends on;
-  * the guard is on the path the wheel would take - `Gtk.Widget.pick()` at each
-    slider returns the slider, and the guard hangs off it;
-  * emitting the scale's own scroll handler really does change its value, so the
-    bug being fixed is real and not imagined;
-  * the guard's handler moves the dialog instead, and consumes the event.
-
-A real dialog is shown for a few seconds. Nothing is captured or translated.
-"""
+"""Check that a wheel over a display slider scrolls the dialog, not the value."""
 from __future__ import annotations
 
 import sys
 import time
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -99,18 +75,14 @@ def main() -> int:
     adjustment.set_upper(max(adjustment.get_upper(), 2000.0))
     for name in SLIDERS:
         slider = getattr(dlg, name)
-        # Bring it into view first. A slider scrolled past the bottom of the
-        # viewport has no pixels to aim at, and `pick()` correctly finds nothing
-        # there - which would look like a failure of the guard rather than of
-        # the aim.
+        # bring it into view: a slider past the bottom of the viewport has no pixels to pick
         found, bounds = slider.compute_bounds(dlg)
         if found:
             adjustment.set_value(
                 max(0.0, bounds.origin.y - dlg.get_height() / 2 + bounds.size.height / 2)
             )
             pump(200)
-        # The slider's own coordinates are not the dialog's, so ask for its box
-        # in dialog space and aim at the middle of it.
+        # the slider's own coordinates are not the dialog's, so ask for its box in dialog space
         found, bounds = slider.compute_bounds(dlg)
         if not found:
             check(False, f"could not locate {name} in the dialog")
@@ -119,8 +91,7 @@ def main() -> int:
         y = int(bounds.origin.y + bounds.size.height / 2)
         picked = dlg.pick(x, y, Gtk.PickFlags.DEFAULT)
         print(f"  {name:<14} wheel at ({x},{y}) targets {type(picked).__name__}")
-        # Walk up from whatever was picked: the guard is on the slider, and has
-        # to be on the route the event takes to reach it.
+        # walk up from whatever was picked: the guard has to be on the route the wheel takes
         node, on_path = picked, picked is slider
         while node is not None and not on_path:
             node = node.get_parent()
@@ -138,8 +109,7 @@ def main() -> int:
     print("-- the bug is real: the scale's own handler changes the value --")
     before = dlg.font_scale.get_value()
     builtin = [c for c in scroll_controllers(dlg.font_scale)]
-    # Emitting on the controller runs whatever the scale connected to it, which
-    # is exactly what happens when an unguarded wheel event reaches it.
+    # emitting on the controller runs what the scale connected to it, as a real wheel event would
     for controller in builtin:
         controller.emit("scroll", 0.0, 1.0)
     after = dlg.font_scale.get_value()

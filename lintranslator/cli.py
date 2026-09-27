@@ -1,19 +1,4 @@
-"""lintranslator command line interface.
-
-    lintranslator check                  verify tesseract, tessdata, portal, backend
-    lintranslator grab  -o shot.png      capture the configured region once
-    lintranslator read                    OCR + print the region (no translation)
-    lintranslator run                     full pipeline: capture -> OCR -> translate
-    lintranslator region --x ... --w ...  update the stored region
-    lintranslator gui --pick              pick the region visually
-    lintranslator gui                     pick a region, then Start the panel
-    lintranslator reread                  re-read the box now (bind this to a hotkey)
-    lintranslator status                  what the running GUI is doing
-    lintranslator shortcut                how to bind a global Re-read hotkey
-    lintranslator remove                  what this app has downloaded, and how to free it
-    lintranslator models                  list OpenRouter models for your key
-    lintranslator languages [filter]      list the language codes this app can ask for
-"""
+"""lintranslator command line interface."""
 from __future__ import annotations
 
 import argparse
@@ -47,8 +32,8 @@ def _load(args) -> Config:
         cfg.ocr.psm = args.psm
     if getattr(args, "invert", False):
         cfg.ocr.invert = True
-    # `is not None`, not truthiness: `--threshold 0` means "no cut" and has to be
-    # able to override a stored one, which is the whole reason to pass it.
+    # `is not None`, not truthiness: `--threshold 0` means "no cut" and must be
+    # able to override a stored one.
     if getattr(args, "threshold", None) is not None:
         cfg.ocr.threshold = args.threshold
     if getattr(args, "target_lang", None):
@@ -59,24 +44,12 @@ def _load(args) -> Config:
 
 
 def _report_fetch(message: str) -> None:
-    """Say what is being downloaded, on stderr.
-
-    A first run fetches language data; it used to do that in silence, so the
-    command simply took longer. stderr rather than stdout because `run --json`
-    writes machine-readable events to stdout.
-    """
+    """Say what is being downloaded, on stderr: `run --json` writes events to stdout."""
     print(f"  {message}", file=sys.stderr, flush=True)
 
 
-# --------------------------------------------------------------------------- #
 def _key_source(cfg, backend: str, env_names: tuple[str, ...], key: str) -> str:
-    """Where a key came from, and a note when it looks like another backend's.
-
-    The note is a guess from the key's own prefix, so it does not fail the check:
-    a gateway that fronts OpenRouter is a real setup, and its key starts `sk-or-`
-    too. It is here because the failure it catches - the wrong provider's key
-    stored for this backend - is otherwise invisible until a translation fails.
-    """
+    """Where a key came from, and a note when it looks like another backend's."""
     stored = bool((cfg.translate.api_keys or {}).get(backend))
     source = "config.json" if stored else next((n for n in env_names if os.environ.get(n)), "unknown")
     owner = key_issuer(key)
@@ -106,9 +79,6 @@ def cmd_check(args) -> int:
         ok = False
         print("  -> install tesseract (Arch: sudo pacman -S tesseract)")
 
-    # The recipe, because it is the usual answer to "why is this box read as
-    # nothing?": the binary and the language data can both be fine while the
-    # input is inverted, stretched or cut in a way this screen does not want.
     recipe = ["grey", f"upscale x{cfg.ocr.upscale:g}"]
     if cfg.ocr.invert:
         recipe.append("inverted")
@@ -116,9 +86,6 @@ def cmd_check(args) -> int:
     cut = threshold_value(cfg.ocr.threshold)
     recipe.append(f"cut at {cut}" if cut else "no cut")
     print(f"OCR recipe       : {', '.join(recipe)}")
-    # The layout is the one part of the read with no row in Settings, so this is
-    # where it is visible: it decides as much as the recipe does when the box is
-    # hard, and `PSM_NAMES` carries the measurements that say so.
     print(
         f"OCR layout       : {PSM_NAMES.get(int(cfg.ocr.psm), 'psm')} "
         f"(psm {cfg.ocr.psm}, gate {cfg.ocr.min_confidence:.0f}%)"
@@ -176,16 +143,15 @@ def cmd_check(args) -> int:
             print(f"  model: {cfg.translate.model}")
         base = cfg.translate.api_base or "(provider default)"
         if backend == "chat" and not (cfg.translate.api_base or "").strip():
-            # The endpoint *is* this backend, so there is no default to fall
-            # back to - and guessing one would send the text somewhere the user
-            # never chose.
+            # The endpoint *is* this backend, so guessing a default would send the
+            # text somewhere the user never chose.
             ok = False
             print("  api base: MISSING (this backend has no default endpoint)")
             print("  -> e.g. http://localhost:11434/v1 for Ollama")
         else:
             print(f"  api base: {base}")
-        # The key and the screen text both travel in this request, so a plain
-        # http endpoint is worth saying out loud rather than discovering later.
+        # The key and the screen text both travel in this request, so a plain http
+        # endpoint is reported rather than discovered later.
         try:
             from .translate import validate_base_url
 
@@ -208,9 +174,6 @@ def cmd_check(args) -> int:
             if backend == "openrouter":
                 print("           get one at https://openrouter.ai/keys")
     elif backend in ("deepl", "google"):
-        # The endpoints that need a key and no model. DeepL used to print nothing
-        # at all here, which left `check` silent about the one thing that stops
-        # that backend from working.
         from .languages import language_name
         from .translate import resolve_api_key
 
@@ -229,9 +192,6 @@ def cmd_check(args) -> int:
             ok = False
             print(f"  api key: MISSING -> export {env_names[0]}=...")
             if backend == "google":
-                # The free tier is real but the project still has to have billing
-                # enabled, which is the step people miss after the scrape-era
-                # habit of "Google Translate just works".
                 print("           Cloud Translation is billed, with a free monthly allowance")
                 print("           -> the key needs a Google Cloud project with billing enabled")
             else:
@@ -239,10 +199,9 @@ def cmd_check(args) -> int:
     else:
         print()
 
-    # The language pair decides what the model is asked for. A code outside the
-    # table is not an error anywhere else - it is handed to a backend as a name
-    # or an ISO code that means nothing, and what comes back is fluent nonsense
-    # in the wrong language. This is the only place that can say so before a run.
+    # A code outside the table is not an error anywhere else: it reaches the
+    # backend as a name or ISO code that means nothing and comes back as fluent
+    # nonsense in the wrong language. This is the only place that can say so first.
     print(f"languages        : {cfg.translate.source_lang} -> {cfg.translate.target_lang}")
     for role, code in (
         ("source", cfg.translate.source_lang),
@@ -267,9 +226,8 @@ def cmd_check(args) -> int:
             " -> pick another language, or another backend"
         )
 
-    # The GUI is the app's front door, and PyGObject is the one dependency pip
-    # cannot install: it binds system libraries. Without this row `check` could
-    # say "ready" and `gui` then died with a bare ModuleNotFoundError.
+    # PyGObject is the one dependency pip cannot install (it binds system
+    # libraries): without this row `check` could say "ready" and `gui` then die.
     try:
         import gi  # noqa: F401
 
@@ -283,8 +241,6 @@ def cmd_check(args) -> int:
             "gir1.2-gtk-4.0"
         )
 
-    # Unknown keys and an unreadable file are collected while loading, and this
-    # is the one command whose job is to say what is wrong with the setup.
     for warning in cfg.warnings:
         print(f"config warning   : {warning}")
 
@@ -337,16 +293,9 @@ def cmd_read(args) -> int:
 
 
 def cmd_gui(args) -> int:
-    """Launch the GTK4 GUI.
-
-    One GTK application owns both windows: the picker creates and manages the
-    panel. An earlier version ran the picker in one application and then started
-    a second one for the panel, which meant quitting the first let the second
-    launch - so a fresh panel appeared right after pressing Quit.
-    """
+    """Launch the GTK4 GUI."""
     # `gui.py` imports PyGObject inside `run()` so the CLI stays importable
-    # without it. That import is the one thing pip cannot supply, and letting it
-    # escape as a traceback tells a new user nothing; name the packages instead.
+    # without it; here the missing packages are named rather than raised.
     try:
         import gi  # noqa: F401
     except ImportError:
@@ -386,7 +335,6 @@ def cmd_gui(args) -> int:
             demo=getattr(args, "demo", False),
         )
 
-    # Default: the picker, which shows the panel itself and can start it.
     return run_gui(
         cfg,
         MODE_PICK,
@@ -468,15 +416,7 @@ def cmd_run(args) -> int:
 
 
 def cmd_reread(args) -> int:
-    """Ask the running GUI to read the box again and translate it.
-
-    This is what a KDE global shortcut should be bound to (System Settings ->
-    Shortcuts -> Custom): Wayland forbids reading global keys, so the shortcut runs
-    this command, and this command talks to the window over its control socket.
-    The app also registers a global shortcut itself through
-    `org.freedesktop.portal.GlobalShortcuts`, so this is the fallback and the
-    scriptable path.
-    """
+    """Ask the running GUI to read the box again and translate it."""
     from .control import send
 
     try:
@@ -502,13 +442,7 @@ def cmd_status(args) -> int:
 
 
 def cmd_shortcut(args) -> int:
-    """Print the exact setup for a global Re-read hotkey.
-
-    Wayland forbids reading global keys, so the shortcut belongs to the desktop,
-    not to the app: a KDE custom shortcut runs `lintranslator reread`, which talks to the
-    running window over its control socket. Printing the absolute paths here saves
-    the user from guessing which interpreter has lintranslator installed.
-    """
+    """Print the exact setup for a global Re-read hotkey."""
     from .control import socket_path
 
     command = Path(sys.executable).with_name("lintranslator")
@@ -583,13 +517,7 @@ def cmd_models(args) -> int:
 
 
 def cmd_remove(args) -> int:
-    """Report what the app has on disk, or delete a named piece of it.
-
-    With no target this changes nothing: it prints the paths, their sizes and
-    what each one costs to get back. What is left is small - OCR language data and
-    the optional screen-text cache. A model the user runs is theirs to manage and
-    is not this command's to touch.
-    """
+    """Report what the app has on disk, or delete a named piece of it."""
     from . import cleanup
 
     cfg = _load(args)
@@ -628,9 +556,8 @@ def cmd_remove(args) -> int:
         print(f"nothing to remove ({args.target}: not found)")
         return 0
 
-    # Never delete outside the app's own directories: the config can point
-    # `cache_path` at anything, and a path the user chose themselves is not this
-    # command's to remove.
+    # Never delete outside the app's own directories: `cache_path` can point
+    # anywhere, and a path the user chose is not this command's to remove.
     for target in chosen:
         why = cleanup.refusal(target.path)
         if why:
@@ -689,14 +616,7 @@ def cmd_languages(args) -> int:
 
 
 def cmd_install_desktop(args) -> int:
-    """Put the menu entry and its launcher where the desktop will find them.
-
-    This is the one piece of setup the app cannot do for itself at run time: the
-    compositor grants the global hotkey only to callers that have an *application
-    id*, and an application id comes from being started by a `.desktop` file. A
-    source checkout could copy the two files by hand - they ship inside the
-    package as data now - but an installed wheel had no way to reach them at all.
-    """
+    """Put the menu entry and its launcher where the desktop will find them."""
     from importlib.resources import files
 
     data = files("lintranslator").joinpath("data")
@@ -731,7 +651,6 @@ def cmd_install_desktop(args) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="lintranslator",
@@ -743,16 +662,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--config", help=f"config path (default: {paths.DEFAULT_CONFIG_PATH})"
     )
-    # Not `required`: no subcommand means the GUI, and `parse_argv` decides that
-    # after parsing rather than before (see its docstring).
+    # Not `required`: no subcommand means the GUI, decided after parsing in
+    # `parse_argv`.
     sub = p.add_subparsers(dest="command", required=False)
 
     def add_common(sp):
         # `--config` is defined on the top-level parser, so argparse only accepts
-        # it *before* the subcommand - `lintranslator check --config x` failed
-        # with a bare "unrecognized arguments". Repeating it here accepts both
-        # orders. SUPPRESS matters: with an ordinary default, the subparser would
-        # overwrite the value parsed before it with None.
+        # it before the subcommand; repeating it here accepts both orders, and
+        # SUPPRESS stops the subparser overwriting the earlier value with None.
         sp.add_argument("--config", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
         sp.add_argument("--region", help="x,y,w,h (fractions if all <= 1.0)")
         sp.add_argument("--fps", type=float, help="polls per second")
@@ -915,18 +832,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def parse_argv(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse the command line, treating "no subcommand" as the GUI.
-
-    `gui` has always been described as the default in `--help`, and for a desktop
-    app that is what running it should mean: a bare `lintranslator`, a launcher
-    script, or a double-click on the entry point all open the picker rather than
-    printing a usage error.
-
-    The subcommand is optional so that this can be decided *after* parsing - a
-    flag with no subcommand (`lintranslator --config other.json`) means the GUI
-    too. The second parse is what fills in the GUI's own options; assigning
-    `func` by hand would leave every `args.*` it reads undefined.
-    """
+    """Parse the command line, treating "no subcommand" as the GUI."""
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
     args = parser.parse_args(argv)

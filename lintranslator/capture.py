@@ -1,14 +1,4 @@
-"""Frame acquisition: full-screen grab (portal) -> crop to the configured region.
-
-The portal always returns the whole screen, so the crop happens here. Only the
-cropped region is kept, which is what makes the rest of the pipeline cheap.
-
-Timing note: `Frame.elapsed` is the *whole* cost of one grab - portal round trip,
-PNG decode and crop - because that is the number the poll budget has to cover.
-The portal round trip alone (measured 171-425 ms on this machine, against ~33 ms
-of decode) is reported separately as `portal_elapsed`, so a slow compositor can
-be told apart from a slow decode.
-"""
+"""Frame acquisition: full-screen grab (portal) -> crop to the configured region."""
 from __future__ import annotations
 
 import time
@@ -54,12 +44,7 @@ class FullFrame:
 
 
 class ScreenGrabber:
-    """Grabs the configured region through the portal.
-
-    Screen size is discovered on the first grab and cached, so a
-    fraction-based region is resolved once per run (and re-resolved if the
-    resolution changes underneath us).
-    """
+    """Grabs the configured region through the portal."""
 
     def __init__(self, region: Region, portal: ScreenshotPortal | None = None) -> None:
         self.region = region
@@ -122,9 +107,7 @@ class ScreenGrabber:
             "grabs": self.grabs,
             "failures": self.failures,
             "screen": self._screen_size,
-            # Total cost per grab, which is what the poll interval must cover.
             "avg_grab_ms": round(1000 * self.total_elapsed / self.grabs, 1) if self.grabs else 0.0,
-            # The compositor's share of it.
             "avg_portal_ms": (
                 round(1000 * self.total_portal_elapsed / self.grabs, 1) if self.grabs else 0.0
             ),

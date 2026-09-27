@@ -1,10 +1,4 @@
-"""OCR language names and the tessdata download.
-
-`ocr.langs` is a config value that becomes two things: tesseract's `-l`
-argument, and `<name>.traineddata` under the tessdata directory. Both are
-checked here, along with the pinned-revision download, which is the only place
-this app fetches a binary and hands it to a C++ parser.
-"""
+"""OCR language names and the tessdata download."""
 from __future__ import annotations
 
 import hashlib
@@ -26,9 +20,6 @@ from lintranslator.ocr import (
 )
 
 
-# --------------------------------------------------------------------------- #
-# Language names
-# --------------------------------------------------------------------------- #
 def test_languages_split_on_plus_and_whitespace():
     assert parse_langs("eng") == ["eng"]
     assert parse_langs("eng+jpn") == ["eng", "jpn"]
@@ -75,16 +66,13 @@ def test_find_tessdata_refuses_a_bad_name(tmp_path):
         find_tessdata(["../evil"], str(tmp_path))
 
 
-# --------------------------------------------------------------------------- #
-# Downloading
-# --------------------------------------------------------------------------- #
 class FakeResponse:
     def __init__(self, payload: bytes) -> None:
         self._payload = payload
 
     def read(self, size: int = -1) -> bytes:
-        # The real HTTPResponse takes a byte count, and the download path passes
-        # one so that a hostile or broken server cannot stream forever.
+        # The real HTTPResponse takes a byte count, so a hostile server cannot
+        # stream forever.
         if size is None or size < 0:
             return self._payload
         return self._payload[:size]
@@ -178,15 +166,8 @@ def test_an_existing_file_that_does_not_match_the_pin_is_replaced(monkeypatch, t
     assert (tmp_path / "eng.traineddata").read_bytes() == payload
 
 
-# --------------------------------------------------------------------------- #
-# What is on this machine, for the Settings chooser
-# --------------------------------------------------------------------------- #
 def test_installed_models_reports_what_the_directories_hold(monkeypatch, tmp_path):
-    """The chooser says `ready` or `not installed`, and only the disk knows.
-
-    `osd` is a file like any other and is reported too: this answers "what is
-    here", and the caller decides which of them it recognises.
-    """
+    """Reports every model the tessdata directories hold, `osd` included."""
     from lintranslator import ocr as ocr_mod
 
     app_data = tmp_path / "data"
@@ -203,8 +184,7 @@ def test_installed_models_reports_what_the_directories_hold(monkeypatch, tmp_pat
     monkeypatch.setattr(ocr_mod, "SYSTEM_TESSDATA_CANDIDATES", ())
 
     assert ocr_mod.installed_models() == {"kor", "osd"}
-    # A configured tessdata dir is searched as well, because `find_tessdata`
-    # will take a file from there.
+    # A configured tessdata dir is searched too, because find_tessdata reads there.
     assert ocr_mod.installed_models(str(configured)) == {"afr", "kor", "osd"}
 
 
@@ -229,8 +209,7 @@ def test_installed_models_on_a_machine_with_nothing_installed(monkeypatch, tmp_p
 
 
 def test_model_state_separates_here_from_fetchable_from_unavailable():
-    """`grc` ships with tesseract but has no pinned digest, so the app will not
-    download it - a distinction that is invisible in a config file."""
+    """`grc` ships with tesseract but has no pinned digest, so it is never fetched."""
     installed = {"eng"}
     assert model_state("eng", installed) == "installed"
     assert model_state("rus", installed) == "download"
@@ -246,17 +225,8 @@ def test_a_truncated_download_is_refused(monkeypatch, tmp_path):
         download_tessdata(["eng"], tmp_path)
 
 
-# --------------------------------------------------------------------------- #
-# What actually reaches `-l`
-# --------------------------------------------------------------------------- #
 def test_a_space_separated_list_reaches_tesseract_with_pluses(monkeypatch, tmp_path):
-    """`-l "kor eng"` is not two languages, it is one model named "kor eng".
-
-    Measured, tesseract answers that with "Failed loading language 'kor eng'" and
-    "Tesseract couldn't load any languages!", so the read fails outright for a
-    value `split_langs` and the Settings field both accept. The config and
-    `--langs` are hand-edited, so the argument is normalised rather than trusted.
-    """
+    """`-l "kor eng"` is not two languages, it is one model named "kor eng"."""
     import pytesseract
 
     seen: dict = {}

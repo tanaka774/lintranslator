@@ -1,27 +1,10 @@
-"""Watch the control row overflow as the card narrows.
-
-Run:  .venv/bin/python probe/panel_overflow_check.py
-
-The action buttons live on the card while they fit and move into the ⋮ menu when
-they do not, so the split is a function of width and cannot be read off the
-source. This presents the real panel, narrows it in steps, and for each width
-records which buttons are on the card and renders the card to
-`data/overflow_<width>.png`.
-
-The split must only ever move one way as the card narrows: each narrower width
-keeps a *prefix* of the action order, so Region - first on the card - is the last
-to leave it.
-
-A real window is resized for a few seconds. Nothing is captured or translated.
-"""
+"""Watch the control row overflow as the card narrows."""
 from __future__ import annotations
 
 import sys
 import time
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -68,7 +51,7 @@ def shoot(window, name: str) -> None:
         return
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
     context = cairo.Context(surface)
-    # The card is translucent over a game; a mid grey stands in for one.
+    # The card is translucent, so a mid grey stands in for a game behind it.
     context.set_source_rgb(0.32, 0.34, 0.38)
     context.paint()
     node.draw(context)
@@ -88,7 +71,7 @@ def main() -> int:
     def on_activate(_app: Gtk.Application) -> None:
         theme.install_for(cfg)
         panel = TranslatorPanel(app, cfg, None)
-        panel.enable_region_button(lambda: None)  # a picker owns the panel in use
+        panel.enable_region_button(lambda: None)  # normally the picker owns this button
         panel.present()
 
         def run():

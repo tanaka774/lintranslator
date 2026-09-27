@@ -1,17 +1,4 @@
-"""Does Gtk.Window.minimize() actually take a window off screen here?
-
-The pipeline resumes reading the moment the picker unmaps, so this decides
-whether minimising keeps the picker's taskbar entry while watching, or whether
-the hide fallback is what really runs.
-
-Measured on this machine (KDE Plasma / kwin_wayland 6.7.4): **minimize() is
-ignored** - the window stays mapped for the whole two seconds after the call - so
-`picker._ensure_off_screen` is the path that takes effect, and the panel's Region
-button is the only way back. Run this again after a compositor or GTK upgrade to
-see whether that is still true.
-
-Run:  .venv/bin/python probe/minimise_check.py
-"""
+"""Check whether Gtk.Window.minimize() takes a window off screen here."""
 import gi
 
 gi.require_version("Gtk", "4.0")

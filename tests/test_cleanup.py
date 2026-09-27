@@ -1,14 +1,4 @@
-"""What the app has downloaded, and how `remove` gets the space back.
-
-Two things are checked hard here. The sizes must be right, so a user deciding
-whether to delete something is not deciding on a made-up number. And the deletion
-must stay inside the app's own directories, because `cache_path` is a path the
-user can point anywhere.
-
-The list of targets is short on purpose: the app ships no translation model, so
-the only things it downloads are OCR language data and the optional translation
-cache.
-"""
+"""What the app has downloaded, and how `remove` gets the space back."""
 from __future__ import annotations
 
 import os
@@ -21,9 +11,6 @@ from lintranslator.cli import main
 from lintranslator.config import Config
 
 
-# --------------------------------------------------------------------------- #
-# Sizes
-# --------------------------------------------------------------------------- #
 def test_a_linked_file_is_measured_once(tmp_path):
     """A symlink is counted where it points, not twice."""
     real = tmp_path / "blobs" / "abcdef"
@@ -55,15 +42,8 @@ def test_sizes_read_the_way_people_say_them(size, expected):
     assert cleanup.format_size(size) == expected
 
 
-# --------------------------------------------------------------------------- #
-# What counts as a target
-# --------------------------------------------------------------------------- #
 def test_the_only_thing_the_app_downloads_is_language_data():
-    """There is no checkpoint target, because the app has no checkpoint.
-
-    A model the user serves is theirs, and this command has no business offering
-    to delete it.
-    """
+    """There is no checkpoint target, because the app has no checkpoint."""
     cfg = Config()
     assert [t.name for t in cleanup.targets(cfg)] == ["tessdata"]
 
@@ -88,9 +68,6 @@ def test_targets_come_back_biggest_first(tmp_path):
     assert sizes == sorted(sizes, reverse=True)
 
 
-# --------------------------------------------------------------------------- #
-# Staying inside the app's own directories
-# --------------------------------------------------------------------------- #
 def test_a_path_the_user_chose_themselves_is_refused(tmp_path):
     outside = tmp_path / "my-own-models"
     outside.mkdir()
@@ -112,16 +89,8 @@ def test_removing_reports_the_bytes_freed(tmp_path):
     assert cleanup.remove(target) == 0  # already gone, not an error
 
 
-# --------------------------------------------------------------------------- #
-# The command
-# --------------------------------------------------------------------------- #
 def _tessdata() -> Path:
-    """Where a real install keeps it: inside the app's own data directory.
-
-    The conftest redirects `paths.DATA_DIR` per test, and `remove` only deletes
-    inside directories the app owns - a path of the test's own choosing is refused
-    by design, which is a different test.
-    """
+    """Where a real install keeps it: inside the app's own data directory."""
     return paths.DATA_DIR / "tessdata"
 
 

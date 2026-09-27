@@ -1,14 +1,4 @@
-"""OCR via tesseract, tuned for game UI text.
-
-Measured on a real Limbus Company dialogue box (1501x852 source):
-
-    raw full screenshot, no preprocessing   -> garbage
-    cropped + 3x upscale + autocontrast     -> exact, ~105 ms
-
-So preprocessing is not optional, it is the difference between working and not.
-PP-OCR (rapidocr) was 4-6x slower here and dropped word spaces, which harms
-translation quality; tesseract with `tessdata_fast` won on both axes.
-"""
+"""OCR via tesseract, tuned for game UI text."""
 from __future__ import annotations
 
 import hashlib
@@ -25,27 +15,19 @@ from PIL import Image, ImageOps
 
 from . import paths
 
-# tessdata_fast keeps tesseract fast; the slower `tessdata_best` is not needed
-# for clean UI fonts.
-#
-# Pinned to a revision, and verified against a digest. This used to fetch from
-# the branch tip with no check, which makes the download an auto-updating binary
-# that tesseract's C++ model loader then parses - a supply-chain hole with no
-# user-visible symptom when it is exploited. The digests below are of the files
-# at `TESSDATA_REVISION`.
+# Pinned revision, digest-checked before install: the file is parsed by
+# tesseract's C++ model loader, so an unchecked fetch is a supply-chain hole.
+# The digests below are of the files at `TESSDATA_REVISION`.
 TESSDATA_REVISION = "87416418657359cb625c412a48b6e1d6d41c29bd"
 TESSDATA_URL = (
     "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/"
     f"{TESSDATA_REVISION}/{{lang}}.traineddata"
 )
 
-# The largest file in tessdata_fast (chi_sim) is about 20 MB. This is a ceiling
-# on what the app is willing to hold in memory for one file, not a real size.
+# Ceiling in bytes on one model file held in memory; chi_sim is ~20 MB.
 MAX_TESSDATA_BYTES = 64 * 1024 * 1024
 
-# Languages this app will fetch by itself. A language that is not listed is not
-# refused forever - it is refused *silently*, which is the point: install it from
-# the distro, or opt in with `ocr.allow_unverified_tessdata`.
+# Languages the app fetches by itself; others need ocr.allow_unverified_tessdata.
 TESSDATA_SHA256 = {
     "eng": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
     "jpn": "1f5de9236d2e85f5fdf4b3c500f2d4926f8d9449f28f5394472d9e8d83b91b4d",
@@ -68,7 +50,6 @@ TESSDATA_SHA256 = {
 # A tesseract language name, and therefore also the filename it is loaded from.
 LANG_NAME_RE = re.compile(r"^[a-z0-9_]{2,32}$")
 
-# Searched in order; the first one containing every required language wins.
 SYSTEM_TESSDATA_CANDIDATES = (
     "/usr/share/tessdata",
     "/usr/share/tesseract-ocr/5/tessdata",
@@ -82,55 +63,27 @@ class OcrError(RuntimeError):
     """OCR could not run: missing binary or missing language data."""
 
 
-# A trailing single-character token is usually the game's blinking advance
-# cursor, not text. Measured live it appeared as " l", " +", " O", " é", " 4" and
-# " |" on the same unchanged line, which polluted the translation and made
-# consecutive reads look like different lines.
-#
-# It is NOT safe to strip any lone trailing character: "l" and "O" are letters,
-# but so are real words ("... a", "... I") and real sentence endings (".", "?",
-# "!", quotes with a space before them). Stripping those corrupted lines during
-# live testing - "needed maintenance." became "needed maintena", and a line lost
-# its closing quote. Only characters that cannot end an English sentence are
-# treated as the caret.
+# Only characters that cannot end an English sentence are treated as the caret:
+# stripping any lone trailing character corrupts real sentence endings.
 _SAFE_TRAILING = frozenset('."\'!?…,;:。！？、」』)]}')
-# Letters and digits the caret was actually misread as, from live OCR. Restricted
-# to this set so real one-letter words ("I") and trailing numbers ("1 2 3") are
-# left intact. A lone "|", "+" or "~" is punctuation that cannot end a sentence,
-# so it is always treated as the caret. "f" and "é" are here because both were
-# observed as the caret's misreading; neither occurs as a standalone English word.
+# Letters and digits the caret was misread as; other alphanumerics are text, so
+# real one-letter words ("I") and trailing numbers stay intact.
 _CARET_GLYPHS = frozenset("lO0147f|+~_/\\^`*éè")
 _TRAILING_CURSOR = re.compile(r"\s+(\S)$")
-# The caret is drawn after the sentence is finished, so OCR often returns it
-# AFTER the terminal punctuation ("...the entire battlefield. f", "...formation...
-# é"). Anchoring the caret check at the end of the string alone therefore missed
-# exactly the finished sentences it matters for, and the stray glyph was sent to
-# the translator. This matches the punctuation, the caret, and nothing else -
-# a sentence-final token of two or more characters is untouched.
+# The caret is often drawn after the terminal punctuation ("battlefield. f"), so
+# it cannot be detected by looking at the end of the string alone.
 _CARET_AFTER_STOP = re.compile(r"([.!?…])\s+(\S)$")
 
 
 def _is_caret_token(token: str) -> bool:
-    """Whether a lone character is the caret rather than a real word ending.
-
-    A standalone letter or digit counts only if it is one the caret was actually
-    misread as; anything else is assumed to be text. That keeps "Was it you? I"
-    and "1 2 3" intact while still catching "battlefield. f".
-    """
+    """Whether a lone character is the caret rather than a real word ending."""
     if token.isalnum():
         return token in _CARET_GLYPHS
     return True  # bare punctuation as a token is never a sentence ending
 
 
 def strip_trailing_cursor(text: str) -> str:
-    """Drop a lone trailing character left behind by the advance caret.
-
-    Handles both places the caret shows up: as the whole trailing token
-    ("first line. l"), and after the terminal punctuation it is drawn next to
-    ("the battlefield. f"). Only a single character is ever removed, and only
-    when it looks like the caret, so "needed maintenance." keeps its period,
-    "Wait for me" keeps its "me" and "Was it you? I" keeps its pronoun.
-    """
+    """Drop a lone trailing character left behind by the advance caret."""
     after_stop = _CARET_AFTER_STOP.search(text)
     if after_stop and _is_caret_token(after_stop.group(2)):
         return _CARET_AFTER_STOP.sub(r"\1", text)
@@ -163,23 +116,13 @@ class OcrResult:
     elapsed: float
     engine: str
     lang: str
-    # Lines removed from the read for any reason: the confidence gate below, or
-    # one of our own windows being inside the box (`without_lines`).
+    # Lines removed for any reason: the confidence gate, or our own UI in the box.
     dropped: int = 0
-    # The lines the confidence gate threw away, kept whole rather than counted.
-    # A UI cannot tell "tesseract read nothing" from "tesseract read something
-    # and the gate rejected it" out of a count, and only the second is a setting
-    # the user can move - which is how a box that reads fine at 41% under a gate
-    # of 55% looked like an OCR that cannot read the language.
+    # Gate-rejected lines, kept whole so the UI can show what the gate threw away.
     rejected: list[OcrLine] = field(default_factory=list)
 
     def without_lines(self, predicate) -> "OcrResult":
-        """A copy with the lines matching `predicate` removed.
-
-        Per line, not per read: when one of our windows clips the edge of the box
-        the read contains both its text and the game's, and dropping the whole
-        read loses the dialogue line underneath. Only the intruding lines go.
-        """
+        """A copy with the lines matching `predicate` removed."""
         kept = [line for line in self.lines if not predicate(line.text)]
         removed = len(self.lines) - len(kept)
         if not removed:
@@ -195,22 +138,13 @@ class OcrResult:
 
     @property
     def text(self) -> str:
-        """Lines joined into one passage for translation.
-
-        Limbus wraps dialogue mid-sentence, so tesseract returns line 1 and line 2
-        of a single sentence. Joining with spaces keeps that sentence intact,
-        which is what the translator needs.
-        """
+        """Lines joined into one passage for translation."""
         joined = " ".join(line.text for line in self.lines)
         return strip_trailing_cursor(" ".join(joined.split()))
 
     @property
     def display_text(self) -> str:
-        """The passage with visual line breaks preserved, for display.
-
-        `text` is correct for translation but reads as a wall of text in a UI,
-        and the break positions are information the OCR already recovered.
-        """
+        """The passage with visual line breaks preserved, for display."""
         return "\n".join(line.text for line in self.lines if line.text)
 
     @property
@@ -228,13 +162,7 @@ class OcrResult:
         return bool(self.lines)
 
 
-#: The tesseract page segmentation modes (`ocr.psm`) this app names, by the box
-#: shape each suits. Measured on three boxes with the same recipe: on an easy box
-#: (dark panel, one line) every mode reads it at 84.4% and the choice is free; on
-#: a one-line strip over bright artwork the default 6 reads garbage at 38.1%
-#: where 7 reads the line at 70.8%; and on a two-line box 7 reads *nothing at
-#: all* (0.0%) where 6 reads both lines at 74.1%. So the mode matters only when
-#: the box is hard - and then it matters completely, in both directions.
+#: Tesseract page segmentation modes (`ocr.psm`) this app names, by box shape.
 PSM_NAMES = {
     6: "one block of text",
     7: "a single line",
@@ -243,14 +171,7 @@ PSM_NAMES = {
 
 
 def threshold_value(value) -> int:
-    """A usable ink/paper cut, or 0 for "leave the image grey".
-
-    `ocr.threshold` is a config value, and a hand-edited one may not be a number
-    at all or may be outside the range a grey image has. The read must not fail
-    for that: anything unusable means "off", which is also the default. Public
-    because the picker's binarised preview asks the same question of the same
-    setting.
-    """
+    """A usable ink/paper cut in 1..255, or 0 for "leave the image grey"."""
     try:
         cut = int(value)
     except (TypeError, ValueError):
@@ -266,12 +187,7 @@ def preprocess(
     invert: bool = False,
     threshold: int = 0,
 ) -> Image.Image:
-    """Grayscale, upscale, stretch contrast - the recipe that makes OCR work.
-
-    The order is the meaning: upscale first, so the stretch and the cut are
-    computed over the pixels tesseract actually reads; the cut last, so a fixed
-    number means the same thing whether or not the contrast was stretched.
-    """
+    """Grayscale, upscale, stretch contrast - the recipe that makes OCR work."""
     gray = image.convert("L")
     if upscale and upscale != 1.0:
         gray = gray.resize(
@@ -289,14 +205,7 @@ def preprocess(
 
 
 def otsu_threshold(gray: Image.Image) -> int:
-    """The cut tesseract picks for itself: Otsu, from the image's histogram.
-
-    What the picker's binarised preview needs, because that view exists to answer
-    "would a fixed cut help here?" - and the answer only means something against
-    the cut tesseract would otherwise apply. Pillow only, on purpose: numpy is
-    the calibrator's dependency (`calibrate._auto_threshold` is a different
-    question - where the glyphs are - and is not part of the app's install).
-    """
+    """The cut tesseract picks for itself: Otsu, from the image's histogram."""
     hist = gray.convert("L").histogram()[:256]
     total = sum(hist)
     if total == 0:
@@ -326,11 +235,7 @@ def otsu_threshold(gray: Image.Image) -> int:
 
 
 def split_langs(langs: str) -> list[str]:
-    """Split `eng+jpn` / `eng jpn` into names, without validating them.
-
-    The UI wants to show a bad value rather than have it silently replaced, so
-    splitting and checking are separate steps.
-    """
+    """Split `eng+jpn` / `eng jpn` into names, without validating them."""
     return [x for x in langs.replace("+", " ").split() if x]
 
 
@@ -340,14 +245,7 @@ def bad_langs(langs: str) -> list[str]:
 
 
 def parse_langs(langs: str) -> list[str]:
-    """Split and validate, refusing anything that is not a language name.
-
-    `ocr.langs` is a config value, and it ends up in two places that matter: as
-    tesseract's `-l` argument, and as `<name>.traineddata` under the tessdata
-    directory. A value like `../../evil` would escape that directory, and
-    tesseract accepts a path in `-l` too, so every caller goes through here
-    rather than splitting the string itself.
-    """
+    """Split and validate; the names become `-l` arguments and tessdata filenames."""
     names = split_langs(langs)
     bad = [name for name in names if not LANG_NAME_RE.match(name)]
     if bad:
@@ -376,19 +274,7 @@ def download_tessdata(
     allow_unverified: bool = False,
     on_progress: Callable[[str], None] | None = None,
 ) -> Path:
-    """Fetch `tessdata_fast` language files into the app data dir (no root).
-
-    Every file is checked against the digest for the pinned revision before it is
-    written. A language with no pinned digest is only downloaded when
-    `allow_unverified` is set, because the alternative - fetching whatever the
-    URL serves today and handing it to tesseract - is the thing this avoids.
-
-    `on_progress` is called once per file, before its bytes are read, with a line
-    fit for a status bar. It exists because this is the app's one automatic
-    download: it happens inside whatever ran first - the panel's warmup, the
-    picker's preview, `check` - and on a slow link that was a window that simply
-    stopped responding, with nothing saying why.
-    """
+    """Fetch `tessdata_fast` language files into the app data dir (no root)."""
     dest = dest or (paths.DATA_DIR / "tessdata")
     dest.mkdir(parents=True, exist_ok=True)
     for lang in langs:
@@ -401,11 +287,7 @@ def download_tessdata(
         target = dest / f"{lang}.traineddata"
         expected = TESSDATA_SHA256.get(lang)
         if target.exists() and target.stat().st_size > 0:
-            # An existing file is not evidence that it is the file we pinned. If
-            # it were trusted forever, a download truncated by a full disk - or
-            # one written before this check existed - would only ever surface
-            # later as tesseract failing on a binary it cannot parse, with
-            # nothing pointing back here.
+            # An existing file is not proof it is the pinned one: re-check the digest.
             if expected is None:
                 continue
             try:
@@ -414,8 +296,6 @@ def download_tessdata(
                 already_pinned = False
             if already_pinned:
                 continue
-            # Fall through and fetch it again: a wrong file is replaced, a right
-            # one is never touched.
         if expected is None and not allow_unverified:
             raise OcrError(
                 f"no pinned checksum for {lang}.traineddata, so it will not be "
@@ -429,8 +309,6 @@ def download_tessdata(
         try:
             with urllib.request.urlopen(url, timeout=60) as resp:  # noqa: S310
                 if on_progress is not None:
-                    # The size comes from the response headers, so the message
-                    # costs no extra request and is exact rather than a guess.
                     length = resp.headers.get("Content-Length")
                     size = f" ({int(length) / 1e6:.1f} MB)" if length else ""
                     on_progress(f"downloading {lang}.traineddata{size} -> {dest}")
@@ -456,8 +334,7 @@ def download_tessdata(
                 f"  got      {digest}\n"
                 "  refusing to install it; nothing was written."
             )
-        # Write through a temporary name: a half-written file that exists is
-        # worse than no file, because the next run treats it as ready.
+        # Write via a temporary name: a half-written file would look ready next run.
         tmp = target.with_name(target.name + ".part")
         tmp.write_bytes(payload)
         tmp.replace(target)
@@ -489,20 +366,13 @@ def find_tessdata(
         if path.is_dir() and all((path / f"{lang}.traineddata").exists() for lang in langs):
             return path
 
-    # Nothing usable: fetch into the app data dir rather than failing outright.
     return download_tessdata(
         langs, allow_unverified=allow_unverified, on_progress=on_progress
     )
 
 
 def installed_models(extra_dir: str | None = None) -> set[str]:
-    """Every language model already on this machine, by stem.
-
-    The Settings chooser has to say whether ticking a language works now, will
-    download, or needs installing, and only the file system knows the first. The
-    directories are the ones `find_tessdata` accepts, because a file in any of
-    them is one `ensure_ready` will find.
-    """
+    """Every language model already on this machine, by stem."""
     dirs: list[Path] = []
     if extra_dir:
         dirs.append(Path(extra_dir))
@@ -520,13 +390,7 @@ def installed_models(extra_dir: str | None = None) -> set[str]:
 
 
 def model_state(stem: str, installed: set[str] | None = None) -> str:
-    """How OCR would get this model: already here, downloaded, or installed by hand.
-
-    `missing` is the state worth showing. The app fetches only what it has a
-    pinned checksum for, and a language outside that set fails at read time with
-    an `OcrError` naming the distro package - a fine message, but a poor way to
-    find out.
-    """
+    """How OCR would get this model: already here, downloaded, or installed by hand."""
     if stem in (installed_models() if installed is None else installed):
         return "installed"
     return "download" if stem in TESSDATA_SHA256 else "missing"
@@ -568,20 +432,14 @@ class TesseractOcr:
         self.threshold = threshold
         self.min_confidence = min_confidence
         self.allow_unverified_tessdata = allow_unverified_tessdata
-        # Called before a language file is fetched. The GUI passes its status
-        # row here; the CLI prints it. A first run has to say what it is doing.
+        # Called before a language file is fetched; the GUI passes its status row.
         self.on_progress = on_progress
         self._explicit_dir = tessdata_dir
         self._tessdata: Path | None = None
 
     @property
     def lang_list(self) -> list[str]:
-        """The configured languages, validated.
-
-        Raises `OcrError` on a name that is not a plain language name: the value
-        reaches both tesseract's `-l` argument and a filename under the tessdata
-        directory, so `ocr.langs` is not free text.
-        """
+        """The configured languages, validated."""
         return parse_langs(self.langs)
 
     def ensure_ready(self) -> Path:
@@ -604,13 +462,7 @@ class TesseractOcr:
         return self._tessdata
 
     def prepared(self, image: Image.Image) -> Image.Image:
-        """The exact image `read` hands to tesseract.
-
-        Public because the picker's preview has to show this and not a
-        re-implementation of it: the preview drew its own grey autocontrast for
-        as long as this was inlined, so a box read with `invert` or a fixed cut
-        was previewed as something OCR never saw.
-        """
+        """The exact image `read` hands to tesseract."""
         return preprocess(
             image,
             upscale=self.upscale,
@@ -628,12 +480,8 @@ class TesseractOcr:
         config = f"--psm {self.psm}"
         kwargs: dict = {"config": config, "output_type": Output.DICT}
         if tessdata:
-            # `-l` separates names with `+`, and only with `+`: passed "kor eng"
-            # tesseract tries to load a single model named "kor eng" and gives up
-            # on every language ("Tesseract couldn't load any languages!"). The
-            # config and `--langs` are hand-edited and `split_langs` accepts
-            # whitespace, so the argument is written back in the one form that
-            # works rather than passed through as it was typed.
+            # `-l` separates names with `+` only: "kor eng" is read as one model
+            # name and tesseract loads no language at all.
             kwargs["lang"] = "+".join(self.lang_list)
             kwargs["config"] = f"{config} --tessdata-dir {tessdata}"
 
@@ -644,7 +492,6 @@ class TesseractOcr:
         elapsed = time.monotonic() - t0
 
         scale = self.upscale or 1.0
-        # Group tokens into their original visual lines.
         buckets: dict[tuple[int, int, int], list[tuple[str, float, tuple[int, int, int, int]]]] = {}
         n = len(data.get("text", []))
         for i in range(n):
@@ -681,11 +528,7 @@ class TesseractOcr:
                 confidence=conf,
                 box=(min(xs), min(ys), max(x2) - min(xs), max(y2) - min(ys)),
             )
-            # A low-confidence line is almost always HUD chrome or background
-            # texture that leaked into the region. Feeding it to the translator
-            # both wastes time and corrupts an otherwise good passage, so drop it
-            # - but keep it, so the picker can show what was thrown away and name
-            # the gate that threw it.
+            # Drop low-confidence HUD chrome and texture, but keep them for the picker.
             if conf < self.min_confidence:
                 rejected.append(line)
                 continue

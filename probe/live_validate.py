@@ -1,20 +1,8 @@
-"""Live end-to-end validation: real portal capture + tesseract + the backend.
-
-Run:  .venv/bin/python probe/live_validate.py [seconds]
-
-Prints every translation the pipeline emits, flags duplicate emissions, and
-reports the OCR edit-distance jitter seen between consecutive reads on the live
-screen (the quantity the settle/dedupe rules have to tolerate).
-
-The backend is whatever the config says, and it is printed before the run, so a
-validation run is never a surprise spend against an API.
-"""
+"""Live end-to-end validation: real portal capture + tesseract + the configured backend."""
 import sys
 import time
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 

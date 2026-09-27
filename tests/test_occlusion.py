@@ -1,27 +1,10 @@
-"""The two guards that keep lintranslator from translating itself.
-
-Both exist because of a measured failure: the frame captured 10 ms after "Watch
-live" was pressed contained the picker's own status line, and the dialogue line
-the picker covered was dropped by the confidence gate underneath it.
-
-* `OcclusionGuard` is the blunt instrument - while one of our windows is on
-  screen, the pipeline does not capture at all.
-* `looks_like_own_ui` is the safety net for the one window that cannot be gated
-  (the panel is the output and has to stay visible).
-
-The false-positive tests matter as much as the positive ones: flagging real
-dialogue would silently cost the user a line, which is the same class of bug in
-the other direction.
-"""
+"""The two guards that keep lintranslator from translating itself."""
 from __future__ import annotations
 
 from lintranslator.occlusion import OcclusionGuard
 from lintranslator.selftext import looks_like_own_ui, noise_reason
 
 
-# --------------------------------------------------------------------------- #
-# OcclusionGuard
-# --------------------------------------------------------------------------- #
 def test_a_guard_with_nothing_mapped_does_not_block():
     guard = OcclusionGuard()
     assert guard.reason() is None
@@ -66,9 +49,6 @@ def test_a_window_without_a_note_still_blocks():
     assert guard.reason()
 
 
-# --------------------------------------------------------------------------- #
-# looks_like_own_ui — the reads that were actually captured
-# --------------------------------------------------------------------------- #
 def test_the_measured_polluted_capture_is_recognised():
     """Verbatim from `data/probe_polluted_first_crop.png` at min_confidence=55."""
     measured = (
@@ -131,13 +111,8 @@ def test_real_dialogue_is_never_flagged():
         assert looks_like_own_ui(line) is False, line
 
 
-# --------------------------------------------------------------------------- #
-# noise_reason — "confident nonsense" is not dialogue
-# --------------------------------------------------------------------------- #
 def test_background_art_that_ocr_is_wrongly_sure_about_is_not_dialogue():
-    """Measured, not imagined: a patterned poster inside the box read as 'e¢ ¢' at
-    62.5% - above the ordinary confidence gate - and was translated until this
-    rail existed."""
+    """A patterned poster read as 'e¢ ¢' at 62.5% confidence, above the OCR gate."""
     assert noise_reason("e¢", 62.5) is not None
 
 
@@ -151,8 +126,7 @@ def test_a_single_letter_is_not_enough_to_translate():
 
 
 def test_short_and_unsure_is_skipped_but_short_and_clean_is_not():
-    """The rule has to leave real short lines alone: "Yes." off a clean game font
-    reads in the nineties, and losing it would be a missing line."""
+    """The rule must leave real short lines alone, or a line goes missing."""
     assert noise_reason("Yes.", 70.0) is not None, "short and unsure should wait"
     assert noise_reason("Yes.", 92.0) is None
     assert noise_reason("Hm?", 88.0) is None
@@ -167,7 +141,7 @@ def test_long_reads_are_never_judged_on_confidence():
 def test_real_dialogue_is_never_flagged_as_noise():
     for text, confidence in (
         ("The city was captured by the enemy.", 96.0),
-        ("If I'm to put it m", 57.4),  # a real mid-reveal read, measured live
+        ("If I'm to put it m", 57.4),  # a real mid-reveal read
         ("Here, however... everyone seems to be mired... in ennui.", 88.0),
         ("The inspector is the proverbial poster child of company-sponsored contractors.", 93.0),
         ("Yes.", 91.0),

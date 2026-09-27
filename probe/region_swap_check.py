@@ -1,21 +1,7 @@
-"""Does the captured area follow the selected box?
-
-The regression this guards: pressing Start again after moving the box wrote
-the new region into the config but left the running pipeline on the old one, and
-only Save applied it - by tearing the panel down and rebuilding it, which reloaded
-the model and let the compositor move the card.
-
-Nothing here captures the screen: `PipelineThread` is replaced with a recorder and
-the panel is never presented, so this is a wiring check, not a live one. The config
-it writes goes to /tmp, never to the real one.
-
-Run:  .venv/bin/python probe/region_swap_check.py
-"""
+"""Check that the captured area follows the selected box after a region swap."""
 import sys
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -91,7 +77,6 @@ def main() -> int:
         print(f"\npress 1: selection={picker.sel}")
         print(f"         worker built with={first.region}")
 
-        # The user drags a different box, which ends the drag.
         picker.sel = (int(0.52 * w), int(0.80 * h), int(0.30 * w), int(0.10 * h))
         picker._on_drag_end(None, 0.0, 0.0)
         print(f"\ndragged:  selection={picker.sel}")

@@ -1,17 +1,4 @@
-"""xdg-desktop-portal clients: Screenshot (per-poll) and ScreenCast (PipeWire).
-
-Why the portal: on Wayland a client cannot read the framebuffer directly. The
-only supported path is xdg-desktop-portal, which KWin backs with
-`zkde_screencast_unstable_v1`. This module speaks D-Bus to it via jeepney
-(pure Python, no GLib dependency).
-
-Screenshot flow (used by default):
-    Screenshot("", {interactive: false}) -> Response(code, {uri}) -> read PNG
-
-ScreenCast flow (optional, for a persistent 60fps stream):
-    CreateSession -> SelectSources -> Start -> {node_id, restore_token}
-    The returned fd is consumed by a GStreamer pipeline in `screencast_worker`.
-"""
+"""xdg-desktop-portal clients: Screenshot (per-poll) and ScreenCast (PipeWire)."""
 from __future__ import annotations
 
 import os
@@ -34,9 +21,6 @@ class PortalError(RuntimeError):
     """A portal method failed, was denied, or timed out."""
 
 
-# --------------------------------------------------------------------------- #
-# Variant helpers
-# --------------------------------------------------------------------------- #
 def unwrap_variant(value):
     """jeepney represents `v` as (signature, value); peel all layers off."""
     while (
@@ -53,23 +37,14 @@ def unwrap_dict(raw: dict | None) -> dict:
     return {k: unwrap_variant(v) for k, v in (raw or {}).items()}
 
 
-# --------------------------------------------------------------------------- #
-# The file behind a Screenshot response
-# --------------------------------------------------------------------------- #
-# A PNG of any screen is a few MB; this is a ceiling on what the app is willing
-# to hold in memory for one, not a realistic size.
+# Ceiling in bytes on what the app holds in memory for one screenshot
 MAX_SCREENSHOT_BYTES = 64 * 1024 * 1024
 
 
 def screenshot_dirs() -> tuple[Path, ...]:
-    """Directories a screenshot portal may legitimately have written into.
-
-    These are what the app is willing to *delete* from. The portal names a file
-    and the app removes it afterwards, which is what stops `~/Pictures` filling
-    up with one PNG per poll - but the name comes over D-Bus, and a peer that
-    owns `org.freedesktop.portal.Desktop` (a name that is free when no portal is
-    running) could otherwise name `~/.ssh/id_rsa` and have the app delete it.
-    """
+    """Directories a screenshot portal may legitimately have written into."""
+    # The delete allow-list: the name comes over D-Bus, so a peer must not be
+    # able to point a delete at a file outside these
     candidates = []
     pictures = os.environ.get("XDG_PICTURES_DIR")
     candidates.append(Path(pictures) if pictures else Path.home() / "Pictures")
@@ -83,12 +58,7 @@ def screenshot_dirs() -> tuple[Path, ...]:
 
 
 def screenshot_path(uri: str) -> Path:
-    """The local path behind a portal `uri`, or a refusal.
-
-    Only `file://` is accepted: a `http://` URI here would have the app fetch a
-    URL of the peer's choosing, and an empty scheme would have it resolve a
-    relative path against the working directory.
-    """
+    """The local path behind a portal `uri`, or a refusal."""
     parsed = urllib.parse.urlsplit(uri)
     if parsed.scheme != "file":
         raise PortalError(
@@ -118,13 +88,10 @@ def read_screenshot(path: Path, limit: int = MAX_SCREENSHOT_BYTES) -> bytes:
 
 
 def remove_screenshot(path: Path) -> bool:
-    """Delete a portal screenshot, but only where a portal may have put one.
-
-    Returns whether anything was removed. The resolved path is what gets tested,
-    so a symlink pointing out of the screenshots directory is never followed into
-    a delete, and never removed either - leaving it is the safe mistake.
-    """
+    """Delete a portal screenshot, but only where a portal may have put one."""
     try:
+        # Test the resolved path, so a symlink out of these dirs is never
+        # followed into a delete
         resolved = path.resolve()
     except OSError:
         return False
@@ -141,9 +108,6 @@ def remove_screenshot(path: Path) -> bool:
     return False
 
 
-# --------------------------------------------------------------------------- #
-# Bus
-# --------------------------------------------------------------------------- #
 class PortalBus:
     """Blocking D-Bus connection to the portal, with request/response plumbing."""
 
@@ -154,9 +118,7 @@ class PortalBus:
         try:
             self.conn = open_dbus_connection(bus="SESSION")
         except KeyError as exc:
-            # jeepney reads DBUS_SESSION_BUS_ADDRESS and lets the KeyError out.
-            # From a TTY, a cron job or a systemd unit without a session that is
-            # simply the state of the world, so it is reported as one.
+            # jeepney reads DBUS_SESSION_BUS_ADDRESS and lets the KeyError out
             raise PortalError(
                 "no session D-Bus (DBUS_SESSION_BUS_ADDRESS is not set), so "
                 "xdg-desktop-portal cannot be reached; screen capture needs a "
@@ -167,7 +129,6 @@ class PortalBus:
         self.unique_name = self.conn.unique_name
         self._addr = DBusAddress
 
-    # -- low level --------------------------------------------------------- #
     def call(self, iface: str, method: str, signature: str, body: tuple, path: str = PORTAL_PATH):
         from jeepney import new_method_call
 
@@ -181,11 +142,7 @@ class PortalBus:
         return unwrap_variant(reply.body[0])
 
     def request_path(self, token: str) -> str:
-        """Predict the Request object path the portal will use for `token`.
-
-        /org/freedesktop/portal/desktop/request/<sender>/<token> where <sender>
-        is our unique name with ':' stripped and '.' replaced by '_'.
-        """
+        """Predict the Request object path the portal will use for `token`."""
         sender = self.unique_name.lstrip(":").replace(".", "_")
         return f"{PORTAL_PATH}/request/{sender}/{token}"
 
@@ -198,16 +155,12 @@ class PortalBus:
         token: str,
         timeout: float = 120.0,
     ) -> tuple[int, dict, str]:
-        """Invoke a portal method returning a Request handle, then await Response.
-
-        The signal filter is installed *before* the call so the reply can never
-        be missed. Returns (response_code, results, request_path); code 0 means
-        success, 1 means the user cancelled, 2 means another error.
-        """
+        """Invoke a portal method returning a Request handle, then await Response."""
         from jeepney import MatchRule
 
         req_path = self.request_path(token)
         rule = MatchRule(type="signal", interface=REQ_IFACE, member="Response", path=req_path)
+        # Install the filter before the call, or the reply can be missed
         with self.conn.filter(rule) as queue:
             reply = self.call(iface, method, signature, body)
             returned = unwrap_variant(reply.body[0])
@@ -222,6 +175,7 @@ class PortalBus:
                 msg = self.conn.recv_until_filtered(queue, timeout=remaining)
                 code = int(msg.body[0])
                 results = unwrap_dict(msg.body[1] if len(msg.body) > 1 else {})
+                # code 0 = success, 1 = the user cancelled, 2 = another error
                 return code, results, req_path
 
     def close(self) -> None:
@@ -237,9 +191,6 @@ class PortalBus:
         self.close()
 
 
-# --------------------------------------------------------------------------- #
-# Screenshot portal
-# --------------------------------------------------------------------------- #
 @dataclass
 class Screenshot:
     path: Path
@@ -248,11 +199,7 @@ class Screenshot:
 
 
 class ScreenshotPortal:
-    """Grabs the full screen through org.freedesktop.portal.Screenshot.
-
-    The portal writes a PNG that we must read before removing. We only ever keep
-    the cropped region in memory, so the temporary file is deleted immediately.
-    """
+    """Grabs the full screen through org.freedesktop.portal.Screenshot."""
 
     def __init__(self, bus: PortalBus | None = None) -> None:
         self._bus = bus
@@ -293,9 +240,8 @@ class ScreenshotPortal:
         from PIL import Image
         from io import BytesIO
 
-        # Decode before deleting anything. The file is the portal's, and a peer
-        # that answers with something that is not an image does not get a delete
-        # out of us just for naming a path.
+        # Decode before deleting: a peer that answers with a non-image gets no
+        # delete out of us for naming a path
         try:
             with Image.open(BytesIO(data)) as im:
                 size = im.size
@@ -304,7 +250,6 @@ class ScreenshotPortal:
                 f"the portal's screenshot at {path} is not a readable image: {exc}"
             ) from exc
 
-        # The portal stores these in ~/Pictures; don't leave litter behind.
         remove_screenshot(path)
         return data, size, elapsed
 
@@ -320,9 +265,6 @@ class ScreenshotPortal:
         self.close()
 
 
-# --------------------------------------------------------------------------- #
-# ScreenCast portal
-# --------------------------------------------------------------------------- #
 @dataclass
 class CastSession:
     session_path: str
@@ -353,13 +295,10 @@ def create_screencast(
     cursor_mode: int = 1,
     timeout: float = 180.0,
 ) -> CastSession:
-    """Run CreateSession -> SelectSources -> Start and return the stream details.
-
-    `types` is a bitmask: 1 = monitor, 2 = window. SelectSources triggers the
-    compositor's picker dialog, so `timeout` must allow for human interaction.
-    """
+    """Run CreateSession -> SelectSources -> Start and return the stream details."""
     token = f"lintranslator_sc_{os.getpid()}"
 
+    # types is a bitmask: 1 = monitor, 2 = window
     code, results, _ = bus.portal_request(
         "org.freedesktop.portal.ScreenCast",
         "CreateSession",

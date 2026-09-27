@@ -1,13 +1,4 @@
-"""The language table: the codes, and what each backend is told for them.
-
-The table is data generated from primary sources (`probe/gen_languages.py`), and
-the failure it exists to prevent is invisible: a code no backend recognises is
-sent as a language name or an ISO code that means nothing, and what comes back is
-fluent text in the wrong language with no error at all. So these tests are about
-the *shape* of the data - every code is one the app offers, every backend gets a
-code it understands, and a language a backend cannot express says so instead of
-guessing.
-"""
+"""The language table: the codes, and what each backend is told for them."""
 from __future__ import annotations
 
 import re
@@ -18,9 +9,7 @@ from lintranslator import languages as L
 
 FLORES_PATTERN = re.compile(r"^[a-z]{2,3}_[A-Z][a-z]{3}$")
 
-# The languages DeepL documents, by FLORES code. Spelled out here rather than
-# derived from the table so that a regeneration which silently drops one fails
-# instead of agreeing with itself.
+# DeepL's documented languages, spelled out so a bad regeneration fails here.
 DEEPL_MUST_HAVE = (
     "arb_Arab", "bul_Cyrl", "ces_Latn", "dan_Latn", "deu_Latn", "ell_Grek",
     "eng_Latn", "spa_Latn", "est_Latn", "fin_Latn", "fra_Latn", "heb_Hebr",
@@ -31,16 +20,8 @@ DEEPL_MUST_HAVE = (
 )
 
 
-# --------------------------------------------------------------------------- #
-# The table itself
-# --------------------------------------------------------------------------- #
 def test_the_table_holds_the_codes_the_app_knows():
-    """202 codes, and the table is the only source of that number.
-
-    The picker offers exactly this list, so a code missing here is a language a
-    config cannot be set to, and a code added here is one every backend is
-    expected to be told about.
-    """
+    """202 codes, and the table is the only source of that number."""
     assert len(L.CODES) == 202
     assert len(L.LANGUAGES) == 202
 
@@ -86,8 +67,7 @@ def test_languages_deepl_cannot_do_have_no_code():
 
 
 def test_the_google_column_is_iso_639_1_plus_the_script_override():
-    """Google takes ISO 639-1, which the table already carries - except for the
-    one pair of languages that share a code and are not the same language."""
+    """Google takes ISO 639-1, except for the one pair of languages that share a code."""
     for code in L.LANGUAGES:
         google = L.google_code(code)
         if google is None:
@@ -96,8 +76,6 @@ def test_the_google_column_is_iso_639_1_plus_the_script_override():
     assert L.google_code("zho_Hans") == "zh"
     assert L.google_code("zho_Hant") == "zh-TW"
     assert L.google_code("ceb_Latn") is None
-    # Serbian has an ISO code and DeepL does not support it: the two columns are
-    # answering different questions, which is why both exist.
     assert L.google_code("srp_Cyrl") == "sr"
     assert L.google_code("yue_Hant") is None
 
@@ -122,9 +100,6 @@ def test_languages_tesseract_cannot_read_have_no_ocr_language():
     assert L.tesseract_lang("sat_Beng") is None
 
 
-# --------------------------------------------------------------------------- #
-# Lookups
-# --------------------------------------------------------------------------- #
 def test_get_is_exact_and_case_sensitive():
     """FLORES codes are case-sensitive; `eng_latn` is not a language."""
     assert L.get("jpn_Jpan") is not None
@@ -145,7 +120,6 @@ def test_language_name_accepts_a_bare_code():
 
 
 def test_language_name_passes_unknown_values_through():
-    """Better a prompt that says "Japanese" than a silent rewrite to English."""
     assert L.language_name("Japanese") == "Japanese"
     assert L.language_name("xx_YY") == "xx_YY"
     assert L.language_name("") == ""
@@ -160,14 +134,10 @@ def test_iso_code_says_none_rather_than_guessing():
 def test_short_code_is_the_label_form():
     assert L.short_code("eng_Latn") == "eng"
     assert L.short_code("zho_Hant") == "zho"
-    # Unknown values are shown as they are, not tidied into something plausible.
     assert L.short_code("Japanese") == "Japanese"
     assert L.short_code("") == ""
 
 
-# --------------------------------------------------------------------------- #
-# Ordering and search (the picker's data)
-# --------------------------------------------------------------------------- #
 def test_ordered_lists_every_language_once_with_the_common_ones_first():
     ordered = L.ordered()
     assert len(ordered) == len(L.CODES)
@@ -193,9 +163,6 @@ def test_search_that_matches_nothing_is_empty():
     assert L.search("klingon") == []
 
 
-# --------------------------------------------------------------------------- #
-# The command line surface
-# --------------------------------------------------------------------------- #
 def test_the_languages_command_prints_the_codes_a_config_needs(capsys):
     """`lintranslator check` sends people here, so it has to name real codes."""
     from lintranslator.cli import main

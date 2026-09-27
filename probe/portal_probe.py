@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 0 spike: probe the xdg-desktop-portal capture paths on this session.
-
-Answers, in order of preference for lintranslator:
-  1. X11 grab on $DISPLAY (XWayland root) - only valid if the game is an X11 window
-  2. org.freedesktop.portal.ScreenCast - persistent PipeWire stream (needs handler + pipewire)
-  3. org.freedesktop.portal.Screenshot - one-shot PNG per call
-
-Run from a real desktop session. Prints a JSON report to stdout.
-"""
+"""Probe the xdg-desktop-portal capture paths on this session."""
 from __future__ import annotations
 
 import json
@@ -21,9 +13,6 @@ PORTAL_PATH = "/org/freedesktop/portal/desktop"
 REQ_IFACE = "org.freedesktop.portal.Request"
 
 
-# --------------------------------------------------------------------------- #
-# D-Bus plumbing (jeepney): a blocking connection with background message pump
-# --------------------------------------------------------------------------- #
 class AlreadySet:
     pass
 
@@ -53,14 +42,8 @@ class Bus:
         except Exception:
             pass
 
-    # -- portal request helpers -------------------------------------------- #
     def _request_path(self, token: str) -> str:
-        """The portal's request object path for a handle_token we chose.
-
-        Path is /org/freedesktop/portal/desktop/request/<sender>/<token> where
-        <sender> is our unique bus name with the leading ':' stripped and '.'
-        replaced by '_'.
-        """
+        """The portal's request object path for a handle_token we chose."""
         sender = self.unique_name.lstrip(":").replace(".", "_")
         return f"{PORTAL_PATH}/request/{sender}/{token}"
 
@@ -73,18 +56,14 @@ class Bus:
         token: str,
         timeout: float = 120.0,
     ):
-        """Call a portal method that returns a Request handle, then await Response.
-
-        Subscribes to the Response signal *before* issuing the call so there is
-        no window in which the portal's reply could be missed.
-        Returns (response_code, results_dict, request_path).
-        """
+        """Call a portal method that returns a Request handle, then await Response."""
         from jeepney import MatchRule
 
         req_path = self._request_path(token)
         rule = MatchRule(
             type="signal", interface=REQ_IFACE, member="Response", path=req_path
         )
+        # subscribe to the Response signal before the call so the reply cannot be missed
         with self.conn.filter(rule) as queue:
             reply = self.call(iface, method, signature, body)
             returned = _unwrap_variant(reply.body[0])
@@ -125,9 +104,6 @@ def portal_version(bus: Bus, iface: str):
         return f"error: {exc}"
 
 
-# --------------------------------------------------------------------------- #
-# Path 1: X11 / XWayland grab
-# --------------------------------------------------------------------------- #
 def probe_x11() -> dict:
     from PIL import Image
 
@@ -161,16 +137,13 @@ def probe_x11() -> dict:
         result["sample_mean"] = round(
             sum(img.convert("L").getdata()) / (raw.width * raw.height), 1
         )
-        # A real XWayland root has content; a black root means no composited desktop.
+        # a black root means no composited desktop
         result["has_content"] = result["sample_mean"] > 3
     except Exception as exc:  # noqa: BLE001
         result["reason"] = f"{type(exc).__name__}: {exc}"
     return result
 
 
-# --------------------------------------------------------------------------- #
-# Path 2: ScreenCast portal -> PipeWire stream
-# --------------------------------------------------------------------------- #
 def probe_screencast(bus: Bus) -> dict:
     out: dict = {"available": False}
     try:
@@ -190,7 +163,6 @@ def probe_screencast(bus: Bus) -> dict:
     token = f"lintranslator{os.getpid()}"
     session_path = f"{PORTAL_PATH}/session/{os.getpid()}/{token}"
 
-    # --- CreateSession ---
     try:
         code, results, req = bus.portal_request(
             "org.freedesktop.portal.ScreenCast",
@@ -215,7 +187,7 @@ def probe_screencast(bus: Bus) -> dict:
         out["reason"] = f"CreateSession error: {type(exc).__name__}: {exc}"
         return out
 
-    # --- SelectSources (KDE shows its picker dialog here) ---
+    # KDE shows its picker dialog here
     try:
         code, results, req = bus.portal_request(
             "org.freedesktop.portal.ScreenCast",
@@ -241,7 +213,6 @@ def probe_screencast(bus: Bus) -> dict:
         out["reason"] = f"SelectSources error: {type(exc).__name__}: {exc}"
         return out
 
-    # --- Start: yields PipeWire node id(s) to feed a stream consumer ---
     try:
         code, results, req = bus.portal_request(
             "org.freedesktop.portal.ScreenCast",

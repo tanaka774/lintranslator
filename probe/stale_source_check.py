@@ -1,18 +1,4 @@
-"""Does the panel pair a new translation with the *previous* line's original?
-
-The panel prints `event.display_source or event.source` (panel.py `_show_event`),
-and the pipeline fills `display_source` from `self._last_display` - the display
-text of the line emitted *before* - on the release path that actually fires in
-practice, `emit:tick-timeout`, which never reads the screen itself.
-
-This drives the real Pipeline with scripted multi-line OCR reads (so
-`display_text`, which keeps the game's line breaks, differs from `text`, which is
-joined for translation), a typewriter reveal and blinking-caret jitter, plus an
-optional Re-read - then reports what the panel's source label would say beside
-each new translation.
-
-Run:  .venv/bin/python probe/stale_source_check.py
-"""
+"""Does the panel pair a new translation with the *previous* line's original?"""
 from __future__ import annotations
 
 import sys
@@ -29,8 +15,8 @@ from lintranslator.ocr import OcrLine, OcrResult  # noqa: E402
 from lintranslator.pipeline import Pipeline  # noqa: E402
 from lintranslator.translate import Translation  # noqa: E402
 
-# Limbus-shaped lines, each wrapped by the game across two rows. `rows` is what
-# the OCR recovers: `display_text` keeps the break, `text` does not.
+# game-wrapped lines: each tuple is the two rows the OCR recovers; `display_text`
+# keeps the break, `text` does not
 LINES = [
     ("The committee has resolved that this entry warrants retention as a standing record.",
      "The material below is the file concerning today's submission."),

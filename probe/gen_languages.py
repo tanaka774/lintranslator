@@ -1,31 +1,4 @@
-"""Regenerate `lintranslator/languages.py` from primary sources.
-
-The language table is data, not logic, and getting one code wrong is invisible:
-no backend rejects a language it does not know, it just answers in the wrong one.
-So the columns are built from sources that can be checked rather than typed by
-hand:
-
-  * the FLORES-200 code list, from the published NLLB language list (name -> code)
-  * ISO 639-1 codes, from the system iso-codes data (`alpha_3` -> `alpha_2`)
-  * DeepL's documented language set
-  * tesseract's `tessdata_fast` file list, so an OCR suggestion can never name a
-    file that does not exist
-
-Membership is *frozen* - see `frozen_codes()`. The table is this app's own
-vocabulary rather than any one model's: a model a user serves may know 33
-languages or 200, so this script refreshes the per-backend columns and the
-display names, and only *warns* when a source disagrees about which codes exist.
-
-Run it when a source changes, then read the diff:
-
-    .venv/bin/python probe/gen_languages.py            # needs network
-    .venv/bin/python -m pytest tests/test_languages.py
-
-Everything it cannot establish confidently is left as `None` rather than guessed:
-`None` becomes "this backend has no code for that language", which is a message
-a user can act on, whereas a guessed code is a 400 from the API or a silent
-mistranslation.
-"""
+"""Regenerate `lintranslator/languages.py` from primary sources."""
 from __future__ import annotations
 
 import json
@@ -44,20 +17,13 @@ FLORES_LIST_URL = (
 TESSDATA_API = "https://api.github.com/repos/tesseract-ocr/tessdata_fast/contents/"
 ISO_CODES_639_3 = Path("/usr/share/iso-codes/json/iso_639-3.json")
 
-# Names the published list cannot supply. It disagrees with the frozen membership
-# in both directions - it carries three codes that are not in the table
-# (`arb_Latn`, `min_Arab`, `sat_Olck`) and omits two that are (`sat_Beng`,
-# `zul_Latn`, the last only because of a quoting bug in that file). Membership is
-# frozen, so a disagreement is a warning to read rather than a change to apply;
-# only the display name comes from the list.
+# names the published list cannot supply
 EXTRA_NAMES = {
     "sat_Beng": "Santali (Bengali script)",
 }
 
 # DeepL's supported languages, from
 # https://developers.deepl.com/docs/getting-started/supported-languages
-# ISO 639-1 -> DeepL's code. Kept as ISO on the left because that is how every
-# other source in this file is keyed.
 DEEPL_LANGUAGES = {
     "ar": "AR", "bg": "BG", "cs": "CS", "da": "DA", "de": "DE", "el": "EL",
     "en": "EN", "es": "ES", "et": "ET", "fi": "FI", "fr": "FR", "he": "HE",
@@ -67,15 +33,9 @@ DEEPL_LANGUAGES = {
     "uk": "UK", "vi": "VI", "zh": "ZH",
 }
 
-# FLORES-200 rows whose base code is a macrolanguage, a standardised variety or
-# otherwise not the ISO 639-3 key that carries the ISO 639-1 code. Left side is
-# the FLORES base, right side is the ISO 639-3 key to look up. Every one of these
-# is a deliberate decision; anything not listed is looked up directly.
+# FLORES base -> ISO 639-3 key to look up, where the two differ
 ISO_ALIASES = {
     "arb": "ara",   # Modern Standard Arabic -> Arabic
-    # The Arabic varieties in the table. None has an ISO 639-1 code of its
-    # own, and no API offers "Egyptian Arabic" as a target, so the choice is the
-    # macrolanguage or a code the API rejects outright.
     "acm": "ara", "acq": "ara", "aeb": "ara", "ajp": "ara", "apc": "ara",
     "ars": "ara", "ary": "ara", "arz": "ara",
     "azb": "aze",   # South Azerbaijani -> Azerbaijani (macrolanguage)
@@ -109,10 +69,8 @@ ISO_ALIASES = {
     "mai": "hin",   # Maithili: same
 }
 
-# Tesseract's file names diverge from ISO 639-3 for the same reasons, plus its
-# own conventions (`fil` for Tagalog, `nor` for both Norwegian written forms,
-# `chi_sim`/`chi_tra` for the two Chinese scripts). Keyed by FLORES code because
-# the two Chinese scripts are separate FLORES languages.
+# tesseract file names, keyed by FLORES code - the two Chinese scripts are
+# separate FLORES languages
 TESSERACT_BY_FLORES = {
     "zho_Hans": "chi_sim",
     "zho_Hant": "chi_tra",
@@ -143,11 +101,8 @@ def flores_names() -> dict[str, str]:
     """code -> English name, from the published FLORES-200 list."""
     with urllib.request.urlopen(FLORES_LIST_URL, timeout=60) as resp:  # noqa: S310
         text = resp.read().decode()
-    # The list is one triple-quoted blob in a Python file, so take what is
-    # between the first and last `'''` - including it would put
-    # `codes_as_string = '''` into the name of the very first language, and
-    # excluding it drops the last row, which shares its line with the closing
-    # quotes.
+    # the list is one triple-quoted blob - slice between the first and last
+    # `'''` quotes, excluding the quotes, so both end rows stay whole
     start, end = text.find("'''"), text.rfind("'''")
     if start == -1 or end <= start:
         raise SystemExit(f"could not find the language list in {FLORES_LIST_URL}")
@@ -162,13 +117,7 @@ def flores_names() -> dict[str, str]:
 
 
 def frozen_codes() -> set[str]:
-    """The membership the table already has.
-
-    The table is this app's own vocabulary, not a model's, so the set is taken
-    from the table itself - the thing this script edits - rather than derived from
-    anything that can change underneath it. A disagreement with a published list
-    is then a warning to read rather than an edit to apply.
-    """
+    """The membership the table already has."""
     from lintranslator.languages import CODES
 
     return set(CODES)

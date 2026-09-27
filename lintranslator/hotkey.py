@@ -1,19 +1,4 @@
-"""A real global hotkey, granted by the compositor.
-
-Wayland gives an application no way to read global keys, so a shortcut that works
-while the game has focus has to come from the compositor. `org.freedesktop.portal.GlobalShortcuts`
-does exactly that, and KDE implements it: the app asks for a shortcut, the
-compositor shows its own binding dialog once, and from then on it sends
-`Activated` when the key is pressed. Nothing to configure by hand.
-
-Where the portal is missing, or the user declines the dialog, the fallback is the
-control socket: bind `lintranslator reread` as a KDE custom shortcut (System Settings ->
-Shortcuts -> Custom), which is also what makes the feature scriptable.
-
-Deliberately GUI-only and best-effort: every failure is reported through
-`on_status`, never raised into the app. A translator that will not start because a
-hotkey could not be registered would be a worse trade than no hotkey.
-"""
+"""A real global hotkey, granted by the compositor."""
 from __future__ import annotations
 
 import os
@@ -25,9 +10,6 @@ SHORTCUTS_IFACE = "org.freedesktop.portal.GlobalShortcuts"
 REQUEST_IFACE = "org.freedesktop.portal.Request"
 SESSION_IFACE = "org.freedesktop.portal.Session"
 
-# How long to wait for the compositor's binding dialog before giving up. The user
-# may have to pick a key combination, so this is generous - but a dialog left
-# unanswered must not leave the caller waiting forever.
 BIND_TIMEOUT_SECONDS = 120.0
 
 REREAD_ID = "reread"
@@ -57,7 +39,6 @@ class GlobalHotkey:
         self._timeout_id = 0
         self._bound = False
 
-    # -- reporting --------------------------------------------------------- #
     def _status(self, ok: bool, detail: str) -> None:
         if self.on_status is not None:
             try:
@@ -65,7 +46,6 @@ class GlobalHotkey:
             except Exception:  # noqa: BLE001 - a UI callback must not break binding
                 pass
 
-    # -- binding ----------------------------------------------------------- #
     def bind(
         self,
         shortcuts: list[tuple[str, str, str]] | None = None,
@@ -101,8 +81,6 @@ class GlobalHotkey:
         self._timeout_id = GLib.timeout_add_seconds(
             int(BIND_TIMEOUT_SECONDS), self._on_timeout
         )
-        # The user may be looking at the compositor's dialog; nothing else here
-        # blocks on it.
         self._call(
             "CreateSession",
             GLib.Variant(
@@ -144,7 +122,6 @@ class GlobalHotkey:
         )
         self._call("BindShortcuts", GLib.Variant("(oa(sa{sv})sa{sv})", body), self._on_call_failed)
 
-    # -- portal plumbing --------------------------------------------------- #
     def _request_path(self, token: str) -> str:
         unique = (self._conn.get_unique_name() or ":0").lstrip(":").replace(".", "_")
         return f"{PORTAL_PATH}/request/{unique}/{token}"
@@ -185,8 +162,6 @@ class GlobalHotkey:
             on_failed(f"{method}: {type(exc).__name__}: {exc}")
 
     def _on_call_failed(self, detail: str) -> None:
-        # The compositor's own words are exact but unhelpful; the app-id refusal
-        # is by far the most common one and has a specific fix.
         if "app id is required" in detail:
             detail = "this launch has no application id (start lintranslator from the menu)"
         self._status(False, detail)
@@ -241,18 +216,12 @@ class GlobalHotkey:
                 pass
             self._timeout_id = 0
 
-    # -- lifecycle --------------------------------------------------------- #
     @property
     def bound(self) -> bool:
         return self._bound
 
     def close(self) -> None:
-        """Drop the session and the signal subscriptions.
-
-        Safe to call when nothing was ever bound, and on a machine with no
-        PyGObject at all: there is then no timeout to cancel and no subscription
-        to drop, and the import is the only thing that could raise.
-        """
+        """Drop the session and the signal subscriptions."""
         self._clear_timeout()
         if self._session is not None and self._conn is not None:
             try:

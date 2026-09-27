@@ -1,19 +1,9 @@
-"""Trace the pipeline's own emit decisions, including the dedupe comparison.
-
-Run:  .venv/bin/python probe/live_decisions.py [seconds]
-
-Subclasses Pipeline only to observe; the decision logic is untouched. For every
-emission it prints why the previous line did not dedupe against it - which is
-how a duplicate translation gets attributed to a specific comparison rather than
-guessed at.
-"""
+"""Trace the pipeline's own emit decisions, including the dedupe comparison."""
 import sys
 import time
 from difflib import SequenceMatcher
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 

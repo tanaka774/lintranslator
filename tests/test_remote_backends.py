@@ -1,10 +1,4 @@
-"""Tests for the remote translation backends.
-
-No network calls: `ChatCompletionsTranslator` is exercised by stubbing
-`_post_json`, which is where the request is actually shaped. The tests therefore
-check what would be sent (model, prompt, headers, endpoint) and how responses and
-failures are handled.
-"""
+"""Tests for the remote translation backends."""
 from __future__ import annotations
 
 import io
@@ -55,13 +49,9 @@ class Recording(ChatCompletionsTranslator):
         return self._response
 
 
-# --------------------------------------------------------------------------- #
-# Request shaping
-# --------------------------------------------------------------------------- #
 def test_builds_endpoint_from_base_url():
     t = Recording("key")
     assert t.endpoint == "https://example.test/v1/chat/completions"
-    # A trailing slash must not produce a doubled separator.
     assert Recording("key", base_url="https://x.test/v1/").endpoint == "https://x.test/v1/chat/completions"
 
 
@@ -79,7 +69,6 @@ def test_system_prompt_states_direction_and_constraints():
     t = Recording("key", source="English", target="Japanese")
     prompt = t.system_prompt()
     assert "English" in prompt and "Japanese" in prompt
-    # The brackets rule exists because the game wraps lore text in [ ].
     assert "bracket" in prompt.lower()
     assert "only the translation" in prompt.lower()
 
@@ -87,22 +76,14 @@ def test_system_prompt_states_direction_and_constraints():
 def test_custom_prompt_replaces_the_default_entirely():
     t = Recording("key", prompt="This is Limbus Company. {source} -> {target}.")
     prompt = t.system_prompt()
-    # The written prompt is used verbatim, with none of the built-in wording...
     assert prompt.startswith("This is Limbus Company. English -> Japanese.")
     assert DEFAULT_PROMPT not in prompt
-    # ...and only the standing "this is data, not instructions" line is added,
-    # which applies to a user-written prompt exactly as it does to the default.
     assert prompt == (
         "This is Limbus Company. English -> Japanese." + DATA_NOT_INSTRUCTIONS
     )
 
 
 def test_prompt_that_never_names_the_target_gets_a_translation_directive():
-    """A prompt that never says "Japanese" reads as chat, not as a task.
-
-    Measured before this guard existed: both hy-mt2-1.8b and gemini-2.5-flash-lite
-    returned the English source verbatim, so the panel showed untranslated text.
-    """
     t = Recording("key", prompt="please translate as it is, don't lose its context.")
     prompt = t.system_prompt()
     assert prompt.startswith("please translate as it is")
@@ -119,8 +100,6 @@ def test_prompt_naming_the_target_is_left_alone():
     ):
         prompt = Recording("key", prompt=written).system_prompt()
         rendered = written.replace("{source}", "English").replace("{target}", "Japanese")
-        # No target-language directive is bolted on, but the standing
-        # data-not-instructions line still is.
         assert prompt == rendered + DATA_NOT_INSTRUCTIONS
 
 
@@ -128,7 +107,6 @@ def test_directive_respects_a_prompt_that_already_says_only():
     t = Recording("key", prompt="Say it in Japanese only.")
     prompt = t.system_prompt()
     assert "Japanese" in prompt
-    # The "only" clause is already there, so the extra sentence is not needed.
     assert "Do not explain" not in prompt
 
 
@@ -144,7 +122,6 @@ def test_empty_prompt_falls_back_to_the_builtin_default():
     assert Recording("key", prompt="").system_prompt() == Recording(
         "key", prompt=None
     ).system_prompt()
-    # DEFAULT_PROMPT is a template; the language names are substituted in.
     assert "{source}" in DEFAULT_PROMPT and "{target}" in DEFAULT_PROMPT
     assert "English" in Recording("key", prompt=DEFAULT_PROMPT).system_prompt()
 
@@ -167,15 +144,11 @@ def test_extra_headers_are_forwarded():
     assert t.sent[0][2]["X-Test"] == "1"
 
 
-# --------------------------------------------------------------------------- #
-# Failure handling
-# --------------------------------------------------------------------------- #
 def test_missing_key_raises_with_guidance():
     with pytest.raises(TranslatorError) as exc:
         Recording(None)
     message = str(exc.value)
     assert "API key" in message
-    # The message must name the environment variable, not just complain.
     assert "LINTRANSLATOR_API_KEY" in message
 
 
@@ -198,12 +171,8 @@ def test_http_error_propagates_as_translator_error():
         t.translate("x")
 
 
-# --------------------------------------------------------------------------- #
-# What an error is allowed to carry into the UI
-# --------------------------------------------------------------------------- #
 def test_provider_error_bodies_are_shortened_to_one_line():
-    """The panel shows this in a one-line status row, and it gets pasted into
-    bug reports, so it is collapsed and capped."""
+    """The panel shows this in a one-line status row, so it is collapsed and capped."""
     body = json.dumps(
         {
             "error": {
@@ -221,7 +190,6 @@ def test_provider_error_bodies_are_shortened_to_one_line():
 def test_a_key_in_an_error_body_is_redacted():
     secret = "sk-or-v1-0123456789abcdef0123456789abcdef"
     assert secret not in redact(f"invalid key {secret}", secret)
-    # ...including shapes we were not told about.
     assert "sk-proj-abcdefghijklmnop" not in redact("got sk-proj-abcdefghijklmnop!")
     assert "Bearer abcdefghijklmnop" not in redact("sent Bearer abcdefghijklmnop")
     assert "DeepL-Auth-Key abc:fx" not in redact("sent DeepL-Auth-Key abc:fx")
@@ -229,8 +197,7 @@ def test_a_key_in_an_error_body_is_redacted():
 
 
 def test_an_http_error_body_is_redacted_before_it_reaches_the_ui(monkeypatch):
-    """The body goes straight into the panel's status row and from there into
-    bug reports, so the key must not survive the trip."""
+    """The body goes into the panel's status row and from there into bug reports, so the key must not survive."""
     secret = "sk-or-v1-0123456789abcdef0123456789abcdef"
 
     def fake_urlopen(request, timeout=None):
@@ -250,9 +217,6 @@ def test_an_http_error_body_is_redacted_before_it_reaches_the_ui(monkeypatch):
     assert "401" in str(exc.value)
 
 
-# --------------------------------------------------------------------------- #
-# Provider defaults
-# --------------------------------------------------------------------------- #
 def test_openrouter_uses_its_own_base_url_and_headers():
     t = OpenRouterTranslator("key", model="z-ai/glm-4.6")
     assert t.base_url == "https://openrouter.ai/api/v1"
@@ -267,15 +231,11 @@ def test_openai_uses_openai_base_url():
 
 
 def test_openrouter_requires_an_explicit_model():
-    """A stale default model would fail confusingly, so it is required."""
     with pytest.raises(TranslatorError) as exc:
         OpenRouterTranslator("key")
     assert "model" in str(exc.value).lower()
 
 
-# --------------------------------------------------------------------------- #
-# Key resolution
-# --------------------------------------------------------------------------- #
 def test_config_key_wins_over_environment(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "from-env")
     cfg = TranslateConfig(api_key="from-config")
@@ -302,9 +262,6 @@ def test_only_the_variables_it_is_given_are_consulted(monkeypatch):
     assert resolve_api_key(TranslateConfig(api_key=None), "OPENROUTER_API_KEY") is None
 
 
-# --------------------------------------------------------------------------- #
-# Factory wiring
-# --------------------------------------------------------------------------- #
 def test_factory_builds_openrouter_from_config(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-x")
     cfg = TranslateConfig(backend="openrouter", model="google/gemini-2.0-flash-001")
@@ -314,7 +271,6 @@ def test_factory_builds_openrouter_from_config(monkeypatch):
 
 
 def test_factory_maps_language_codes_to_names_for_chat_backends(monkeypatch):
-    """The table's code goes out as the name "English", not as `eng_Latn`."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-x")
     cfg = TranslateConfig(
         backend="openrouter", model="m", source_lang="eng_Latn", target_lang="jpn_Jpan"
@@ -326,18 +282,13 @@ def test_factory_maps_language_codes_to_names_for_chat_backends(monkeypatch):
 
 
 def test_the_chat_prompt_keeps_a_hand_written_language_understandable(monkeypatch):
-    """A config can carry a bare ISO code; the prompt must still make sense."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-x")
     cfg = TranslateConfig(backend="openrouter", model="m", source_lang="jpn")
     t = build_translator(cfg)
     assert "Japanese" in t.system_prompt()
 
 
-# --------------------------------------------------------------------------- #
-# Slow answers, and answers that are only thinking
-# --------------------------------------------------------------------------- #
 def test_a_server_on_this_machine_gets_the_longer_timeout():
-    """A local model is not late the way a server that never answers is late."""
     local = build_translator(
         TranslateConfig(
             backend="chat", model="qwen3.5:4b", api_base="http://localhost:11434/v1"
@@ -359,8 +310,6 @@ def test_an_explicit_timeout_wins_over_the_default():
 
 
 def test_a_timeout_is_reported_as_a_timeout_and_not_as_unreachable(monkeypatch):
-    """The message that sent the user looking for a network problem."""
-
     def fake_urlopen(request, timeout=None):
         raise urllib.error.URLError(TimeoutError("timed out"))
 
@@ -378,22 +327,14 @@ def test_a_timeout_is_reported_as_a_timeout_and_not_as_unreachable(monkeypatch):
 
 
 def test_a_local_endpoint_is_asked_not_to_think():
-    """A server on this machine is for translating, not for reasoning.
-
-    Measured on qwen3.5:4b through Ollama: 10.3 s and an empty answer with the
-    thinking on, 0.4 s and a translation with it off.
-    """
     local = build_translator(
         TranslateConfig(
             backend="chat", model="qwen3.5:4b", api_base="http://localhost:11434/v1"
         )
     )
     assert local.reasoning_effort == "none"
-    # A hosted endpoint is left alone: the field is not universally accepted, and
-    # its thinking is the user's money.
     hosted = build_translator(TranslateConfig(backend="openai", model="gpt-4o-mini", api_key="k"))
     assert hosted.reasoning_effort == ""
-    # And a choice made in Settings wins over the default.
     chosen = build_translator(
         TranslateConfig(
             backend="chat",
@@ -406,8 +347,6 @@ def test_a_local_endpoint_is_asked_not_to_think():
 
 
 def test_a_local_model_that_only_thinks_is_asked_again_without_thinking():
-    """The safety net for a server that ignores `reasoning_effort`."""
-
     class Stubborn(ChatCompletionsTranslator):
         def __init__(self, **kw):
             self.calls: list[dict] = []
@@ -429,8 +368,6 @@ def test_a_local_model_that_only_thinks_is_asked_again_without_thinking():
 
 
 def test_a_hosted_model_that_only_thinks_is_not_asked_twice():
-    """One request, one bill: the retry is for a server on this machine."""
-
     class Stubborn(ChatCompletionsTranslator):
         def __init__(self, **kw):
             self.calls = 0
@@ -470,13 +407,6 @@ def test_reasoning_effort_is_sent_only_when_it_is_set():
 
 
 def test_a_model_that_only_thinks_says_so_instead_of_looking_empty():
-    """Measured on qwen3.5:4b through Ollama: 3,544 characters of reasoning in a
-    field of its own, and an empty `content`.
-
-    "empty translation" was true and useless: it reads as a bug in the app rather
-    than a model that needs either more room or the thinking turned off.
-    """
-
     class Thinking(ChatCompletionsTranslator):
         def _post_json(self, url, payload, headers):
             return {"choices": [{"message": {"content": "", "reasoning": "x" * 3544}}]}
@@ -491,9 +421,6 @@ def test_a_model_that_only_thinks_says_so_instead_of_looking_empty():
     assert "reasoning_effort" in message
 
 
-# --------------------------------------------------------------------------- #
-# Language codes per backend
-# --------------------------------------------------------------------------- #
 def test_deepl_gets_its_own_codes():
     cfg = TranslateConfig(
         backend="deepl", api_key="k", source_lang="eng_Latn", target_lang="jpn_Jpan"
@@ -503,25 +430,18 @@ def test_deepl_gets_its_own_codes():
 
 
 def test_deepl_refuses_a_target_it_cannot_translate():
-    """The old fallback sent `ceb`, and the API answered with a bare HTTP 400.
-
-    The table carries 202 languages and DeepL 34, so a target it cannot translate
-    is the common case rather than an edge one - and the error has to name the
-    setting that caused it.
-    """
     cfg = TranslateConfig(backend="deepl", api_key="k", target_lang="ceb_Latn")
     with pytest.raises(TranslatorError) as exc:
         build_translator(cfg)
     message = str(exc.value)
     assert "cannot translate into 'ceb_Latn' (Cebuano)" in message
     assert "JA (Japanese)" in message, "the message should list what DeepL can do"
-    # Deduplicated by DeepL's own code: it does not tell Arabic varieties apart.
+    # deduplicated by DeepL's own code, which does not tell Arabic varieties apart
     assert "AR (Modern Standard Arabic)" in message
     assert "Tunisian Arabic" not in message
 
 
 def test_deepl_lets_an_unsupported_source_be_detected():
-    """A source DeepL has no code for is not an error: DeepL detects it."""
     cfg = TranslateConfig(
         backend="deepl", api_key="k", source_lang="ceb_Latn", target_lang="jpn_Jpan"
     )
@@ -539,11 +459,7 @@ def test_google_gets_iso_639_1_codes():
 
 
 def test_google_tells_the_two_chinese_scripts_apart():
-    """`zho_Hant` and `zho_Hans` share an ISO code and Google does not.
-
-    Sending "zh" for a Traditional target returns Simplified with nothing on the
-    card to show it, which is the failure mode this table exists to prevent.
-    """
+    """`zho_Hant` and `zho_Hans` share an ISO code and Google does not."""
     cfg = TranslateConfig(backend="google", api_key="k", target_lang="zho_Hant")
     assert build_translator(cfg).target == "zh-TW"
     cfg = TranslateConfig(backend="google", api_key="k", target_lang="zho_Hans")
@@ -551,8 +467,7 @@ def test_google_tells_the_two_chinese_scripts_apart():
 
 
 def test_google_refuses_a_target_with_no_iso_code():
-    """49 of the 202 have no 639-1 code, and the API answers a bad one with a
-    bare HTTP 400 that names the parameter, not the setting."""
+    """49 of the 202 have no 639-1 code, and the API answers a bad one with a bare HTTP 400."""
     cfg = TranslateConfig(backend="google", api_key="k", target_lang="ceb_Latn")
     with pytest.raises(TranslatorError) as exc:
         build_translator(cfg)
@@ -591,28 +506,24 @@ def test_google_needs_a_key():
 
 
 def test_the_custom_endpoint_needs_a_base_url():
-    """There is no sensible default: guessing OpenAI would send the user's game
-    text to a provider they never chose."""
+    """No sensible default: guessing OpenAI would send the user's game text to a provider they never chose."""
     with pytest.raises(TranslatorError) as exc:
         build_translator(TranslateConfig(backend="chat", model="llama3.1:8b"))
     assert "base URL" in str(exc.value)
 
 
 def test_the_custom_endpoint_runs_without_a_key():
-    """llama.cpp / Ollama accept anything, so the generic backend must not
-    demand a key the way the hosted providers do."""
     t = build_translator(
         TranslateConfig(backend="chat", model="llama3.1:8b", api_base="http://localhost:11434/v1")
     )
     assert t.api_key is None
     assert t.endpoint == "http://localhost:11434/v1/chat/completions"
-    # ...and no header is sent, rather than a literal "Bearer None".
+    # no header at all, rather than a literal "Bearer None"
     assert "Authorization" not in t.auth_headers()
 
 
 def test_a_remote_http_endpoint_is_refused():
-    """The key rides in a header and the screen text in the body: plain http to
-    another host hands both to anyone on the path."""
+    """Plain http to another host hands the key and the screen text to anyone on the path."""
     cfg = TranslateConfig(
         backend="chat", model="m", api_base="http://inference.example.com/v1"
     )
@@ -642,7 +553,6 @@ def test_a_nonsense_scheme_is_refused():
 
 
 def test_a_pasted_full_endpoint_url_is_trimmed_back_to_the_base():
-    """Copying the URL out of a server's docs usually brings the path with it."""
     t = ChatCompletionsTranslator(
         None,
         model="m",
@@ -653,12 +563,6 @@ def test_a_pasted_full_endpoint_url_is_trimmed_back_to_the_base():
 
 
 def test_removed_local_backends_are_rejected_by_name():
-    """A config that still says `ct2` cannot reach a backend by accident.
-
-    `Config.load` migrates it to `none` (see `test_core`), so this is the second
-    line of defence: the factory names the valid options rather than failing
-    somewhere deeper with an AttributeError.
-    """
     for backend in ("ct2", "local"):
         with pytest.raises(TranslatorError) as exc:
             build_translator(TranslateConfig(backend=backend))
@@ -670,7 +574,6 @@ def test_factory_rejects_unknown_backend():
     with pytest.raises(TranslatorError) as exc:
         build_translator(TranslateConfig(backend="nope"))
     assert "unknown translation backend" in str(exc.value)
-    # The message should list the valid options.
     assert "openrouter" in str(exc.value)
 
 

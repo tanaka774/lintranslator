@@ -1,20 +1,4 @@
-"""The polling loop that wires capture -> detect -> OCR -> translate -> emit.
-
-Design notes:
-
-* The poll rate and the work rate are decoupled. `fps` controls how often we
-  sample the screen; OCR only runs when the pixels actually changed, and
-  translation only runs when the OCR text has settled. At 2 fps this loop is
-  near-idle while dialogue is static.
-* The loop refuses to read the screen while one of lintranslator's own windows is on it
-  (`gate`). Capturing then translates our own UI and loses the line underneath it;
-  see `lintranslator.occlusion` for the measurement.
-* The area being read can be changed while the loop runs (`request_region`), and
-  the change is applied on the worker thread so the region, the change detector
-  and the settler can never disagree about which area they are looking at.
-* Every stage is individually measurable, and `Pipeline.stats()` reports the
-  breakdown so a slow stage is obvious rather than guessed at.
-"""
+"""The polling loop that wires capture -> detect -> OCR -> translate -> emit."""
 from __future__ import annotations
 
 import time
@@ -50,12 +34,11 @@ class Event:
     target: str
     confidence: float
     translate_elapsed: float
-    # Frame captured -> translation ready: how stale the translation is. Includes
-    # the settle window, so it is the number a user actually experiences.
+    # Seconds from frame capture to translation ready, including the settle window.
     total_elapsed: float
     cached: bool
     backend: str
-    # Cost of the grab this line came from (portal + decode + crop).
+    # Seconds the grab behind this line cost (portal + decode + crop).
     capture_elapsed: float = 0.0
     # Source with the game's original line breaks, for display in the panel.
     display_source: str = ""
@@ -138,15 +121,12 @@ class Pipeline:
         self.config = config
         self.on_event = on_event
         self.on_ocr = on_ocr
-        # Why capturing must wait right now, or None. Supplied by the GUI, which
-        # knows which of its own windows are on screen.
+        # Why capturing must wait right now, or None; supplied by the GUI.
         self.gate = gate
         self.on_gate = on_gate
-        # Called when a read is dropped for being lintranslator's own text, so the UI can
-        # say so instead of silently showing nothing.
+        # Called when a read is dropped for being lintranslator's own text.
         self.on_self_read = on_self_read
-        # Called with a short message the user asked to be told about (a re-read
-        # that found nothing, a re-read queued while paused).
+        # Called with a short message the user asked to be told about.
         self.on_note = on_note
 
         self.grabber = ScreenGrabber(config.capture.region)
@@ -160,8 +140,6 @@ class Pipeline:
             tessdata_dir=config.ocr.tessdata_dir,
             min_confidence=config.ocr.min_confidence,
             allow_unverified_tessdata=config.ocr.allow_unverified_tessdata,
-            # A first run fetches language data during warmup; the card has to
-            # say so rather than appear to hang on "starting…".
             on_progress=self._note,
         )
         self.detector = ChangeDetector(
@@ -190,10 +168,8 @@ class Pipeline:
         self._last_settled_text: str | None = None
         self._last_display: str | None = None
         self._last_confidence: float = 0.0
-        # What the last translation said, so the panel reading itself back can be
-        # recognised instead of translated again.
+        # The last translation's text, so the panel reading itself back is recognised.
         self._last_target_text: str = ""
-        # When the frame behind the held text was captured, and what it cost.
         self._frame_at: float = 0.0
         self._frame_capture_elapsed: float = 0.0
         # Set by `request_region` from the GUI thread; applied by `step`.
@@ -202,25 +178,14 @@ class Pipeline:
         # Set by `request_reread` (button or hotkey) from the GUI thread.
         self._reread_requested = False
 
-    # -- lifecycle --------------------------------------------------------- #
     def warmup(self) -> None:
         """Validate OCR data and load the translation model before the loop."""
-        # Both of these can touch the network: the first run fetches language
-        # data here (and, for a local backend, the tokenizer). It runs on the
-        # caller's thread - the panel's worker, not its main loop - and says so
-        # through the same note channel the rest of the loop uses, because a
-        # card that sits on "starting…" with no explanation is indistinguishable
-        # from one that has hung.
+        # Both can touch the network; runs on the caller's thread, not the main loop.
         self.ocr.ensure_ready()
         self.translator.warmup()
 
     def start(self, now: float | None = None) -> None:
-        """Begin the loop. `now` lets a caller supply its own clock.
-
-        The whole pipeline - pacing, settling and the refresh interval - then
-        runs on one consistent time base, which is what makes the timing logic
-        testable without sleeping.
-        """
+        """Begin the loop; `now` lets a caller supply its own clock."""
         self._next_poll = time.monotonic() if now is None else now
 
     def close(self) -> None:
@@ -233,26 +198,22 @@ class Pipeline:
     def __exit__(self, *exc) -> None:
         self.close()
 
-    # -- one iteration ----------------------------------------------------- #
     def step(self, now: float | None = None) -> Event | None:
         """Run a single poll. Returns an Event when a new line is translated."""
         now = now if now is not None else time.monotonic()
         self._decision = ""
 
         # A region change arrives from the GUI thread; applying it here keeps all
-        # pipeline state on one thread, and the new area is read on this poll
-        # rather than after the next sleep.
+        # pipeline state on one thread.
         if self._pending_region is not None:
             self._apply_pending_region(now)
 
-        # A re-read was asked for (button or hotkey): act now instead of at the
-        # next scheduled poll. The request is only consumed once the screen is
-        # actually read, so pressing it while reading is paused still works.
+        # A re-read acts now rather than at the next poll; the request is consumed
+        # only once the screen is read, so it survives a pause.
         forced = self._reread_requested
         if forced:
             self._next_poll = min(self._next_poll, now)
 
-        # Light pacing: if we're early, report how long the caller should sleep.
         if now < self._next_poll:
             self._decision = "early"
             return None
@@ -260,10 +221,7 @@ class Pipeline:
         self._next_poll = now + self._min_interval
         self.stats.polls += 1
 
-        # Never read the screen while one of our own windows is on it. Measured
-        # on a live screen: the first capture after Start contained the
-        # picker's status line at 93% confidence while the dialogue under it fell
-        # below the confidence gate and was dropped.
+        # Never read the screen while one of our own windows is on it.
         reason = self.gate() if self.gate is not None else None
         if reason:
             self.stats.paused_polls += 1
@@ -276,18 +234,15 @@ class Pipeline:
         if self._gate_reason is not None:
             self._leave_gate()
 
-        # A line that appeared and then stopped changing must still be released:
-        # OCR only runs on pixel changes, so without this the last line before a
-        # scene goes static would never be translated.
+        # OCR runs only on pixel changes, so a line that goes static must still be
+        # released by the settle tick.
         if self.settler.tick(now):
             held = self.settler.held
             if held and not self._already_translated(held):
                 self._decision = "emit:tick-timeout"
                 return self._emit(held, self._last_confidence, now, self._last_display or "")
-            # Nothing new to translate, but the released line must still be
-            # recorded. Clearing without recording let the very same text be
-            # re-observed and re-emitted a moment later, so every line was
-            # translated twice.
+            # Record the released line: clearing without recording let the same
+            # text be re-observed and emitted a second time.
             if held:
                 self._last_settled_text = held
                 self._decision = "skip:already-translated"
@@ -302,24 +257,19 @@ class Pipeline:
             self._on_error(exc)
             return None
 
-        # Remember when these pixels were taken and what they cost: the age of
-        # the frame is what makes `Event.total_elapsed` mean something.
         self._last_frame = frame
         self._frame_at = frame.timestamp
         self._frame_capture_elapsed = frame.elapsed
 
         if forced:
-            # Asked for explicitly: read what is on screen now, whatever the
-            # change detector, the throttle or the settle timer think about it.
             self._reread_requested = False
             self.detector.update(frame.image)  # keep the signature in step
             self._decision = "ocr:reread"
             return self._process(frame, now, refreshed=True, force=True)
 
         if not self.detector.update(frame.image):
-            # Pixels are unchanged, but the held text still needs confirmation.
-            # Re-read the *same* frame on a timer rather than waiting for the
-            # screen to go still, which a live game may never do.
+            # Pixels unchanged: re-read the same frame on a timer rather than
+            # waiting for the screen to go still.
             if self._refresh_due(now):
                 self._decision = "ocr:refresh"
                 return self._process(frame, now, refreshed=True)
@@ -327,10 +277,8 @@ class Pipeline:
             return None
 
         self.stats.changed += 1
-        # A blinking advance cursor makes every poll look like a change, which
-        # would run OCR continuously for no benefit - the text is not changing.
-        # Throttling costs at most `ocr_min_interval` of latency and is bounded
-        # well under the settle window, so translation still follows promptly.
+        # A blinking caret makes every poll look changed, so throttle OCR to
+        # `ocr_min_interval`; the text is not changing.
         if self._ocr_throttled(now):
             self.stats.throttled += 1
             self._decision = "skip:throttled"
@@ -338,16 +286,8 @@ class Pipeline:
         self._decision = "ocr:changed"
         return self._process(frame, now)
 
-    # -- pausing, and moving the area being read ---------------------------- #
     def _enter_gate(self, reason: str) -> None:
-        """Stop reading until `reason` goes away, and forget held text.
-
-        The held text has to go: while paused, time passes with no evidence about
-        the screen, so a release timer that kept running would emit a line that is
-        no longer there - or release a paused reveal's fragment the instant
-        reading resumes. The detector is reset for the same reason, so the first
-        frame after the pause is actually looked at.
-        """
+        """Stop reading until `reason` goes away, and forget held text."""
         self._gate_reason = reason
         self.settler.reset()
         self.detector.reset()
@@ -368,27 +308,11 @@ class Pipeline:
             pass
 
     def request_region(self, region: Region) -> None:
-        """Read a different area from the next poll on.
-
-        Safe to call from the GUI thread: the request is applied by `step` on the
-        worker thread. Restarting the pipeline instead would reload the model and
-        rebuild the panel window, which is both slow and visibly jarring - a
-        translation card that jumps to a new position every time the box moves.
-        """
+        """Read a different area from the next poll on; safe from the GUI thread."""
         self._pending_region = region
 
     def request_reread(self) -> None:
-        """Read the box again now and translate it, whatever has changed.
-
-        Backs the Re-read button and the hotkey, so it has to do what a person
-        means by "do that again": capture now rather than at the next scheduled
-        poll, ignore the change detector, the OCR throttle and the settle window,
-        ignore the "already translated" check, and skip the translation cache.
-
-        Safe to call from the GUI thread; applied by `step` on the worker thread.
-        The request survives a pause (`self.gate`), so pressing the hotkey while
-        the picker is on screen still re-reads when reading resumes.
-        """
+        """Read the box again now and translate it; safe to call from the GUI thread."""
         self._reread_requested = True
 
     def _apply_pending_region(self, now: float) -> None:
@@ -398,8 +322,6 @@ class Pipeline:
             return
         self.config.capture.region = region
         self.grabber.region = region
-        # A different area is a different context: the old pixels, the old OCR
-        # text and the old settle timers say nothing about it.
         self.detector.reset()
         self.settler.reset()
         self.empty_guard.reset()
@@ -427,15 +349,9 @@ class Pipeline:
         return max(0.0, self._next_poll - time.monotonic())
 
     def sleep_time_at(self, now: float) -> float:
-        """Pacing remainder against a supplied clock.
-
-        The main loop uses `sleep_time()`; tests use this so the whole pipeline -
-        pacing, settling and the refresh interval - runs on one virtual time base
-        instead of mixing injected time with wall-clock reads.
-        """
+        """Pacing remainder against a supplied clock."""
         return max(0.0, self._next_poll - now)
 
-    # -- internals --------------------------------------------------------- #
     def _process(
         self, frame: Frame, now: float, refreshed: bool = False, force: bool = False
     ) -> Event | None:
@@ -454,10 +370,8 @@ class Pipeline:
         if self.on_ocr:
             self.on_ocr(result)
 
-        # Our own chrome can be inside the box. Drop those *lines* and keep the
-        # game text under them: dropping the whole read loses a real line whenever
-        # the panel clips the edge of the box, which is exactly the "it stopped
-        # detecting" failure this replaced.
+        # Our own chrome can be inside the box: drop those lines and keep the
+        # game text under them.
         raw_text = result.text
         stripped = result.without_lines(looks_like_own_ui)
         dropped_own = stripped is not result
@@ -469,17 +383,12 @@ class Pipeline:
         text = result.text
         self._last_confidence = result.confidence
         if not text:
-            # Nothing to translate: either the box is empty, or it holds only our
-            # own UI - which must never be translated, nor be allowed to settle.
+            # Empty box, or only our own UI: never translate it, never let it settle.
             self.stats.empty_reads += 1
             self.settler.reset()
             self.empty_guard.observe(False)
             self._decision = "skip:self-ui" if dropped_own else "skip:no-text"
             if force:
-                # Say which of the three it was. "Nothing readable in the box" is
-                # the wrong advice when tesseract read a line and the confidence
-                # gate rejected it: the box is fine and `ocr.min_confidence` is
-                # the setting in the way.
                 if dropped_own:
                     self._note("only lintranslator's own window is in the box")
                 elif result.rejected:
@@ -492,10 +401,7 @@ class Pipeline:
                     self._note("nothing readable in the box — check the region")
             return None
 
-        # Confident nonsense: background art and UI chrome read cleanly enough to
-        # pass the OCR confidence gate, and translating "e¢" is worse than saying
-        # nothing. Said out loud, because a silent skip is indistinguishable from
-        # a broken translator.
+        # Background art and chrome can pass the gate: skip them, do not translate.
         junk = noise_reason(
             text, result.confidence, self.config.detect.short_text_confidence
         )
@@ -507,10 +413,7 @@ class Pipeline:
             return None
 
         if self._is_echo(text):
-            # The panel showing the translation it just produced, read back.
-            # Left alone this loops: the translation is translated again. Reported
-            # as its own case - "your window is in the box" would be wrong (the
-            # text matched, the box may be perfectly clear).
+            # The panel reading back its own translation; unhandled this loops.
             self.stats.self_reads += 1
             self._decision = "skip:self-echo"
             self.settler.reset()
@@ -518,10 +421,6 @@ class Pipeline:
             return None
 
         if force:
-            # Asked for by hand: translate what is on screen now. No settle
-            # window (the user is waiting for it) and no duplicate check (they
-            # pressed it because they want this line again, from the backend
-            # rather than the cache).
             self.empty_guard.observe(True)
             self.settler.reset()
             return self._emit(text, result.confidence, now, result.display_text, force=True)
@@ -540,24 +439,13 @@ class Pipeline:
         return self._emit(text, result.confidence, now, result.display_text)
 
     def _already_translated(self, text: str) -> bool:
-        """Whether this line has effectively been emitted already.
-
-        Fuzzy, not equality: OCR reads the same line slightly differently from
-        poll to poll (a blinking advance cursor appears as a trailing glyph, for
-        example). An exact-match check treats those as new lines and translates
-        the same dialogue twice, which is exactly what was observed.
-        """
+        """Whether this line has effectively been emitted; fuzzy, not equality."""
         if self._last_settled_text is None:
             return False
         return is_same_reading(text, self._last_settled_text)
 
     def _is_echo(self, text: str) -> bool:
-        """Whether this read is the panel's own translation, read back.
-
-        The panel cannot be gated - it has to stay on screen while watching - so
-        if it covers the box, its output is captured. Left alone that loops: the
-        translation is translated again, forever.
-        """
+        """Whether this read is the panel's own translation, read back."""
         if not text or not self._last_target_text:
             return False
         return is_same_reading(text, self._last_target_text)
@@ -587,16 +475,11 @@ class Pipeline:
         display_source: str = "",
         force: bool = False,
     ) -> Event | None:
-        """Translate settled text and report it.
-
-        `force` (a re-read the user asked for) also skips the translation cache:
-        answering a "do that again" press from the cache would look like the
-        button did nothing.
-        """
+        """Translate settled text and report it; `force` also skips the cache."""
         self._last_settled_text = text
         self._last_display = display_source
-        # Record the emit time rather than clearing everything: the settler needs
-        # it to avoid re-emitting the same line while it is still on screen.
+        # Record the emit time: the settler needs it to avoid re-emitting the
+        # same line while it is still on screen.
         self.settler.confirm(now)
         self.settler.reset()
         try:
@@ -606,19 +489,13 @@ class Pipeline:
             self._on_error(exc)
             return None
 
-        # Only worth remembering when the translation is in a different language.
-        # If the backend handed the source straight back, a re-read of that text
-        # is already caught by the duplicate check, and keeping it here would risk
-        # swallowing a genuinely similar next line. The test is deliberately
-        # strict: a real translation that happens to contain the source text
-        # ("[ja] ...", a kept character name) must still enable the guard.
+        # Remember the target only when it is not the source echoed back, so a
+        # real translation that contains the source still enables the echo guard.
         target = translation.target or ""
         self._last_target_text = "" if _echoes_source(target, text) else target
         self.stats.translations += 1
         self.stats.translate_seconds += translation.elapsed
-        # Age of the translation: from the moment these pixels were captured to
-        # the moment there is something to show. Settling dominates it, which is
-        # the honest cost of not translating half-typed lines.
+        # Seconds from frame capture to something to show, settling included.
         age = max(0.0, time.monotonic() - self._frame_at) if self._frame_at else 0.0
         event = Event(
             source=text,
@@ -660,13 +537,7 @@ class Pipeline:
 
 
 def _echoes_source(target: str, source: str) -> bool:
-    """Whether the backend handed the source back instead of translating it.
-
-    Strict on purpose: this decides whether the panel's own output can be
-    recognised later, and a loose test ("mostly similar") would also swallow real
-    translations that keep the source's wording - names, "[ja] " prefixes, that
-    kind of thing.
-    """
+    """Whether the backend handed the source back instead of translating it."""
     if not target or not source:
         return False
     if target.strip() == source.strip():
@@ -682,10 +553,7 @@ def _cache_for(config: Config):
 
 
 def _glossary_for(config: Config) -> Glossary:
-    """User glossary entries layered over the built-in game glossary.
-
-    User entries win, so a config can correct or disable a built-in term.
-    """
+    """User glossary entries layered over the built-in one; user entries win."""
     user = Glossary.from_config(config.translate.glossary)
     builtin = LIMBUS_GLOSSARY if config.translate.use_builtin_glossary else Glossary()
     return Glossary.merge(builtin, user)

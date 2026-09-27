@@ -1,28 +1,4 @@
-"""The always-on-top translation panel.
-
-Design constraints that shaped this:
-
-* **Wayland forbids client-side window positioning.** A client cannot say "put me
-  at (400, 900)". Absolute placement needs either the layer-shell protocol or
-  X11. Layer-shell would need `gtk4-layer-shell`, which is not installed here, so
-  the panel is a normal keep-above window that anchors itself as close to the
-  target as the session allows and can be dragged. `--position x,y` works when
-  running under XWayland (`GDK_BACKEND=x11`).
-* **GTK is not thread-safe.** The capture/OCR/translate pipeline runs in a worker
-  thread and communicates through a queue drained on the GTK main thread.
-
-The panel shows the original text below the translation, because a translation
-panel that covers the text you are trying to read is worse than no panel.
-
-The card's *size* is fixed while its text is not. It floats over a game, so a
-card that grew with its text would creep further over the dialogue box it is
-reporting on - and GTK never shrinks a resizable window back, so a single long
-reply would raise the card's floor for the rest of the session. Each text area
-reserves a configured number of lines and scrolls beyond them.
-
-All styling comes from `lintranslator/theme.py`, shared with the picker and the settings
-dialog, which used to be stock Adwaita next to a custom card.
-"""
+"""The always-on-top translation panel."""
 from __future__ import annotations
 
 import os
@@ -54,25 +30,11 @@ class UiMessage:
     detail: str = ""  # e.g. line-broken source for display
 
 
-# What the card says when the keep-above request could not be made. One line, not
-# three: it fires on the X11 path when something is genuinely wrong, and the fix
-# it names is in the README, under "Always on top". Native Wayland says nothing
-# at all - there the request is impossible rather than failed, and a notice that
-# can never be cleared by fixing anything is noise on every launch.
 KEEP_ABOVE_SHORT = "Not always-on-top in this session — see the README, 'Always on top'"
 
 
 class LabelButton(Gtk.Button):
-    """A button whose label can be aligned, and that still answers set_label().
-
-    These buttons move between the control row, where a centred label is right,
-    and the overflow menu, where a centred row among full-width rows reads as
-    another button rather than as a menu item. `Gtk.Button`'s own label is always
-    centred and there is no API to change that, so this one owns a label child
-    instead - and keeps `set_label`/`get_label` working, because the picker and
-    the tests drive the toggle button by label and should not have to know which
-    kind of button this is.
-    """
+    """A button whose label can be aligned; Gtk.Button's own label is always centred."""
 
     def __init__(self, label: str = "") -> None:
         super().__init__()
@@ -102,28 +64,21 @@ class PipelineThread:
     ) -> None:
         self.config = config
         self.outbox = outbox
-        # Why capturing must wait right now (one of our own windows is on
-        # screen), or None. Supplied by the window that owns this panel.
+        # Why capturing must wait right now, or None; supplied by the owning window
         self.gate = gate
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.pipeline: Pipeline | None = None
         self.ready = threading.Event()
         self.warmup_error: Exception | None = None
-        # Why the loop ended, when it ended by itself. Read by the panel, which
-        # says so rather than claiming to be watching (see `_check_worker`).
+        # Why the loop ended, when it ended by itself (read by `_check_worker`)
         self.error: str | None = None
         self._pending_region = None
         self._pending_reread = False
 
     @property
     def alive(self) -> bool:
-        """Whether the loop is still running.
-
-        The panel used to treat "a worker object exists" as "watching", which is
-        why a thread that had died left the card saying "watching" forever with
-        nothing translated.
-        """
+        """Whether the loop is still running."""
         thread = self._thread
         return thread is not None and thread.is_alive()
 
@@ -135,45 +90,26 @@ class PipelineThread:
         self._thread.start()
 
     def request_region(self, region) -> None:
-        """Read a different area, without rebuilding the pipeline.
-
-        Restarting instead would reload the model (seconds, for a local one) and
-        recreate the panel window, which on Wayland reappears wherever the
-        compositor likes - so the card would jump every time the box moved.
-        """
+        """Read a different area, without rebuilding the pipeline."""
         self._pending_region = region
         pipe = self.pipeline
         if pipe is not None:
             pipe.request_region(region)
 
     def request_reread(self) -> None:
-        """Read the box again now and translate it, cache and dedupe aside.
-
-        Before the pipeline exists the request is held and applied as soon as it
-        does, so pressing Re-read on a paused panel just works.
-        """
+        """Read the box again now and translate it, cache and dedupe aside."""
         self._pending_reread = True
         pipe = self.pipeline
         if pipe is not None:
             pipe.request_reread()
 
     def _run(self) -> None:
-        """Run the loop, and report it if it dies.
-
-        Nothing here may end silently. A single uncaught exception used to kill
-        this thread with at most one line in the status row - which the next
-        status write (the picker's, for one) overwrote - and the card then looked
-        exactly like a working one that had nothing to translate yet. It kept a
-        setup notice on screen for a whole session that way. Every exit now
-        leaves a reason behind, for `_check_worker` to say out loud.
-        """
+        """Run the loop, and report it if it dies."""
         try:
             self._loop()
         except Exception as exc:  # noqa: BLE001 - a dead worker must be visible
             self.error = f"{type(exc).__name__}: {exc}"
-            # The card gets one line; the terminal keeps the traceback. Catching
-            # the exception here would otherwise lose it, since nothing escapes
-            # the thread any more for `threading.excepthook` to print.
+            # Nothing escapes the thread for `threading.excepthook`, so print it here
             traceback.print_exc()
             self.outbox.put(
                 UiMessage("error", text=f"translation stopped: {self.error}")
@@ -208,10 +144,7 @@ class PipelineThread:
             return
         self.ready.set()
         self.outbox.put(UiMessage("status", text="watching the region"))
-        # Anything the config had to say when it was loaded - an unknown key, a
-        # file whose permissions had to be tightened. They were collected but
-        # never shown anywhere, which made them the same as not being detected.
-        # Posted after the status line so the message survives.
+        # Config warnings; posted after the status line so the message survives
         for warning in list(getattr(self.config, "warnings", None) or []):
             self.outbox.put(UiMessage("note", text=warning))
 
@@ -219,12 +152,10 @@ class PipelineThread:
         try:
             while not self._stop.is_set():
                 pipe.step()
-                # Sleep in short slices so stop() is responsive.
+                # Sleep in slices of at most 0.1 s so stop() stays responsive
                 self._stop.wait(min(pipe.sleep_time(), 0.1))
         finally:
-            # Said before `close`, not after: closing talks to the portal and the
-            # backend, and an exception from that would swallow the one line that
-            # says the loop has ended.
+            # Said before `close`: an exception there would swallow the stop line
             report = pipe.report()
             self.outbox.put(
                 UiMessage(
@@ -254,12 +185,7 @@ class PipelineThread:
         self.outbox.put(UiMessage("note", text=message))
 
     def stop(self, timeout: float = 1.0) -> None:
-        """Signal the loop to end and wait briefly for it to unwind.
-
-        The wait is short on purpose: a step is ~0.3 s, so a longer join just
-        freezes the UI and delays quitting for no benefit. The thread is a daemon,
-        so if it is mid-translation it cannot hold the process open.
-        """
+        """Signal the loop to end and wait briefly for it to unwind."""
         self._stop.set()
         thread = self._thread
         if thread is not None and thread.is_alive():
@@ -283,29 +209,20 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.worker: PipelineThread | None = None
         self.last_event: Event | None = None
         self._translation_started = 0.0
-        # Why capturing must wait right now, or None. Read on the worker thread -
-        # it is a plain callable into a lock-protected registry, never a GTK call.
-        # Defaults to the process-wide guard so a standalone panel (`lintranslator gui
-        # --panel`) also stops reading while its settings window is on screen.
+        # Why capturing must wait right now, or None; a plain callable, never a GTK call
         self.gate = GUARD.reason
-        # Set by the region picker: brings the picker back so the box can be
-        # adjusted. The Region button is hidden when there is no picker.
+        # Set by the region picker to bring it back; None hides the Region button
         self.on_region_request = None
         self._gated = False
-        # `lintranslator reread` and friends; started here so the socket exists for the
-        # whole life of the window.
         self.control = None
-        # The compositor-granted global hotkey, bound on first start.
         self.hotkey = None
         self.hotkey_enabled = True
         self._start_control()
 
         self._css_provider = None
-        # Width the overflow pass last laid out for, and the pending idle that
-        # will do it - see `do_size_allocate`.
+        # Width the overflow pass last laid out for (-1 = not yet)
         self._layout_width = -1
         self._relayout_id = 0
-        # The size last asked for, used until the window has been allocated.
         self._requested_size = (config.display.width, config.display.height)
         self.apply_display_settings()
         self.set_decorated(False)
@@ -314,8 +231,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.add_css_class("lintranslator-panel")
         self.card = self._build_body()
         self.set_child(self._with_resize_grips(self.card))
-        # Both need the widget tree, so they run after `_build_body`, not with
-        # the stylesheet install above.
+        # Both need the widget tree, so they run after `_build_body`
         self._apply_layout_budget()
         self._relayout_controls()
 
@@ -323,60 +239,37 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             # Works under X11/XWayland; a no-op on native Wayland by design.
             self.connect("realize", lambda *_: self._try_move(position))
 
-        # Stop the pipeline when this window goes away, whatever closed it. The
-        # application's shutdown hook covers a normal quit, but relying on that
-        # alone means a leaked worker thread can keep capturing if the window is
-        # closed some other way.
+        # Stop the pipeline when this window goes away, however it was closed
         self.connect("close-request", self._on_close_request)
 
         if demo_event is not None:
-            # Lets the layout be verified (and screenshotted) without running a
-            # model: `lintranslator gui --demo`.
             self._show_event(demo_event)
 
         self._refresh_backend_label()
         if config.display.keep_above:
-            # After the surface exists, ask the WM to raise the card.
+            # Ask for keep-above only once the surface exists
             self.connect("map", self._on_first_map)
 
         # Drain worker messages on the GTK main thread.
         GLib.timeout_add(80, self._drain)
 
     def do_size_allocate(self, width: int, height: int, baseline: int) -> None:
-        """Re-split the control row whenever the width changes.
-
-        A vfunc is the only hook GTK4 offers here: the `size-allocate` signal was
-        removed, and `Gtk.Widget` has no width property to watch. The work itself
-        is deferred to an idle by `_schedule_relayout`, because this runs in the
-        middle of allocating the tree that the overflow pass rearranges.
-        """
+        """Re-split the control row whenever the width changes."""
         Gtk.ApplicationWindow.do_size_allocate(self, width, height, baseline)
         if width != self._layout_width:
             self._layout_width = width
+            # Deferred to an idle: the tree it rearranges is being allocated here
             self._schedule_relayout()
 
-    # -- construction ------------------------------------------------------ #
     def apply_display_settings(self) -> None:
-        """(Re)build the stylesheet and re-pin the card's size.
-
-        Font size and source visibility are CSS-driven so they can change live
-        without rebuilding the widget tree. Adding a provider at the same
-        priority replaces the previous one, so the old stylesheet does not
-        linger and the picker and settings dialog pick the new one up too.
-        """
+        """(Re)build the stylesheet and re-pin the card's size."""
         self._css_provider = theme.install_for(self.config)
         self._restore_size()
         self._apply_layout_budget()
-        # Font size feeds the buttons' widths, so the split has to be redone.
         self._schedule_relayout()
 
     def _apply_layout_budget(self) -> None:
-        """Pin each text area to the number of lines the config reserves.
-
-        This is what makes the card's height independent of its content, and so
-        what stops it from ratcheting taller on a long line and never coming
-        back. Called after the tree exists and again on every apply.
-        """
+        """Pin each text area to the number of lines the config reserves."""
         if getattr(self, "target_scroll", None) is None:
             return
         display_cfg = self.config.display
@@ -391,23 +284,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
 
     @staticmethod
     def _reserved_height(label: Gtk.Label, lines: int) -> int:
-        """Height of `lines` lines of `label`'s font, measured not assumed.
-
-        Measured because the font size comes from `base_font_size * font_scale`
-        through CSS: a hardcoded line height would silently clip the text at
-        large font sizes and waste space at small ones.
-
-        The label is forced visible for the measurement, and its text is put
-        back afterwards. A hidden widget never resolves its CSS, so it measures
-        0 px - which is how the source area first came out reserved as 1 px and
-        clipped its own text to nothing. Forgetting to restore the text meant
-        that applying Settings while a translation was on screen wiped it.
-
-        `n` lines are `one + (n - 1) * line`, not `line * n`: the difference
-        between one and two lines is the *leading*, and the first line's height
-        also carries the font's ascent and descent. Reserving `line * n` came up
-        one pixel short and sliced the bottom off the last line.
-        """
+        """Height of `lines` lines of `label`'s font, measured not assumed."""
         was_visible = label.get_visible()
         was_text = label.get_text()
         label.set_visible(True)
@@ -439,21 +316,10 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.start_pipeline()
 
     def _build_body(self) -> Gtk.Widget:
-        """The card: a header strip, the translation, the original, one control row.
-
-        Five controls used to sit in two right-aligned rows that cost 62 px of a
-        172 px card and did not even line up (the rows measured 133 px and
-        152 px wide, so the left edge stepped in by 19 px). Only two of them -
-        Re-read and Pause - are pressed while playing, so those two stay on the
-        card and Region, Copy, Settings and Quit move one click away.
-        """
+        """The card: a header strip, the translation, the original, one control row."""
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         box.add_css_class("lintranslator-card")
 
-        # -- header: the drag handle, and what is being read ---------------
-        # Doubles as the drag hint, since there is no title bar to signal it.
-        # Names the region too, so the picker can be minimised without losing
-        # track of what is being captured.
         self.backend_label = Gtk.Label(label="", xalign=0)
         self.backend_label.add_css_class("lintranslator-status")
         self.backend_label.set_ellipsize(Pango.EllipsizeMode.END)
@@ -466,12 +332,9 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         header.append(grip)
         header.append(self.backend_label)
-        # Only the header is a drag handle. Wrapping the whole card meant a drag
-        # over the translation was a window move rather than a text selection.
         box.append(self._drag_handle(header))
         box.append(self._rule())
 
-        # -- the translation, with the original text below it ---------------
         self.target_label = Gtk.Label(label="Waiting for dialogue…", xalign=0)
         self.target_scroll = self._text_area(self.target_label, "lintranslator-target")
         box.append(self.target_scroll)
@@ -485,25 +348,15 @@ class TranslatorPanel(Gtk.ApplicationWindow):
 
         box.append(self._rule())
 
-        # -- one control row: status on the left, the actions, then ⋮ --------
-        #
-        # Which actions are in this row is not fixed: it depends on how wide the
-        # card is. `_relayout_controls` keeps as many as fit, in `ACTION_ORDER`,
-        # and moves the rest into the overflow menu. Only the status line and
-        # the ⋮ button belong here permanently.
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.button_row = row
 
         self.status_label = Gtk.Label(label="starting…", xalign=0)
         self.status_label.add_css_class("lintranslator-status")
-        # Ellipsised rather than wrapped: this row is a fixed height, and a
-        # wrapped status was what made warnings add two lines to the card.
         self.status_label.set_ellipsize(Pango.EllipsizeMode.END)
         self.status_label.set_hexpand(True)
         row.append(self.status_label)
 
-        # An error takes the status line's place rather than adding a line, so
-        # the card's height does not depend on whether something went wrong.
         self.error_label = Gtk.Label(label="", xalign=0)
         self.error_label.add_css_class("lintranslator-error")
         self.error_label.set_ellipsize(Pango.EllipsizeMode.END)
@@ -513,25 +366,21 @@ class TranslatorPanel(Gtk.ApplicationWindow):
 
         self._build_actions()
         self.menu = self._build_menu()
-        # A plain button, not a Gtk.MenuButton: MenuButton's CSS node is
-        # `menubutton`, so `button.lintranslator-btn` does not match it and it kept the
-        # desktop theme's light background - a white square in the control row.
+        # A plain button, not Gtk.MenuButton: its CSS node is `menubutton`, so the
+        # theme's button styling does not match it
         self.menu_btn = Gtk.Button(label="⋮")
         self.menu_btn.set_tooltip_text("Everything that did not fit on the card")
         self.menu_btn.add_css_class("lintranslator-btn")
         self.menu_btn.add_css_class("lintranslator-icon")
-        # Hidden until something actually overflows: an empty menu is a lie.
         self.menu_btn.set_visible(False)
         self.menu_btn.connect("clicked", self._on_menu)
         row.append(self.menu_btn)
         for name in self.ACTION_ORDER:
-            # Choosing something from the menu has to put the menu away, and the
-            # handler is connected here so it runs after the action itself.
+            # Connected here so it runs after the button's own click handler
             getattr(self, name).connect("clicked", self._close_overflow)
         box.append(row)
 
-        # In-window shortcuts. These work while this window has focus; the global
-        # one (any window) comes from the compositor via `lintranslator/hotkey.py`.
+        # In-window shortcuts: GLOBAL scope is the whole app, not the desktop
         shortcuts = Gtk.ShortcutController()
         shortcuts.set_scope(Gtk.ShortcutScope.GLOBAL)
         for accel in ("<Control>r", "F5"):
@@ -545,12 +394,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         return box
 
     def _build_menu(self) -> Gtk.Popover:
-        """The overflow menu: whatever did not fit on the card.
-
-        Left empty here on purpose. The buttons in it are the very same widgets
-        that sit on the card, moved in and out by `_relayout_controls` - so an
-        action is never in two places, and never missing from both.
-        """
+        """The overflow menu: whatever did not fit on the card."""
         self.menu_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.menu_rule = self._rule(soft_class="lintranslator-rule-tight")
 
@@ -560,10 +404,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         popover.set_child(self.menu_box)
         return popover
 
-    # Left to right on the card, and - reading it backwards - the order they
-    # overflow in. The first entry is the last to leave the card: Region comes
-    # first because it is the way back to the picker, and once the panel has the
-    # box there is no other way to reach it.
+    # Left to right on the card, and the reverse order in which they overflow
     ACTION_ORDER = (
         "region_btn",
         "reread_btn",
@@ -573,9 +414,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         "quit_btn",
     )
 
-    # Space kept for the status line before any button may claim it: roughly what
-    # "12:04:31 · conf 94 · 1690 ms · +1.9s" needs. Below this the status stops
-    # being readable, and the card would rather push a button into the menu.
+    # Space reserved for the status line, in px; below this it stops being readable
     STATUS_MIN_WIDTH = 150
 
     def _build_actions(self) -> None:
@@ -585,8 +424,6 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             "Capture the screen again and show the region picker, to move or "
             "resize the box being read"
         )
-        # Only useful when a picker owns this panel, so it starts hidden and
-        # `enable_region_button` reveals it.
         self.region_btn.set_visible(False)
 
         self.reread_btn = LabelButton("Re-read")
@@ -594,8 +431,6 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             "Read this box again and translate it from scratch (Ctrl+R, F5, or the "
             "global hotkey — see Settings → Shortcuts)"
         )
-        # Starts as "Start" because the panel can be opened without running the
-        # pipeline, so the card can be positioned before translation begins.
         self.toggle_btn = LabelButton("Start")
         self.toggle_btn.set_tooltip_text("Start or pause translating")
         self.copy_btn = LabelButton("Copy")
@@ -615,41 +450,28 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         ):
             button.connect("clicked", handler)
 
-    # -- which buttons fit on the card ------------------------------------- #
     def _schedule_relayout(self) -> None:
         """Ask for an overflow pass, at most one per main-loop turn."""
-        # `getattr` because this is reachable from `apply_display_settings`,
-        # which runs before the window's own state is set up.
+        # `getattr`: reachable from `apply_display_settings`, before this exists
         if getattr(self, "_relayout_id", 0):
             return
         self._relayout_id = GLib.idle_add(self._relayout_controls)
 
     def _relayout_controls(self) -> bool:
-        """Keep as many action buttons on the card as its width allows.
-
-        The rest move into the overflow menu, in the same order, so the row and
-        the menu always hold the same set of buttons and only the split point
-        moves. Region is first on the card, and therefore last to leave it.
-
-        Runs from an idle callback rather than during allocation, because it
-        rearranges the very tree that is being allocated.
-        """
+        """Keep as many action buttons on the card as its width allows."""
         self._relayout_id = 0
         row = getattr(self, "button_row", None)
         if row is None:
             return False
         buttons = [getattr(self, name) for name in self.ACTION_ORDER]
 
-        # Everything back onto the card first, so each button can be measured
-        # with its row styling resolved. A widget that is not in a tree has no
-        # CSS, and would measure as nothing at all.
+        # Re-attach first: a widget outside a tree has no CSS and measures as nothing
         for button in buttons:
             self._detach(button)
             self._style_as_row_button(button)
             row.append(button)
-        # The ⋮ button goes back on last, so it stays at the end of the row.
-        # Appending the actions after it - which is what a naive rebuild does -
-        # puts the menu trigger to the *left* of the buttons that stayed.
+        # ⋮ goes back on last: appending the actions after it would put the menu
+        # trigger to their left
         self._detach(self.menu_btn)
         row.append(self.menu_btn)
         self._detach(self.menu_rule)
@@ -671,8 +493,6 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             return sum(sized) + spacing * max(0, len(sized) - 1)
 
         if span(widths) + self.STATUS_MIN_WIDTH <= available:
-            # Everything fits, so nothing overflows and there is no ⋮ button
-            # taking up room either.
             keep = len(buttons)
         else:
             budget = available - self.STATUS_MIN_WIDTH - menu_width
@@ -692,7 +512,6 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             self._style_as_menu_item(button)
         for index, button in enumerate(overflow):
             if button is self.quit_btn and index:
-                # Quit is destructive; keep it apart from the rest.
                 self.menu_box.append(self.menu_rule)
             self.menu_box.append(button)
 
@@ -702,15 +521,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         return False  # one-shot
 
     def _control_row_width(self) -> int:
-        """How much width the control row has to work with, in pixels.
-
-        The row's own allocation, which is the only thing that is actually true
-        about the width the card has. The configured width is a fallback for
-        before the first allocation and nothing more: it goes stale the moment
-        anything else sizes the window - a compositor rule, or a test that
-        resizes directly - and a split decided from it then keeps buttons off a
-        card that has room for them.
-        """
+        """How much width the control row has to work with, in pixels."""
         allocated = self.button_row.get_width()
         if allocated > 1:
             return allocated
@@ -749,8 +560,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             self.menu.popdown()
             return
         if self.menu.get_parent() is None:
-            # Parented lazily: the popover needs a realized parent to position
-            # itself against, and this is the first moment one exists.
+            # Parented lazily: the popover needs a realized parent to position against
             self.menu.set_parent(self.menu_btn)
         self.menu.popup()
 
@@ -763,12 +573,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
 
     @staticmethod
     def _text_area(label: Gtk.Label, css_class: str) -> Gtk.ScrolledWindow:
-        """A wrapping, selectable text area that scrolls instead of growing.
-
-        `propagate_natural_width` is off so the label's unwrapped width - 1639 px
-        for a verbose reply - never reaches the window, and the height request
-        set in `_apply_layout_budget` is what reserves the space.
-        """
+        """A wrapping, selectable text area that scrolls instead of growing."""
         label.add_css_class(css_class)
         label.set_wrap(True)
         label.set_xalign(0)
@@ -791,7 +596,6 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         """Show the Region button, wired to whatever restores the picker."""
         self.on_region_request = callback
         self.region_btn.set_visible(True)
-        # A button appearing changes what fits, and Region outranks the others.
         self._schedule_relayout()
 
     def _on_region(self, _button: Gtk.Button) -> None:
@@ -802,13 +606,8 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.request_reread()
 
     def request_reread(self) -> str:
-        """Read the box again now, from whichever button, key or command asked.
-
-        Returns the one-line reply the control socket hands back to `lintranslator reread`,
-        so a script gets something meaningful instead of silence.
-        """
+        """Read the box again now, from whichever button, key or command asked."""
         if self.worker is None:
-            # Re-read is also the obvious way to un-pause: do what it says.
             self.start_pipeline()
             self.toggle_btn.set_label("Pause")
         self.worker.request_reread()
@@ -817,7 +616,6 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             self.status_label.set_text("re-reading the box…")
         return "re-reading"
 
-    # -- control socket and global hotkey ---------------------------------- #
     def _start_control(self) -> None:
         """Listen for `lintranslator reread` (and any other one-line command)."""
         from .control import ControlServer
@@ -836,9 +634,6 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         return f"unknown command {verb!r}; try: reread, status"
 
     def _status_reply(self) -> str:
-        # A worker object is not the same as a running loop: `lintranslator status`
-        # used to answer "watching, reading" for a thread that had died, which is
-        # the one answer that makes a stuck card impossible to diagnose.
         worker = self.worker
         running = worker is not None and getattr(worker, "alive", True)
         gated = "paused" if self._gated else "reading"
@@ -895,35 +690,13 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         return False  # run once
 
     def _apply_keep_above(self) -> bool:
-        """Ask the window manager to keep this card above other windows.
-
-        GTK4 removed `set_keep_above`, and native Wayland has no protocol for a
-        client to raise itself - the compositor owns stacking. Under XWayland the
-        standard `_NET_WM_STATE_ABOVE` hint still works, and KWin honours it
-        there, so that is what this uses.
-
-        On native Wayland it cannot work; the status line says so and points at
-        the KWin window rule instead. Returns False so the timeout does not
-        repeat.
-        """
-        # Only possible if this window is itself an X11 window. DISPLAY being set
-        # is not enough: it is present on a native Wayland session too, where no
-        # X11 window for the panel exists and the hint would go nowhere.
-        # Checked by class name because the X11 backend typelib is not always
-        # present (Gdk.X11Display does not even resolve in some builds).
+        """Ask the window manager to keep this card above other windows."""
+        # DISPLAY is set on native Wayland too; checked by class name because
+        # Gdk.X11Display does not resolve in every build
         backend = type(self.get_display()).__name__
         if "Wayland" in backend:
-            # Native Wayland gives a client no way to raise itself: stacking is
-            # the compositor's, and GTK4 removed the keep-above API. The card may
-            # still be kept above by a compositor window rule, but that cannot be
-            # detected from here, so no claim is made either way.
-            #
-            # Nothing is attempted, so nothing is broken, and nothing is said. A
-            # notice here would fire on every launch of every native Wayland
-            # session and stay on the card until the first translation, telling
-            # users who already have the window rule to go and add it - a message
-            # that no action of theirs can clear, in the place the translation
-            # goes. The fix is in the README, under "Always on top".
+            # Native Wayland cannot raise itself and a compositor rule cannot be
+            # detected, so nothing is attempted and nothing is said
             return False
         display_name = os.environ.get("DISPLAY")
         if not display_name:
@@ -933,9 +706,6 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             from Xlib import X, display as xdisplay
             from Xlib import protocol as xprotocol
         except ImportError:
-            # Name the install, not just the module: this is the XWayland path for
-            # always-on-top, and "not installed" alone leaves the user guessing
-            # which package that is.
             self._note_keep_above(False, "python-xlib not installed (pip install 'lintranslator[x11]')")
             return False
         try:
@@ -945,8 +715,8 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             if window is None:
                 self._note_keep_above(False, "window not found on X11")
                 return False
-            # EWMH requires a ClientMessage _NET_WM_STATE request to the root
-            # window; setting the property directly is ignored by the WM.
+            # EWMH needs a ClientMessage to the root window; setting the property
+            # directly is ignored by the WM
             state = conn.intern_atom("_NET_WM_STATE")
             above = conn.intern_atom("_NET_WM_STATE_ABOVE")
             event = xprotocol.event.ClientMessage(
@@ -988,61 +758,29 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self._keep_above_ok = ok
         if ok:
             return
-        # A window rule is the fix, and saying so is the whole point: an
-        # unexplained card that sinks behind the game reads as broken. One line,
-        # not the instructions: the translation area is where translations go, and
-        # the steps themselves are in the README.
         self._show_notice(
             KEEP_ABOVE_SHORT + (f" [{detail}]" if detail else "")
         )
 
     @staticmethod
     def _drag_handle(widget: Gtk.Widget) -> Gtk.Widget:
-        """Wrap the header strip so dragging it moves the window.
-
-        The window is frameless, so there is no title bar. `Gtk.WindowHandle`
-        asks the compositor to move the window on a drag, which is the supported
-        approach on Wayland, where an application cannot position its own
-        windows. Buttons still receive their clicks: a click is not a drag.
-
-        Only the header is wrapped. When the whole card was the handle, a drag
-        that started on the translation moved the window instead of selecting
-        the text - and the translation is selectable precisely so it can be
-        copied out.
-        """
+        """Wrap the header strip so dragging it moves the window."""
         handle = Gtk.WindowHandle()
         handle.set_child(widget)
         return handle
 
-    # -- resizing ---------------------------------------------------------- #
-    # The card is frameless, so there are no window-manager resize handles to
-    # grab, and `gtk_window_begin_resize_drag` does not exist in GTK4 at all -
-    # it was removed, and the replacement `Gdk.Toplevel.begin_resize()` needs the
-    # Wayland input *serial*, which GTK4 exposes nowhere. So the drag is handled
-    # here and the size is applied with `set_default_size`, which does resize an
-    # already-mapped window (measured: 555x207 -> 700x340 on a mapped panel).
-    #
-    # Only the east, south and south-east edges are offered, on purpose. On
-    # Wayland a client cannot move its own window, so a drag on the north or west
-    # edge could not keep the opposite edge still: the card would grow rightward
-    # while the pointer moved left. Offering those edges would be worse than not
-    # offering them.
+    # GTK4 removed gtk_window_begin_resize_drag and exposes no Wayland input
+    # serial, so the resize drag is handled here
     RESIZE_EDGES = (
         # name, halign, valign, cursor, (width, height) request
         ("e", Gtk.Align.END, Gtk.Align.FILL, "e-resize", (6, -1)),
         ("s", Gtk.Align.FILL, Gtk.Align.END, "s-resize", (-1, 6)),
-        # Corners last: in a Gtk.Overlay the later child is on top and gets the
-        # event first, so the corner wins where it overlaps the two edges.
+        # Corners last: in a Gtk.Overlay the later child gets the event first
         ("se", Gtk.Align.END, Gtk.Align.END, "se-resize", (14, 14)),
     )
 
     def _with_resize_grips(self, card: Gtk.Widget) -> Gtk.Widget:
-        """Wrap the card in an overlay carrying the resize grips.
-
-        An overlay adds nothing to the size of its main child, so the grips
-        cannot make the card bigger - the property `test_the_panel_height_...`
-        pins.
-        """
+        """Wrap the card in an overlay carrying the resize grips."""
         from gi.repository import Gdk
 
         overlay = Gtk.Overlay()
@@ -1066,11 +804,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         return overlay
 
     def _on_resize_begin(self, _gesture, _x: float, _y: float) -> None:
-        """Remember the size the drag started from.
-
-        Offsets are relative to the drag's start, so adding them to the starting
-        size is what keeps the edge under the pointer instead of drifting.
-        """
+        """Remember the size the drag started from."""
         self._resize_from = (self.get_width(), self.get_height())
 
     def _on_resize_update(self, _gesture, dx: float, dy: float, edge: str) -> None:
@@ -1082,12 +816,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self._set_card_size(width, height)
 
     def _on_resize_end(self, _gesture, _dx: float, _dy: float, edge: str) -> None:
-        """Keep the size the user chose, and write it down.
-
-        Saved at the end of the drag rather than on every motion event: one
-        write per resize instead of one per pixel, and the size survives even if
-        the panel is killed rather than closed.
-        """
+        """Keep the size the user chose, and write it down."""
         width, height = self._current_size()
         self.config.display.width = width
         # Only the axis that was dragged is pinned.
@@ -1096,12 +825,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self._save_size()
 
     def _current_size(self) -> tuple[int, int]:
-        """The size the card is at, or the one it was last asked to be.
-
-        The fallback matters before the window is mapped - and in tests, where
-        it never is - because an unallocated widget reports a width of 0, which
-        must never be written into the config.
-        """
+        """The size the card is at, or the one it was last asked to be."""
         width, height = self._requested_size
         if self.get_width() > 1:
             width = self.get_width()
@@ -1110,15 +834,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         return width, height
 
     def _set_card_size(self, width: int, height: int) -> None:
-        """Resize the card, never below what its own contents need.
-
-        The width is recorded as it changes, because the overflow split is
-        decided from it and has to be current mid-drag. The height is deliberately
-        *not* recorded here: it is pinned only by a drag that actually asked for a
-        height, in `_on_resize_end`. Recording it on every update meant a sideways
-        drag froze the card at whatever the line budgets happened to produce, and
-        the budget sliders then did nothing without the user ever asking for that.
-        """
+        """Resize the card, never below what its own contents need."""
         floor_w, floor_h = self._card_minimum()
         width = max(int(width), floor_w)
         height = max(int(height), floor_h)
@@ -1126,10 +842,8 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.config.display.width = width
         self._requested_size = (width, height)
 
-    # A floor under the card's size, independent of its contents. The action
-    # buttons are allowed to measure 0 wide (that is what lets them overflow into
-    # the menu at all), so the content minimum alone would let the card be
-    # dragged down to a sliver.
+    # Floor under the card's size, in px: the buttons may measure 0 wide, so the
+    # content minimum alone would let the card be dragged down to a sliver
     MIN_CARD = (260, 150)
 
     def _card_minimum(self) -> tuple[int, int]:
@@ -1152,8 +866,6 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         try:
             self.config.save()
         except OSError:
-            # A config that cannot be written is not a reason to break a resize;
-            # the size simply will not survive the session.
             pass
 
     def _try_move(self, position: tuple[int, int]) -> None:
@@ -1168,23 +880,13 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             return
         surface.move(*position) if hasattr(surface, "move") else None
 
-    # -- controls ---------------------------------------------------------- #
     def start_pipeline(self) -> None:
         self.worker = PipelineThread(self.config, self.outbox, gate=self.gate)
         self.worker.start()
         self._bind_hotkey()
 
     def _refresh_backend_label(self) -> None:
-        """Name the backend, the pair and the region being read.
-
-        The region is shown so the picker can be minimised without losing track
-        of what is being captured - the picker is the only other place it appears,
-        and leaving that large window open can make it capture itself.
-
-        The language pair belongs here for the same reason: it is set in a dialog
-        that is then closed, and "this is translating into the wrong language" is
-        something you want to see while it is happening rather than afterwards.
-        """
+        """Name the backend, the pair and the region being read."""
         t = self.config.translate
         r = self.config.capture.region
         size = ""
@@ -1192,12 +894,8 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             size = f" · box {r.w:.3f}×{r.h:.3f}"
         pair = f"{short_code(t.source_lang)}→{short_code(t.target_lang)}"
         if t.backend == "none":
-            # The pass-through backend returns the OCR text unchanged, so the
-            # card shows the source where a translation belongs. Nothing is
-            # broken, but it reads as a translator that failed, so name the
-            # backend and leave the model out: naming a model that is doing no
-            # work is what makes "none" plus "gemini-2.5-flash-lite" look like a
-            # working setup that is echoing.
+            # The pass-through backend returns the OCR text unchanged, so name it
+            # and leave the model out
             self.backend_label.set_text(
                 f"none (pass-through, no translation) · {pair}{size}"
             )
@@ -1229,12 +927,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.status_label.set_text("paused — press Start to resume")
 
     def show_idle(self) -> None:
-        """Say that the card is up but nothing is reading yet.
-
-        The state of a card opened with `--no-start`: it is on screen and can be
-        dragged into place, and Start begins. The picker's card is not shown
-        until Start, so it never sits in this state.
-        """
+        """Say that the card is up but nothing is reading yet."""
         self.toggle_btn.set_label("Start")
         self.status_label.set_text("press Start to begin translating")
 
@@ -1243,22 +936,16 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         return False  # let the window close
 
     def _on_quit(self, _button: Gtk.Button) -> None:
-        """Shut everything down, explicitly.
-
-        `application.quit()` alone only *requests* a quit, and with more than one
-        window it can be swallowed - pressing Quit appeared to do nothing and
-        needed a second press. Closing each window outright is deterministic.
-        """
+        """Shut everything down, explicitly."""
         self.close_pipeline()
         application = self.get_application()
         if application is not None:
             for window in list(application.get_windows()):
-                # Destroy rather than close: the picker's close handler would
-                # otherwise re-show a window that is on its way out.
+                # Destroy rather than close: a close handler could re-show a window
+                # that is on its way out
                 window.destroy()
             application.quit()
 
-    # -- worker -> UI ------------------------------------------------------ #
     def _drain(self) -> bool:
         self._check_worker()
         drained = 0
@@ -1277,30 +964,14 @@ class TranslatorPanel(Gtk.ApplicationWindow):
             elif message.kind == "self-read":
                 self._show_self_read(message.text)
             elif message.kind == "note":
-                # Something the user asked to be told about (a re-read that found
-                # nothing, one queued while paused).
                 self.status_label.set_text(message.text)
             elif message.kind == "status":
                 self.status_label.set_text(message.text)
         return True
 
     def _check_worker(self) -> None:
-        """Say it when the pipeline has stopped, instead of claiming to watch.
-
-        The card used to read "watching" from the mere existence of a worker
-        object, so a thread that had died looked like a working translator with
-        nothing to translate: the button still said Pause, the status row kept
-        whatever was written last, and the translation area kept whatever was in
-        it - for a whole session, in the case this was written for, which is how
-        an always-on-top notice stayed on the card forever.
-
-        A dead worker is not restarted automatically: if it died of something
-        that is still wrong (no model, no key, no screen access), a restart loop
-        would only hide it. Start is one click, and it is already the label the
-        button carries when nothing is running.
-        """
+        """Say it when the pipeline has stopped, instead of claiming to watch."""
         worker = self.worker
-        # Duck-typed on purpose: tests stand a recorder in for the real thread.
         if worker is None or getattr(worker, "alive", True):
             return
         self.worker = None
@@ -1310,12 +981,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.status_label.set_text(f"translation stopped — {detail}. Press Start.")
 
     def _show_gate(self, reason: str) -> None:
-        """Reading is paused because one of our own windows is on screen.
-
-        Said plainly, in a colour that does not look like ordinary status text,
-        with the action to take: an unexplained pause is indistinguishable from a
-        broken translator, which is the exact failure this whole change is about.
-        """
+        """Reading is paused because one of our own windows is on screen."""
         self._gated = bool(reason)
         if reason:
             self.status_label.add_css_class("lintranslator-warn")
@@ -1335,36 +1001,22 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.target_label.remove_css_class("lintranslator-notice")
         self.target_label.remove_css_class("lintranslator-notice-error")
         self.target_label.set_text(event.target)
-        # `display_source` keeps the original line breaks so the panel does not
-        # show one long wrapped run where the game showed two lines.
+        # `display_source` keeps the original line breaks; fall back to `source`
         self.source_label.set_text(getattr(event, "display_source", "") or event.source)
         self._show_error("")
         self.status_label.set_tooltip_text("")
 
         when = time.strftime("%H:%M:%S", time.localtime(event.at))
         speed = "cached" if event.cached else f"{event.translate_elapsed * 1000:.0f} ms"
-        # `total_elapsed` is measured from the capture to this moment, so the age
-        # shown is the one the user waited through - settling included. Kept short
-        # on purpose: this row is shared with the two buttons, and the backend is
-        # already named in the header, so it is not repeated here.
+        # `total_elapsed` is measured from the capture to now, in seconds
         self.status_label.set_text(
             f"{when} · conf {event.confidence:.0f} · {speed} · +{event.total_elapsed:.1f}s"
         )
 
     def _show_notice(self, text: str, error: bool = False) -> None:
-        """Explain a setup problem where the translation goes.
-
-        These are the long ones - "no global hotkey" - that run to two or three
-        lines. The status row is a single ellipsised line, so text that long would
-        be cut to a few characters there. The translation area has three reserved
-        lines and is empty until the first line is translated, which is exactly
-        when these appear; the first translation displaces the notice, and its
-        text stays in the tooltip.
-        """
+        """Explain a setup problem where the translation goes."""
         self.status_label.set_tooltip_text(text)
         if self.last_event is not None:
-            # Something is already translated and being read: keep it, and put a
-            # short form in the status row rather than overwriting the text.
             self.status_label.set_text(text.split(" — ")[0])
             return
         level = "lintranslator-notice-error" if error else "lintranslator-notice"
@@ -1374,12 +1026,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self.target_label.set_text(text)
 
     def _show_error(self, text: str) -> None:
-        """Show an error in the status line's slot, never as an extra line.
-
-        Errors used to get a label of their own, which added height to the card
-        exactly when something had gone wrong. The row holds one line either
-        way; the full text stays reachable in the tooltip.
-        """
+        """Show an error in the status line's slot, never as an extra line."""
         self.error_label.set_text(text)
         self.error_label.set_visible(bool(text))
         self.error_label.set_tooltip_text(text or None)

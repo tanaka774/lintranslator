@@ -1,29 +1,9 @@
-"""Measure the panel's geometry, to check the card's size budget.
-
-Run:  .venv/bin/python probe/panel_layout_check.py
-
-Builds the *real* panel widget tree (no pipeline, no network, no window shown)
-and asks GTK for its natural and minimum sizes. The numbers this prints are the
-ones the compositor would be handed.
-
-The card is a fixed size by design: `display.target_lines` and
-`display.source_lines` reserve space, and text past them scrolls rather than
-resizing the card. So the questions here are different from the ones this probe
-used to ask:
-
-  * Does the card honour `display.width`, or does long text force it wider?
-  * How tall is the card, and how much of that is text versus chrome?
-  * Does the height depend on the text at all? (It must not.)
-
-`panel_contact_sheet.py` renders the same states as PNGs; this prints numbers.
-"""
+"""Measure the panel's geometry, to check the card's size budget."""
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -118,10 +98,8 @@ def main() -> int:
 
     body = Body(cfg)
     box = body.build()
-    # `_apply_layout_budget` runs from the real window's `__init__`, after the
-    # tree exists. Body bypasses that, so without this the scrolled areas have no
-    # height request and the probe measures an unsized tree (118 px instead of
-    # the ~205 px the compositor is actually given).
+    # `_apply_layout_budget` runs from the real window's `__init__`; without it
+    # the scrolled areas have no height request and the measurement is meaningless.
     body._apply_layout_budget()
     # The action buttons are placed by the overflow pass, so without this they
     # have no parent and contribute nothing to the card's measured width.
@@ -215,13 +193,7 @@ def main() -> int:
 
 
 def sweep() -> int:
-    """The same invariants across font scales, widths and line budgets.
-
-    The line height is measured from the font, so the budget has to grow with
-    `font_scale` on its own. A hardcoded line height would pass at the default
-    scale and clip the text at 2.0, which is the setting a user reaches for when
-    the game's text is small.
-    """
+    """The same invariants across font scales, widths and line budgets."""
     print()
     print("-- the same invariants across settings --")
     failures = []

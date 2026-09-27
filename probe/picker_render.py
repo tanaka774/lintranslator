@@ -1,15 +1,7 @@
-"""Exercise the settings model picker and capture its popover.
-
-Run:  .venv/bin/python probe/picker_render.py
-
-Checks the three things the old DropDown could not do: hold the real fetched
-list, filter as you type, and hand the picked id back to the entry.
-"""
+"""Exercise the settings model picker and capture its popover."""
 import sys
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -23,7 +15,7 @@ from lintranslator.settings import MODEL_SUGGESTIONS, ModelPicker  # noqa: E402
 
 OUT = APP_DIR / ".cache"
 
-# A slice of the real 445-model list, in the order OpenRouter returns it.
+# A slice of the real OpenRouter model list, in the order it returns them.
 FAKE_FETCH = MODEL_SUGGESTIONS["openrouter"] + [
     "qwen/qwen3.8-27b:free",
     "google/gpt-oss-20b:free",
@@ -110,10 +102,7 @@ def main() -> int:
         return False
 
     def shot_popover():
-        """A native popover surface cannot be snapshotted, so the list is
-        verified behaviourally (row counts, filtering, picking) rather than
-        visually. The row layout inside the settings dialog is covered by
-        probe/settings_render.py."""
+        """A native popover surface cannot be snapshotted, so the list is checked behaviourally."""
         picker.search.set_text("hy-mt2")
         GLib.timeout_add(250, step_filtered)
         return False

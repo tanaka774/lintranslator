@@ -1,21 +1,8 @@
-"""What happens when the box has no text, or text that makes no sense?
-
-Four regions, each run through the real OCR (tesseract, your `min_confidence`) and
-then through the real pipeline, to show what actually reaches the translator:
-
-  1. blank region            - nothing to read at all
-  2. background art          - pattern, no text
-  3. dim/noisy small glyphs  - text-ish, but OCR is not sure
-  4. clean UI gibberish      - nonsense OCR is *confident* about
-
-Run:  .venv/bin/python probe/empty_region.py
-"""
+"""What happens when the box has no text, or text that makes no sense?"""
 import random
 import sys
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -56,11 +43,7 @@ def dim_glyphs() -> Image.Image:
 
 
 def ui_gibberish() -> Image.Image:
-    """Clean, large, meaningless - OCR will be sure of itself.
-
-    The exact reading below came off a live screen in an earlier phase of this
-    project (a text editor's toolbar caught inside the region).
-    """
+    """Clean, large, meaningless - OCR will be sure of itself."""
     image = Image.new("RGB", (WIDTH, HEIGHT), (250, 250, 250))
     ImageDraw.Draw(image).text((24, 45), "Ww Vv F] Paste QFind = .", fill=(10, 10, 10))
     return image
@@ -150,7 +133,7 @@ def describe(title: str, images: list[Image.Image], engine: TesseractOcr, cfg: C
 
 def main() -> int:
     cfg = Config.load()
-    cfg.translate.backend = "none"  # the stub translator stands in for the model
+    cfg.translate.backend = "none"
     engine = TesseractOcr(
         langs=cfg.ocr.langs,
         psm=cfg.ocr.psm,

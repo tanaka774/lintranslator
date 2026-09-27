@@ -1,9 +1,4 @@
-"""The compositor-granted global hotkey: the parts that can be tested off-screen.
-
-The portal round trip needs a compositor, but the failure mapping and the request
-path prediction do not - and they are the parts that decide what the user is told
-when binding does not work.
-"""
+"""The compositor-granted global hotkey: the parts that can be tested off-screen."""
 from __future__ import annotations
 
 from lintranslator.hotkey import (
@@ -27,8 +22,7 @@ def test_default_shortcut_is_the_reread_key():
 
 
 def test_an_app_id_refusal_is_explained_in_terms_a_user_can_act_on():
-    """KDE answers `An app id is required` for a terminal launch; that string
-    alone tells the user nothing about what to do."""
+    """KDE answers `An app id is required` for a terminal launch."""
     hotkey, notes = _hotkey()
     hotkey._on_call_failed(
         "CreateSession: Error: GDBus.Error:org.freedesktop.portal.Error.NotAllowed: "

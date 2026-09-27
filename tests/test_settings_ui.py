@@ -1,13 +1,4 @@
-"""Settings dialog behaviour: backend-dependent rows and model memory.
-
-These cover the two ways the dialog used to mislead: it showed every row at once
-regardless of backend, and it carried one backend's Model value into another's
-(so switching endpoint carried a model id that only fails later, at request time,
-as "model not found").
-
-Requires a GTK display. Skips cleanly when there is none, so the suite still
-runs in a headless container.
-"""
+"""Settings dialog behaviour: backend-dependent rows and model memory."""
 from __future__ import annotations
 
 import pytest
@@ -40,13 +31,7 @@ def gtk_init():
 
 @pytest.fixture(autouse=True)
 def never_write_the_real_config(tmp_path, monkeypatch):
-    """Redirect any default config write into tmp_path.
-
-    `_on_save` calls `config.save()` with no path. A dialog built from a default
-    `Config()` therefore used to overwrite the developer's real config.json -
-    including wiping their API key - which is exactly what happened once. Any
-    test here that saves must not be able to touch the repository file.
-    """
+    """Redirect any default config write into tmp_path."""
     from lintranslator import config as config_mod
 
     monkeypatch.setattr(config_mod, "DEFAULT_CONFIG_PATH", tmp_path / "config.json")
@@ -67,16 +52,13 @@ def select(dlg: SettingsDialog, backend: str) -> None:
     dlg.backend_dd.set_selected(idx)
 
 
-# -- backend-dependent rows ------------------------------------------------- #
 def test_only_this_backend_rows_are_visible(dialog):
-    # chat reads an endpoint, a model id and a key, and has no fetch button.
     select(dialog, "chat")
     assert dialog.model_row.get_visible()
     assert dialog.base_row.get_visible()
     assert dialog.key_row.get_visible()
     assert not dialog.fetch_btn.get_visible()
 
-    # openrouter reads a model id and a key, and can list models for it.
     select(dialog, "openrouter")
     assert dialog.model_row.get_visible()
     assert dialog.key_row.get_visible()
@@ -84,12 +66,7 @@ def test_only_this_backend_rows_are_visible(dialog):
 
 
 def test_saving_writes_the_ocr_recipe(dialog):
-    """The OCR-input rows are what OCR is handed, not display options.
-
-    They are the only place `ocr.invert`, `ocr.autocontrast` and `ocr.threshold`
-    can be set, so a save that dropped them would leave the recipe reachable only
-    by editing config.json - which is what this row exists to stop.
-    """
+    """The OCR-input rows are what OCR is handed, not display options."""
     dialog.ocr_invert.set_active(True)
     dialog.ocr_autocontrast.set_active(False)
     dialog.ocr_threshold.set_value(144)
@@ -100,12 +77,7 @@ def test_saving_writes_the_ocr_recipe(dialog):
 
 
 def test_the_cut_row_says_off_rather_than_zero():
-    """0 is not a grey level, it is "no cut", and the field has to say so.
-
-    A numeric spin button rejects a word that is not a number and blanks itself
-    instead, which is how this row first rendered: an empty box next to a value
-    of 0, in the one control that has to explain what 0 means.
-    """
+    """0 is not a grey level, it is "no cut", and the field has to say so."""
     dlg = SettingsDialog(None, Config())
     try:
         assert dlg.ocr_threshold.get_text() == "off"
@@ -125,12 +97,7 @@ def test_the_ocr_recipe_rows_are_shown_for_every_backend(dialog):
 
 
 def test_a_hand_edited_cut_survives_the_dialog(tmp_path):
-    """`"threshold": "128"` in config.json must not take the dialog down.
-
-    The field is a number and the config is hand-editable, so the value goes
-    through the same normalisation the read uses: a string that is not a level
-    means "off", exactly as it does for OCR itself.
-    """
+    """A hand-edited threshold string in config.json must not take the dialog down."""
     path = tmp_path / "config.json"
     path.write_text('{"ocr": {"threshold": "wide"}}')
     dlg = SettingsDialog(None, Config.load(path))
@@ -163,11 +130,7 @@ def test_the_custom_endpoint_row_says_which_protocol_it_wants(dialog):
 
 
 def test_the_prompt_row_is_only_for_the_backends_that_read_it(dialog):
-    """DeepL has no prompt parameter, and `none` sends nothing at all.
-
-    The field is only meaningful for the backends that send it, so showing it
-    over a backend that ignores it is a control that silently does nothing.
-    """
+    """DeepL has no prompt parameter, and `none` sends nothing at all."""
     for backend in ("openrouter", "openai", "chat"):
         select(dialog, backend)
         assert dialog.prompt_section.get_visible(), backend
@@ -177,11 +140,7 @@ def test_the_prompt_row_is_only_for_the_backends_that_read_it(dialog):
 
 
 def test_hiding_the_prompt_does_not_erase_a_stored_one():
-    """Switching to a backend that ignores the prompt and saving must keep it.
-
-    The field is hidden, not cleared: `translate.prompt` is still in the config,
-    and a Save made while DeepL is selected must not drop it.
-    """
+    """Switching to a backend that ignores the prompt and saving must keep it."""
     cfg = Config()
     cfg.translate.prompt = "keep Faust in Latin script"
     dlg = SettingsDialog(None, cfg)
@@ -194,8 +153,7 @@ def test_hiding_the_prompt_does_not_erase_a_stored_one():
 
 
 def test_the_prompt_box_shows_the_builtin_default_rather_than_an_empty_box():
-    """An empty field means "use the built-in default", so showing nothing would
-    hide the prompt that is actually in force."""
+    """An empty field means "use the built-in default", so showing nothing would hide the prompt in force."""
     from lintranslator.geometry import DEFAULT_PROMPT
 
     dlg = SettingsDialog(None, Config())
@@ -208,8 +166,7 @@ def test_the_prompt_box_shows_the_builtin_default_rather_than_an_empty_box():
 
 
 def test_a_stored_base_url_is_only_shown_to_the_backend_it_was_set_for(dialog):
-    """Ollama's URL left in the field while OpenRouter is selected would be
-    saved over the provider default."""
+    """Ollama's URL left in the field while OpenRouter is selected would be saved over the provider default."""
     dialog.config.translate.backend = "chat"
     dialog.config.translate.api_base = "http://localhost:11434/v1"
     select(dialog, "chat")
@@ -235,12 +192,7 @@ def test_the_custom_endpoint_warns_while_it_has_no_url(dialog):
 
 
 def test_the_timeout_row_shows_where_a_socket_is_waited_on(dialog):
-    """The key existed in config.json and had no row here.
-
-    That is how a local model that was merely slow - 10.3 s for one line, measured
-    on qwen3.5:4b through Ollama - got reported as "unreachable", with the one
-    setting that would have fixed it unreachable too.
-    """
+    """The timeout row is shown for the backends that wait on a socket."""
     for backend in ("chat", "openai", "openrouter", "deepl", "google"):
         select(dialog, backend)
         assert dialog.timeout_row.get_visible(), backend
@@ -268,8 +220,7 @@ def test_saving_writes_the_timeout_and_the_thinking_choice(dialog):
 
 
 def test_a_hand_edited_value_survives_the_dialog(tmp_path):
-    """Settings must show what the config holds, including a value it does not
-    offer - the rule the language pickers already follow."""
+    """Settings must show what the config holds, including a value it does not offer."""
     cfg = Config()
     cfg.translate.backend = "chat"
     cfg.translate.timeout = 45.0
@@ -287,11 +238,7 @@ def test_a_hand_edited_value_survives_the_dialog(tmp_path):
 
 
 def test_no_row_claims_a_model_licence():
-    """The dialog names no model licence, because it installs no model.
-
-    Nothing this app downloads from the network for itself carries a
-    non-commercial term, so a row saying otherwise would be the misleading part.
-    """
+    """The dialog names no model licence, because it installs no model."""
     assert not hasattr(SettingsDialog, "licence_hint")
     with open(settings_mod.__file__, encoding="utf-8") as handle:
         assert "CC-BY-NC" not in handle.read()
@@ -303,15 +250,11 @@ def test_model_label_matches_backend(dialog):
         assert dialog.model_label.get_text() == label
 
 
-# -- model memory --------------------------------------------------------- #
 def test_switching_backend_does_not_leak_a_model_id(dialog):
     select(dialog, "chat")
     dialog.model_entry.set_text("hy-mt2:1.8b")
 
     select(dialog, "openrouter")
-    # The bug: one backend's Model value stayed in the field and was sent to
-    # another provider, which only fails later, at request time, as "model not
-    # found".
     assert dialog.model_entry.get_text() != "hy-mt2:1.8b"
 
 
@@ -330,11 +273,9 @@ def test_each_backend_remembers_its_own_model(dialog):
 
 
 def test_configured_model_is_shown_for_its_own_backend(dialog):
-    # config says openrouter + hy-mt2, and the dialog opens on that backend.
     assert dialog.model_entry.get_text() == "tencent/hy-mt2-1.8b"
 
 
-# -- warnings -------------------------------------------------------------- #
 def test_reasoning_model_gets_a_caution(dialog):
     select(dialog, "openrouter")
     cautious = sorted(REASONING_CAUTION)[0]
@@ -347,7 +288,6 @@ def test_deepl_asks_for_a_key_rather_than_denying_one_is_needed(dialog, monkeypa
     dialog.key_entry.set_text("")
     select(dialog, "deepl")
     assert dialog.key_row.get_visible()
-    # The bug: the row was shown while the label said no key was needed.
     text = dialog.key_label.get_text()
     assert "No key needed" not in text
     assert "DEEPL_API_KEY" in text
@@ -363,7 +303,6 @@ def test_the_custom_endpoint_offers_a_key_without_demanding_one(dialog, monkeypa
     monkeypatch.delenv("LINTRANSLATOR_API_KEY", raising=False)
     dialog.key_entry.set_text("")
     select(dialog, "chat")
-    # The row has to be there: a hosted gateway needs a key.
     assert dialog.key_row.get_visible()
     text = dialog.key_label.get_text()
     assert "No key needed" not in text
@@ -371,12 +310,7 @@ def test_the_custom_endpoint_offers_a_key_without_demanding_one(dialog, monkeypa
 
 
 def test_the_key_field_belongs_to_one_backend_at_a_time(tmp_path):
-    """The bug: one value for every backend, refilled from the same field.
-
-    A DeepL key sat behind OpenRouter's masked box looking as if it belonged
-    there, and Save wrote it as OpenRouter's - so the key left the machine on the
-    next translation, as a bearer token sent to a provider it was never issued for.
-    """
+    """A key typed for one backend must never be saved as another backend's."""
     cfg = Config()
     cfg.translate.backend = "deepl"
     cfg.translate.api_keys = {"deepl": "deepl-key", "openrouter": "or-key"}
@@ -415,9 +349,7 @@ def test_switching_away_and_back_keeps_a_key_that_is_not_saved_yet(dialog):
 def test_a_backend_with_no_key_field_never_gets_one(dialog):
     select(dialog, "deepl")
     dialog.key_entry.set_text("deepl-key")
-    # `none` takes no key at all, so the field is hidden - and a hidden field must
-    # not be the place a key gets stored from. The key stays with the backend it
-    # was typed for.
+    # a hidden key field must not be where a key gets stored from
     select(dialog, "none")
     dialog._on_save(None)
     assert dialog.config.translate.api_keys == {"deepl": "deepl-key"}
@@ -431,7 +363,6 @@ def test_clearing_the_key_clears_only_this_backend(dialog):
     assert "deepl" in dialog.status.get_text()
 
 
-# -- picker ---------------------------------------------------------------- #
 def test_picker_filters_and_reports_counts(dialog):
     select(dialog, "openrouter")
     picker = dialog.model_picker
@@ -466,10 +397,8 @@ def test_picker_enter_selects_top_match(dialog):
     assert dialog.model_entry.get_text() == "tencent/hy-mt2-1.8b"
 
 
-# -- save ------------------------------------------------------------------ #
 def test_save_records_recent_models_and_weights_dir(tmp_path):
-    # Load from a real (temp) file so the save path is exercised end to end
-    # rather than only mutating an in-memory Config.
+    # load from a real file so the save path is exercised end to end
     cfg_path = tmp_path / "config.json"
     cfg = Config()
     cfg.save(cfg_path)
@@ -484,7 +413,6 @@ def test_save_records_recent_models_and_weights_dir(tmp_path):
         dlg._on_save(Gtk.Button())
         assert cfg.translate.recent_models[0] == "tencent/hy-mt2-1.8b"
 
-        # A second, different model goes to the front and does not duplicate.
         dlg.model_entry.set_text("google/gemini-2.5-flash-lite")
         dlg._on_save(Gtk.Button())
         assert cfg.translate.recent_models[:2] == [
@@ -494,10 +422,9 @@ def test_save_records_recent_models_and_weights_dir(tmp_path):
 
         select(dlg, "deepl")
         dlg._on_save(Gtk.Button())
-        # A backend whose field is not a model id must never pollute recent_models.
+        # a backend whose field is not a model id must never pollute recent_models
         assert "DEEPL" not in "".join(cfg.translate.recent_models)
 
-        # The writes actually reached the file, and `path` is not persisted.
         reloaded = Config.load(cfg_path)
         assert reloaded.translate.recent_models[0] == "google/gemini-2.5-flash-lite"
         assert "path" not in reloaded.__dict__ or reloaded.path == cfg_path
@@ -515,15 +442,12 @@ def test_load_records_its_path_so_save_writes_back_there(tmp_path):
     assert Config.load(target).display.width == 700
 
 
-# --------------------------------------------------------------------------- #
-# The card's height budget
-# --------------------------------------------------------------------------- #
 def test_the_display_section_exposes_the_height_budget(dialog):
     """Both line budgets must be editable, bounded, and start at the config."""
     cfg = dialog.config
     assert dialog.target_lines.get_value() == cfg.display.target_lines
     assert dialog.source_lines.get_value() == cfg.display.source_lines
-    # Bounded below at one line: zero lines is not a card, it is a bug report.
+    # bounded below at one line: zero lines is not a card
     assert dialog.target_lines.get_adjustment().get_lower() >= 1
     assert dialog.source_lines.get_adjustment().get_lower() >= 1
     assert dialog.target_lines.get_adjustment().get_upper() > cfg.display.target_lines
@@ -538,8 +462,7 @@ def test_the_line_budgets_round_trip_through_save_and_reload(dialog, tmp_path):
         dlg.show_source.set_active(False)
         dlg._on_save(_save_button(dlg))
 
-        # Wherever the redirected default points (`tests/conftest.py` owns the
-        # layout now), the save must have landed somewhere under tmp_path.
+        # the redirected default may point elsewhere, so look for the file under tmp_path
         written = list(tmp_path.rglob("*.json"))
         assert written, "save wrote nothing"
         reloaded = Config.load(written[0])
@@ -565,24 +488,19 @@ def _save_button(dialog):
 
 
 def test_hiding_the_source_says_below_not_above(dialog):
-    """The original text moved below the translation; the checkbox must agree."""
+    """The checkbox label must say the original text sits below the translation."""
     assert "below the translation" in dialog.show_source.get_label()
 
 
 def test_changing_a_line_budget_releases_a_dragged_height(dialog):
-    """Otherwise the two budget sliders look broken once an edge was dragged.
-
-    Dragging an edge pins the card's height; the line budgets are the rule it
-    was pinned *against*. Re-stating that rule has to win, or the sliders appear
-    to do nothing after the first drag.
-    """
+    """A line-budget change must clear a card height pinned by an edge drag."""
     dlg = dialog
     dlg.config.display.height = 400  # as if the card had been dragged
     dlg.target_lines.set_value(dlg.config.display.target_lines + 1)
     dlg._on_save(_save_button(dlg))
     assert dlg.config.display.height == 0
 
-    # Re-saving the same budgets must not discard a drag for no reason.
+    # re-saving the same budgets must not discard a drag for no reason
     dlg.config.display.height = 400
     dlg.target_lines.set_value(dlg.config.display.target_lines)
     dlg.source_lines.set_value(dlg.config.display.source_lines)
@@ -590,9 +508,6 @@ def test_changing_a_line_budget_releases_a_dragged_height(dialog):
     assert dlg.config.display.height == 400
 
 
-# --------------------------------------------------------------------------- #
-# The language pair
-# --------------------------------------------------------------------------- #
 def _picker_codes(picker) -> list[str]:
     codes = []
     row = picker.listbox.get_row_at_index(0)
@@ -644,8 +559,6 @@ def test_the_picker_row_says_what_the_backend_would_be_sent(dialog):
     row = dialog.target_picker._language_row(LANGUAGES["jpn_Jpan"])
     assert "JA" in _row_texts(row)
 
-    # A language DeepL does not have says so while it is being chosen, rather
-    # than as an HTTP 400 after Save.
     row = dialog.target_picker._language_row(LANGUAGES["ceb_Latn"])
     assert "not supported" in _row_texts(row)
 
@@ -656,22 +569,15 @@ def test_choosing_a_language_updates_the_pair_and_the_hint(dialog):
     picker.refresh()
     picker._activate_first()
     assert picker.get_code() == "kor_Hang"
-    # The hint follows the picker, in the form the selected backend reads.
     select(dialog, "google")
     assert "ko" in dialog.language_hint.get_text()
 
 
 def test_the_hint_names_the_code_each_backend_decodes_with(dialog):
-    """DeepL takes an ISO code of its own, and Google a lowercase one.
-
-    The chat backends are deliberately not named here: the pair reaches them as
-    words inside the prompt, and that prompt is on screen for them. A line
-    repeating it under the pickers was the same sentence twice.
-    """
+    """DeepL takes an ISO code of its own, and Google a lowercase one."""
     select(dialog, "deepl")
     assert "EN → JA" in dialog.language_hint.get_text()
 
-    # Google's code space is ISO 639-1 as well, and lowercase.
     select(dialog, "google")
     assert "en → ja" in dialog.language_hint.get_text()
 
@@ -694,11 +600,7 @@ def test_deepl_warns_when_it_cannot_translate_the_target(dialog):
 
 
 def test_google_gets_iso_codes_and_the_traditional_chinese_override(dialog):
-    """The hint has to name the code Google is actually sent.
-
-    `zho_Hant` is the one language where that is not the table's ISO column: it
-    carries "zh", and asking Google for "zh" returns Simplified.
-    """
+    """The hint names the code Google is actually sent, including the zh-TW override for `zho_Hant`."""
     dialog.target_picker.set_code("zho_Hant")
     select(dialog, "google")
     hint = dialog.language_hint.get_text()
@@ -715,12 +617,7 @@ def test_google_warns_when_it_cannot_translate_the_target(dialog):
 
 
 def test_an_unknown_code_is_shown_and_warned_about_never_replaced(dialog):
-    """A hand-edited config must survive Settings being opened.
-
-    Silently rewriting the value would make the dialog the thing that changed the
-    language, and the failure it hides - garbage output from an `<unk>` target -
-    would look like a bad model.
-    """
+    """A hand-edited config must survive Settings being opened."""
     dialog.target_picker.set_code("Japanese")
     dialog._refresh_language()
     assert dialog.target_picker.get_code() == "Japanese"
@@ -757,9 +654,6 @@ def test_swap_exchanges_the_pair(dialog):
     assert dialog.target_picker.get_code() == "eng_Latn"
 
 
-# --------------------------------------------------------------------------- #
-# The OCR languages: a set to choose, under the pair
-# --------------------------------------------------------------------------- #
 def _row_for(dialog, stem: str) -> Gtk.ListBoxRow:
     """The chooser's row for a stem, or an assertion failure naming it."""
     listbox = dialog.ocr_picker.listbox
@@ -787,13 +681,7 @@ def _tags(dialog, stem: str) -> list[str]:
 
 
 def test_the_hint_names_the_model_the_source_needs(dialog):
-    """`eng+jpn` reads a Japanese line with Latin names in it; `jpn` does not.
-
-    The OCR language is a separate setting from the translation language, so the
-    two drift apart silently - and reading Japanese with `eng` produces confident
-    nonsense rather than an error. The hint is text, not a button: the row for
-    `jpn` is tagged in the list, so the fix is already one click away.
-    """
+    """The hint names the OCR model the source language needs."""
     dialog.source_picker.set_code("jpn_Jpan")
     dialog._refresh_language()
 
@@ -801,7 +689,6 @@ def test_the_hint_names_the_model_the_source_needs(dialog):
     assert "tick jpn in the list above" in dialog.ocr_hint.get_text()
 
     _tick(dialog, "jpn")
-    # Nothing left to say once it is there.
     assert not dialog.ocr_hint.get_visible()
 
     dialog._on_save(_save_button(dialog))
@@ -829,9 +716,8 @@ def test_saving_without_touching_ocr_leaves_it_alone(dialog):
     assert dialog.config.ocr.langs == "eng+chi_sim"
 
 
-# -- the choice itself ------------------------------------------------------ #
 def test_the_chooser_opens_on_what_the_config_says(dialog):
-    """Otherwise the list would edit something other than what is in force."""
+    """The chooser opens on the language list the config holds."""
     dialog.config.ocr.langs = "eng+kor"
     dlg = SettingsDialog(None, dialog.config)
     try:
@@ -842,11 +728,7 @@ def test_the_chooser_opens_on_what_the_config_says(dialog):
 
 
 def test_ticking_and_unticking_are_both_possible(dialog):
-    """The whole point: the list could be grown but never shortened.
-
-    Every model in it competes for every word, so an OCR list that has grown is
-    slower and can lose a soft glyph to a script that is not on screen.
-    """
+    """Both ticking and unticking an OCR language must be possible."""
     assert dialog.ocr_picker.get_langs() == ["eng"]
 
     _tick(dialog, "kor")
@@ -861,12 +743,7 @@ def test_ticking_and_unticking_are_both_possible(dialog):
 
 
 def test_the_choice_is_stored_in_one_order_whatever_order_it_was_ticked(dialog):
-    """`eng+kor` and `kor+eng` give the same text and the same confidence.
-
-    Order carries no meaning, so the value is written in the list's own order -
-    otherwise the same selection would look different in the config depending on
-    which box was clicked first.
-    """
+    """The stored value is written in the list's own order, whatever order it was ticked in."""
     _tick(dialog, "kor")
     first = dialog._ocr_langs
     _tick(dialog, "kor", on=False)
@@ -875,7 +752,7 @@ def test_the_choice_is_stored_in_one_order_whatever_order_it_was_ticked(dialog):
 
 
 def test_the_source_language_is_marked_in_the_list(dialog):
-    """"Which of these 124 do I tick" should have an answer on screen."""
+    """The row for the source language is marked in the list."""
     dialog.source_picker.set_code("kor_Hang")
     dialog._refresh_language()
     assert dialog.ocr_picker.NEEDED_TAG in _tags(dialog, "kor")
@@ -883,12 +760,7 @@ def test_the_source_language_is_marked_in_the_list(dialog):
 
 
 def test_each_row_says_how_the_model_would_be_obtained(dialog, monkeypatch):
-    """The state that is otherwise found by saving and watching OCR fail.
-
-    `rus` has a pinned checksum so the app fetches it; `grc` ships with tesseract
-    but the app will not download it, because it has no digest to check it
-    against. Both look identical in a config file.
-    """
+    """Each row says how its model would be obtained; only a model with a pinned checksum is downloaded."""
     monkeypatch.setattr(settings_mod, "installed_models", lambda *_: {"eng"})
     dialog._refresh_language()
 
@@ -911,18 +783,13 @@ def test_search_narrows_the_list(dialog):
 
 
 def test_a_stem_the_table_does_not_know_is_kept_and_shown(dialog):
-    """A hand-added file, or a name from a newer tessdata revision.
-
-    Dropping it would be the dialog editing the config by opening it, which is
-    the one thing it must never do.
-    """
+    """A stem the table does not know is kept and shown, not dropped."""
     dialog.config.ocr.langs = "eng+zzz_handmade"
     dlg = SettingsDialog(None, dialog.config)
     try:
         assert dlg.ocr_picker.get_langs() == ["eng", "zzz_handmade"]
         assert _tags(dlg, "zzz_handmade") == ["not a known model"]
 
-        # And it can be removed, which is what "control the list" has to mean.
         _tick(dlg, "zzz_handmade", on=False)
         dlg._on_save(_save_button(dlg))
         assert dlg.config.ocr.langs == "eng"
@@ -930,13 +797,8 @@ def test_a_stem_the_table_does_not_know_is_kept_and_shown(dialog):
         dlg.destroy()
 
 
-# -- the advice under the choice -------------------------------------------- #
 def test_the_hint_names_what_is_only_competing(dialog):
-    """Three models over a Korean box: one of them is only competing.
-
-    The source is already readable, so what is left to say is the cost of the
-    extra model - the user untick it, which is a click in the list.
-    """
+    """The hint names the OCR models that are only competing for the box."""
     dialog._set_ocr_langs("eng+jpn+kor")
     dialog.source_picker.set_code("kor_Hang")
     dialog._refresh_language()
@@ -952,12 +814,7 @@ def test_the_hint_names_what_is_only_competing(dialog):
 
 
 def test_a_list_that_already_reads_the_box_is_left_alone(dialog):
-    """`eng+kor` over Korean is a choice, not a mistake.
-
-    A hint that fired here would be nagging: it is exactly the list the app
-    recommends for a box with Latin names in it, and the old dialog hid the row
-    for this case rather than warning about it.
-    """
+    """A list that already reads the box is left alone."""
     for langs in ("eng+kor", "kor+eng"):
         dialog._set_ocr_langs(langs)
         dialog.source_picker.set_code("kor_Hang")
@@ -966,7 +823,7 @@ def test_a_list_that_already_reads_the_box_is_left_alone(dialog):
 
 
 def test_the_hint_reads_correctly_for_every_shape_of_extra(dialog):
-    """The first version said "kor, jpn competes", which is not a sentence."""
+    """The hint reads correctly for every shape of extra OCR model."""
     dialog._set_ocr_langs("eng+jpn+kor")
     dialog.source_picker.set_code("kor_Hang")
     dialog._refresh_language()
@@ -979,12 +836,7 @@ def test_the_hint_reads_correctly_for_every_shape_of_extra(dialog):
 
 
 def test_an_empty_selection_is_not_saved_and_the_picker_is_put_back(dialog):
-    """OCR with no language cannot run, so an empty set is not a setting.
-
-    The picker is restored rather than left showing a selection that was never
-    stored: a window that lies about what is in force is worse than one that
-    refuses.
-    """
+    """OCR with no language cannot run, so an empty set is not a setting."""
     dialog.config.ocr.langs = "kor"
     dialog._set_ocr_langs("kor")
     _tick(dialog, "kor", on=False)
@@ -997,13 +849,7 @@ def test_an_empty_selection_is_not_saved_and_the_picker_is_put_back(dialog):
 
 
 def test_a_hand_edited_bad_name_is_reported_not_silently_dropped(dialog):
-    """The value becomes a filename, so it is checked rather than trusted.
-
-    A picker cannot produce one of these, but `config.json` and `--langs` can, and
-    `parse_langs` refuses the name at read time anyway - so a save that accepted it
-    would only move the failure somewhere less explicable. It is shown rather than
-    dropped, because opening Settings must never edit the config by itself.
-    """
+    """The value becomes a filename, so it is checked rather than trusted."""
     dialog.config.ocr.langs = "kor+../passwd"
     dlg = SettingsDialog(None, dialog.config)
     try:
@@ -1019,16 +865,10 @@ def test_a_hand_edited_bad_name_is_reported_not_silently_dropped(dialog):
 
 
 def test_the_ocr_row_fits_the_dialog(dialog):
-    """The row is a label and a picker, and must not outgrow the dialog.
-
-    The picker is the control the row exists for; a selection wide enough to push
-    it off the edge would be a row nobody can use.
-    """
+    """The row is a label and a picker, and must not outgrow the dialog."""
     dialog._set_ocr_langs("eng+jpn+chi_sim+kor")
     dialog._refresh_language()
     label = dialog.ocr_picker._label.get_text()
-    # Four names, the longest label the button can carry, in the order the
-    # config holds them.
     assert label == "English + Japanese + Chinese (simplified) + Korean", label
 
     width = dialog.get_default_size().width
@@ -1037,9 +877,6 @@ def test_the_ocr_row_fits_the_dialog(dialog):
     assert row.minimum + 160 <= width, f"the OCR row needs {row.minimum}px of {width}px"
 
 
-# --------------------------------------------------------------------------- #
-# The wheel must not set these values
-# --------------------------------------------------------------------------- #
 DISPLAY_SLIDERS = ("font_scale", "width_scale", "target_lines", "source_lines")
 
 
@@ -1053,18 +890,11 @@ def _scroll_controllers(widget):
 
 @pytest.mark.parametrize("name", DISPLAY_SLIDERS)
 def test_a_display_slider_has_a_capture_phase_wheel_guard(dialog, name):
-    """The dialog is a scrolling column of sliders, so the wheel is a hazard.
-
-    Measured before this: one wheel notch over the font-size slider took it from
-    1.2 to 0.7 - half the range, from a gesture the user aimed at the *dialog*.
-    The guard has to be in the capture phase, which runs on the way down the
-    widget tree, ahead of the scale's own bubble-phase handling.
-    """
+    """The wheel guard must be in the capture phase, ahead of the scale's own bubble-phase handling."""
     slider = getattr(dialog, name)
     phases = [c.get_propagation_phase() for c in _scroll_controllers(slider)]
     assert Gtk.PropagationPhase.CAPTURE in phases, f"{name} has no wheel guard"
-    # The scale's own handler must still be the bubble-phase one, or the guard
-    # would be racing it rather than running ahead of it.
+    # the scale's own handler must stay bubble-phase, or the guard races it
     assert Gtk.PropagationPhase.BUBBLE in phases, f"{name} lost its own handling"
     assert phases.count(Gtk.PropagationPhase.CAPTURE) == 1, "guarded twice"
 
@@ -1112,9 +942,6 @@ def test_things_that_are_meant_to_scroll_still_do(dialog):
     )
 
 
-# --------------------------------------------------------------------------- #
-# What this dialog deliberately does not edit
-# --------------------------------------------------------------------------- #
 def _labels(widget):
     """Every label inside `widget`, in no particular order."""
     stack = [widget]
@@ -1129,15 +956,7 @@ def _labels(widget):
 
 
 def test_the_dialog_offers_no_way_to_edit_the_capture_region(dialog):
-    """The region belongs to the picker; this dialog is not a second editor.
-
-    It used to carry a pixel readout with Smaller/Larger and 8 px move buttons -
-    a correction made blind, since this window sits on neither the screen it
-    reads nor the crop that comes back. The picker shows both, and
-    `lintranslator region` sets the box without a GUI at all. Either half coming
-    back here would leave two windows disagreeing about what gets OCR'd, so the
-    controls and the value Save writes are both checked.
-    """
+    """The region belongs to the picker; this dialog is not a second editor."""
     labels = list(_labels(dialog))
     assert not [text for text in labels if text.startswith("Capture area")], labels
     assert not [text for text in labels if text.startswith(("Smaller ", "Larger "))], labels
@@ -1152,25 +971,14 @@ def test_the_dialog_offers_no_way_to_edit_the_capture_region(dialog):
 
 
 def test_saving_writes_the_confidence_gate(dialog):
-    """The gate decides whether a good read survives, and had no row.
-
-    A read that misses it by a point is dropped, which the window used to report
-    as "no text found in this region" - indistinguishable from an OCR that cannot
-    see the box at all.
-    """
+    """Save writes the confidence gate; a read below it is dropped."""
     dialog.ocr_confidence.set_value(70)
     dialog._on_save(None)
     assert dialog.config.ocr.min_confidence == 70.0
 
 
 def test_saving_leaves_the_layout_alone(tmp_path):
-    """`ocr.psm` has no row on purpose, so Save must not invent one.
-
-    It is a config key: no single value is safe for every box shape (the mode
-    that reads a one-line strip reads a two-line box as nothing), so it is not a
-    question the dialog asks - and a save that rewrote it would silently undo a
-    value chosen for the box in hand.
-    """
+    """`ocr.psm` has no row on purpose, so Save must not invent one."""
     path = tmp_path / "config.json"
     path.write_text('{"ocr": {"psm": 7}}')
     dlg = SettingsDialog(None, Config.load(path))

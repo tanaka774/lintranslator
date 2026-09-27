@@ -1,36 +1,24 @@
-"""Coordinate mapping for the region picker.
-
-Pure geometry, deliberately kept out of the widget code so it can be tested
-without a display. Getting this wrong means saving a region that does not match
-what the user dragged - a bug that only shows up as bad OCR later, which is a
-miserable thing to debug.
-"""
+"""Coordinate mapping for the region picker."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-# The smallest box a resize may leave, in screen pixels. A zero-width selection
-# would crop to an empty image and crash OCR.
+# smallest box a resize may leave, in screen pixels; a zero-width selection
+# would crop to an empty image and crash OCR
 MIN_SIZE = 4
-# How close the pointer may land to an edge and still grab it, in *widget*
-# pixels. See `handle_tolerance`.
+# how close the pointer may land to an edge and still grab it, in widget pixels
 HANDLE_WIDGET_MIN = 8.0
 
 
 @dataclass
 class SelectionMath:
-    """Maps between screen pixels and widget space for a letterboxed screenshot.
-
-    The screenshot is scaled to fit the widget while preserving aspect ratio and
-    centred, so widget space has margins on one axis (letterboxing).
-    """
+    """Maps between screen pixels and widget space for a letterboxed screenshot."""
 
     screen_w: int
     screen_h: int
     widget_w: float
     widget_h: float
 
-    # -- image placement --------------------------------------------------- #
     @property
     def scale(self) -> float:
         if self.screen_w <= 0 or self.screen_h <= 0:
@@ -49,7 +37,6 @@ class SelectionMath:
     def offset(self) -> tuple[float, float]:
         return ((self.widget_w - self.draw_w) / 2, (self.widget_h - self.draw_h) / 2)
 
-    # -- conversions ------------------------------------------------------- #
     def to_screen(self, wx: float, wy: float) -> tuple[int, int]:
         """Widget point -> screen pixel, clamped to the screenshot."""
         if self.scale <= 0:
@@ -68,30 +55,18 @@ class SelectionMath:
         return (ox + sx * self.scale, oy + sy * self.scale)
 
     def handle_tolerance(self, handle_px: int = 8) -> tuple[float, float]:
-        """Hit-test tolerance in widget units, derived from screen pixels.
-
-        Floored, because a screenshot tolerance is not a *pointer* tolerance: on a
-        2560-wide screen letterboxed into the picker's canvas, 8 screen px works
-        out at under 4 px of mouse travel, which is a pixel hunt. Never harder
-        than `handle_px` of the screenshot, never harder than HANDLE_WIDGET_MIN on
-        screen.
-        """
+        """Hit-test tolerance in widget units, derived from screen pixels."""
         if self.scale <= 0:
             return (float(handle_px), float(handle_px))
         tol = max(handle_px * self.scale, HANDLE_WIDGET_MIN)
         return (tol, tol)
 
-    # -- hit testing ------------------------------------------------------- #
     def hit_test(
         self, wx: float, wy: float, sel: tuple[int, int, int, int] | None, handle_px: int = 8
     ) -> str:
-        """Which part of the selection is under the pointer.
-
-        Returns one of: new, move, n, s, e, w, ne, nw, se, sw.
-        """
-        # Without a usable mapping every point converts to (0, 0), which lands
-        # within tolerance of every edge at once - a press anywhere would report
-        # a corner. There is nothing to grab until the canvas has a size.
+        """Which part of the selection is under the pointer: new, move, n, s, e, w, ne, nw, se, sw."""
+        # without a usable mapping every point converts to (0, 0), which is within
+        # tolerance of every edge at once, so nothing can be grabbed
         if sel is None or self.scale <= 0:
             return "new"
         x0, y0, w, h = sel
@@ -126,7 +101,6 @@ class SelectionMath:
             return "move"
         return "new"
 
-    # -- drag application -------------------------------------------------- #
     @staticmethod
     def apply_drag(
         mode: str,
@@ -135,18 +109,7 @@ class SelectionMath:
         end: tuple[int, int],
         bounds: tuple[int, int],
     ) -> tuple[int, int, int, int]:
-        """Apply a drag to a selection, returning a normalised (x, y, w, h).
-
-        `sel` is the box the drag applies to, `start` and `end` are where the
-        pointer went down and where it is now, and only their difference is used -
-        so the caller may pass either the box from the start of the drag with the
-        total offset, or the current box with the offset since the last event.
-
-        A grabbed edge is moved by that offset; the one opposite it does not move
-        at all. This used to rebuild the edge from min()/max() of the two pointer
-        positions, which pins it whenever the drag heads towards the opposite
-        edge: only outward drags moved, and shrinking the box did nothing.
-        """
+        """Apply a drag to a selection, returning a normalised (x, y, w, h)."""
         left, right = sorted((start[0], end[0]))
         top, bottom = sorted((start[1], end[1]))
         screen_w, screen_h = bounds
@@ -157,8 +120,8 @@ class SelectionMath:
         else:
             x0, y0, w, h = sel
             x1, y1 = x0 + w, y0 + h
-            # The fixed edges, kept before either moving edge is written: every
-            # clamp below has to measure against the edge that is not moving.
+            # fixed edges, captured before either moving edge is written: every
+            # clamp below measures against the edge that is not moving
             fixed_x0, fixed_y0 = x0, y0
             dx, dy = end[0] - start[0], end[1] - start[1]
             if mode == "move":

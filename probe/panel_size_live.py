@@ -1,19 +1,9 @@
-"""Present the real panel and report the size the compositor is actually given.
-
-Run:  .venv/bin/python probe/panel_size_live.py
-
-`panel_layout_check.py` asks GTK what the card *would* like to be. This asks the
-mapped window what it *is*, which is the number that decides how much of the
-game's dialogue box the card covers - and whether it jumps when a new line
-arrives. A window is shown for a few seconds; nothing is captured or translated.
-"""
+"""Present the real panel and report the size the compositor is actually given."""
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -89,10 +79,8 @@ def main() -> int:
             ),
             (
                 "keep-above notice",
-                # The one-liner the card shows when the X11 request could not be
-                # made; the instructions themselves are in the README. Taken from
-                # the panel rather than copied, so this stays the real longest
-                # case. Native Wayland shows nothing here.
+                # the card's X11 keep-above notice, taken from the panel so this stays the
+                # real longest case
                 lambda: panel.status_label.set_text(KEEP_ABOVE_SHORT),
             ),
         ]

@@ -1,30 +1,10 @@
-"""Check the panel can be resized by dragging its edge.
-
-Run:  .venv/bin/python probe/panel_resize_check.py
-
-The panel is frameless, so it has no window-manager resize handles; the grips
-are widgets this app draws itself. Two things have to be true and neither can be
-taken on faith:
-
-  * **The grips are hit-testable at the edges.** GTK4 picks a widget through its
-    render nodes, so a grip that paints nothing would never receive the drag.
-    This asks `Gtk.Widget.pick()` for whatever sits at a given point, which is
-    the same question the event delivery asks.
-  * **A drag actually changes the size.** The gestures are driven directly, so
-    the arithmetic and the `set_default_size` call are exercised end to end
-    without a pointer.
-
-A real window is presented and genuinely resized for a few seconds. Nothing is
-captured or translated.
-"""
+"""Check the panel can be resized by dragging its edge."""
 from __future__ import annotations
 
 import sys
 import time
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -37,19 +17,13 @@ from lintranslator import theme  # noqa: E402
 from lintranslator.config import Config  # noqa: E402
 from lintranslator.panel import TranslatorPanel  # noqa: E402
 
-# Never the real config: this probe *saves* the size it drags to, and pointing
-# it at config.json overwrote the developer's card width once already.
+# Never the real config: this probe *saves* the size it drags to.
 SCRATCH = Path("/tmp/lintranslator_resize_probe_config.json")
 failures: list[str] = []
 
 
 def pump(milliseconds: int) -> None:
-    """Run the main loop for a while, so the compositor can answer a resize.
-
-    A window resize is not synchronous: GTK asks, the compositor configures, and
-    the new size arrives as an event. Reading get_width() straight after the
-    request measures the old size.
-    """
+    """Run the main loop so the compositor can answer a resize, which is not synchronous."""
     context = GLib.MainContext.default()
     deadline = time.monotonic() + milliseconds / 1000
     while time.monotonic() < deadline:
@@ -66,7 +40,7 @@ def check(condition: bool, message: str) -> None:
 
 def main() -> int:
     cfg = Config.load()
-    cfg.path = SCRATCH  # every save below lands here, not in the real config
+    cfg.path = SCRATCH
     cfg.translate.backend = "none"
     cfg.display.width = 555
     cfg.display.height = 0  # start from the budget, not from a pinned height
@@ -128,7 +102,6 @@ def main() -> int:
             print("\n-- a drag on each grip --")
             for edge, dx, dy in (("e", 120, 0), ("s", 0, 90), ("se", 80, 60)):
                 before = (panel.get_width(), panel.get_height())
-                # Exactly what the gesture does, without a pointer.
                 panel._on_resize_begin(None, 0.0, 0.0)
                 panel._on_resize_update(None, dx, dy, edge)
                 pump(400)
@@ -161,8 +134,6 @@ def main() -> int:
                 cfg.display.width == panel.get_width(),
                 f"the width is on the config ({cfg.display.width} vs {panel.get_width()})",
             )
-            # The last drag was east-only, so the height is back on the budgets
-            # and the window is at whatever the line budgets add up to.
             check(
                 cfg.display.height == 0,
                 f"the height is unpinned again after a sideways drag ({cfg.display.height})",

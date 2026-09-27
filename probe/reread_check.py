@@ -1,22 +1,10 @@
-"""Does Re-read work end to end: button -> pipeline, and `lintranslator reread` -> GUI?
-
-Drives the real picker/panel, starts watching, then asks for a re-read three ways -
-the button, the control socket, and the `lintranslator reread` CLI in a separate process -
-and reports what the panel did each time.
-
-The translation backend is forced to `none` so this costs nothing and needs no
-network; what is being tested is the re-read path, not the model.
-
-Run:  .venv/bin/python probe/reread_check.py
-"""
+"""Does Re-read work end to end: button -> pipeline, and `lintranslator reread` -> GUI?"""
 import os
 import subprocess
 import sys
 import threading
 from pathlib import Path
 
-# Run from anywhere: the package is imported from this checkout, not from
-# whatever happens to be on `sys.path`.
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -30,14 +18,10 @@ from lintranslator.control import send  # noqa: E402
 from lintranslator.portal import ScreenshotPortal  # noqa: E402
 
 CONFIG = Path("/tmp/lintranslator_probe_config.json")  # never write the real config
-# A writable XDG_RUNTIME_DIR for this probe: this sandbox blocks /run/user/1000,
-# which a normal desktop session allows. The CLI subprocess gets the same value,
-# which is what lets two processes agree on the socket path.
+# the CLI subprocess gets the same XDG_RUNTIME_DIR, so both processes agree on the socket path
 RUNTIME = APP_DIR / "data" / "probe_runtime"
 RUNTIME.mkdir(parents=True, exist_ok=True)
 os.environ["XDG_RUNTIME_DIR"] = str(RUNTIME)
-# The CLI as this interpreter sees it, so the probe does not care what the
-# virtualenv is called or where it lives.
 VENV = [sys.executable, "-m", "lintranslator"]
 
 results: list[tuple[str, bool, str]] = []
@@ -102,9 +86,7 @@ def main() -> int:
 
     @guard
     def step_socket():
-        # A thread on purpose: this probe shares a process with the GUI, and the
-        # GUI answers the socket on its main loop - a synchronous call from that
-        # same loop would deadlock. `lintranslator reread` is a separate process.
+        # a thread on purpose: a synchronous call from the GUI main loop would deadlock
         replies: list[str] = []
 
         def call():
@@ -129,9 +111,7 @@ def main() -> int:
         out: dict = {}
 
         def call():
-            # Both subprocesses in a thread: `subprocess.run` blocks, and this
-            # probe's own main loop is what answers the socket. A real user's
-            # `lintranslator reread` waits on a loop that is free.
+            # in a thread: subprocess.run blocks, and this probe's main loop answers the socket
             env = dict(os.environ, XDG_RUNTIME_DIR=str(RUNTIME))
             out["reread"] = subprocess.run(
                 [*VENV, "--config", str(CONFIG), "reread"],
@@ -187,7 +167,7 @@ def main() -> int:
         from lintranslator.picker import RegionPicker
 
         picker = RegionPicker(app, cfg, screenshot_png=png)
-        picker._panel.hotkey_enabled = False  # no compositor dialog in a probe
+        picker._panel.hotkey_enabled = False
         picker.present()
         state["picker"] = picker
         state["panel"] = picker._panel
