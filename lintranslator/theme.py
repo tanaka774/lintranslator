@@ -24,6 +24,9 @@ SURFACE = "rgba(16, 17, 20, 0.94)"  # the panel card: the game shows through
 SURFACE_SOLID = "#101114"  # windows that should not be see-through
 SURFACE_RAISED = "rgba(255, 255, 255, 0.055)"
 SURFACE_SUNKEN = "rgba(0, 0, 0, 0.28)"
+# Every popover, in either window. A popover is its own surface over the game,
+# so it is opaque rather than see-through like the panel's card.
+SURFACE_POPOVER = "#16171b"
 BORDER = "rgba(255, 255, 255, 0.14)"
 BORDER_SOFT = "rgba(255, 255, 255, 0.07)"
 
@@ -154,7 +157,7 @@ button.lintranslator-menu-item:focus {{ outline: none; }}
 /* The overflow popover. Painted explicitly because the card is dark by design
    and the desktop theme it sits on is not necessarily dark. */
 popover.lintranslator-menu > contents {{
-  background-color: #16171b;
+  background-color: {SURFACE_POPOVER};
   border: 1px solid {BORDER};
   border-radius: {RADIUS_CONTROL + 2}px;
   padding: {SPACE_XS}px;
@@ -329,10 +332,49 @@ window.lintranslator-app scale slider {{
 }}
 window.lintranslator-app separator {{ background-color: {BORDER_SOFT}; }}
 window.lintranslator-app popover > contents {{
-  background-color: #16171b;
+  background-color: {SURFACE_POPOVER};
   color: {TEXT};
   border: 1px solid {BORDER};
   border-radius: {RADIUS_CONTROL + 2}px;
+}}
+
+/* The lists inside a popover, which are the one surface the reset above does not
+   reach. `Gtk.ListBox` (`list`, `list row`) and a `Gtk.DropDown` popup's
+   `Gtk.ListView` (`listview.view`) each carry a background of their own from the
+   *desktop* theme, painted over the popover surface - so on Breeze light, whose
+   `list` and `.view` rules use the theme's base colour, the model list came out
+   white with this stylesheet's near-white labels on it. That is the reported
+   "unreadable in a certain system colour theme", and it is every list in
+   Settings and the picker, not one of them: the model, language and OCR-language
+   pickers, the Backend / Thinking / Prompt-preset dropdowns, and the picker's
+   preview chooser.
+
+   `transparent` rather than a colour: the popover surface above is what decides
+   what a popover looks like, and these nodes are inside it. Hover and selection
+   are stated in this app's own language too, because the theme's are a bright
+   blue that belongs to no colour here. */
+window.lintranslator-app popover list,
+window.lintranslator-app popover list row,
+window.lintranslator-app popover listview,
+window.lintranslator-app popover listview > row {{
+  background-color: transparent;
+}}
+window.lintranslator-app popover list row.activatable:hover,
+window.lintranslator-app popover listview > row.activatable:hover {{
+  background-color: rgba(255, 255, 255, 0.10);
+}}
+window.lintranslator-app popover listview > row:selected {{
+  background-color: rgba(255, 255, 255, 0.16);
+}}
+
+/* The prompt editor is a `Gtk.TextView`, which is an entry-like surface and so
+   gets the entry's colours - the theme would otherwise paint it white, which is
+   legible but a light slab in the middle of a dark dialog. Both nodes: on a
+   `Gtk.TextView` the background is painted by the inner `text` node. */
+window.lintranslator-app textview,
+window.lintranslator-app textview > text {{
+  background-color: {SURFACE_SUNKEN};
+  color: {TEXT};
 }}
 
 .lintranslator-side {{
@@ -375,10 +417,19 @@ def install(css: str, display=None):
 
     The app asks for the dark variant of the desktop theme as well. Every window
     here is a dark tool that sits over a game, and the fallback is not neutral:
-    on this machine the theme is Breeze *light*, so a dropdown or an entry that
-    nobody has styled comes out white. Widgets this module does not classify
-    still get a theme, and this makes that theme the one the rest of the UI was
-    designed against.
+    the desktop theme is Breeze *light* on this machine, so a widget that nobody
+    has styled comes out white. Widgets this module does not classify still get a
+    theme, and this makes that theme the one the rest of the UI was designed
+    against.
+
+    It is a hint, not a mechanism. GTK deprecated
+    `gtk-application-prefer-dark-theme` in 4.20 ("use GtkCssProvider properties
+    instead"), and it only ever applied to a theme that ships a dark variant - so
+    a light desktop, or a theme without one, leaves every widget this stylesheet
+    does not paint on the desktop's light colours. Popovers and the lists inside
+    them are painted above for exactly that reason; `probe/theme_check.py`
+    renders them under a forced light theme and fails if any comes out in the
+    theme's colours.
 
     Returns the provider, which the caller must keep alive: GTK does not own it.
     """

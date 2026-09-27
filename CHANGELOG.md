@@ -7,6 +7,31 @@ All notable changes to this project are documented here. The format follows
 The version lives in `lintranslator/__init__.py`; the packaging metadata reads it
 from there rather than keeping a second copy.
 
+## [Unreleased]
+
+**Popovers stop borrowing the desktop theme's colours**
+
+- **The model, language and OCR-language lists could not be read in a light
+  desktop theme.** The app paints its own windows dark and its labels light, but
+  the lists inside its popovers were left to the desktop theme, and Breeze light
+  paints `list` and `list row` with the theme's base colour - white - *over* the
+  popover surface. The result was white rows under `#f2f3f5` labels, and it
+  happened only "in a certain system colour theme" because the app's request for
+  the dark variant is only a hint: GTK deprecated
+  `gtk-application-prefer-dark-theme` in 4.20, and it never applied to a theme
+  that ships no dark variant. All three pickers (`ModelPicker`,
+  `LanguagePicker`, `OcrLanguagePicker`) are fixed by painting the list nodes
+  themselves, with hover and selection in this app's own colours rather than the
+  theme's blue.
+- **Every `Gtk.DropDown` popup had the same defect**, because the `Gtk.ListView`
+  GTK puts in one carries `.view` - the Backend, Thinking and Prompt-preset rows
+  in Settings, and the picker's "Preview: raw / OCR input / threshold" chooser.
+- **The prompt editor is no longer a white slab in a dark dialog.** A
+  `Gtk.TextView` is an entry-like surface, so it now gets the entry's colours.
+- `probe/theme_check.py` renders all four surfaces under a forced light theme
+  and fails if any of them comes out in the desktop theme's colours, which is the
+  check that was missing when this shipped.
+
 ## [0.2.0] - 2026-09-27
 
 The release where the app stops shipping a translation model, and the one where
