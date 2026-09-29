@@ -282,6 +282,30 @@ def test_create_session_passes_the_vardict_as_one_argument():
     assert "session_handle_token" in body[0]
 
 
+def test_select_sources_asks_for_a_persistent_session():
+    """Without persist_mode the portal returns no token and prompts every launch."""
+    from lintranslator.portal import create_screencast
+
+    bus = ScriptedBus()
+    create_screencast(bus, types=1)
+
+    method, signature, body = bus.seen[1]
+    assert method == "SelectSources"
+    assert signature == "oa{sv}"
+    _session, options = body
+    assert options["persist_mode"] == ("u", 2)
+    assert options["types"] == ("u", 1)
+
+
+def test_a_restore_token_is_sent_back_when_there_is_one():
+    from lintranslator.portal import create_screencast
+
+    bus = ScriptedBus()
+    create_screencast(bus, types=1, restore_token="tok-abc")
+    _session, options = bus.seen[1][2]
+    assert options["restore_token"] == ("s", "tok-abc")
+
+
 def test_start_reports_the_stream_and_restore_token():
     from lintranslator.portal import create_screencast
 

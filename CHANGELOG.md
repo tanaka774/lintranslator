@@ -21,7 +21,10 @@ from there rather than keeping a second copy.
   `portal-screencast`, which reads frames over PipeWire and writes nothing at all
   (2–3 ms a frame against ~220 ms, because there is no full-screen encode, write,
   read and decode in the loop). It costs one consent dialog per session; the
-  restore token is kept in the config so later runs skip it. This is the first
+  restore token is kept in the config so later runs skip it. That needed
+  `persist_mode` to be sent at all: it defaults to 0, meaning "do not persist",
+  and a portal only returns a restore token when persistence was asked for - so
+  without it the consent dialog reappears on every launch. This is the first
   release in which the ScreenCast path works at all - `create_screencast` sent
   `CreateSession` a body D-Bus rejects, so it had never once run.
 - **The choice has a row in Settings and a command, because it had neither.**

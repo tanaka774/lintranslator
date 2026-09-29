@@ -460,6 +460,10 @@ def create_screencast(
         "types": ("u", types),
         "multiple": ("b", multiple),
         "cursor_mode": ("u", cursor_mode),
+        # 2 = persist until explicitly revoked. The default is 0, and a portal
+        # only returns a restore token when persistence was asked for - so
+        # leaving this out means the consent dialog reappears on every launch.
+        "persist_mode": ("u", 2),
     }
     if restore_token:
         options["restore_token"] = ("s", restore_token)
