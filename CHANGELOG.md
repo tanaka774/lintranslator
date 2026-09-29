@@ -9,6 +9,62 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+**Reading the screen no longer writes it to disk**
+
+- **The polling loop reads a live stream instead of asking for a screenshot per
+  poll.** `org.freedesktop.portal.Screenshot` is a one-shot, user-initiated API,
+  and using it as a 2 fps source meant the portal wrote a full-screen PNG on every
+  grab for the app to find and delete: `~/Pictures/Screenshot_<stamp>.png` on KDE
+  and GNOME, a hardcoded `/tmp/out.png` on wlroots, `$XDG_RUNTIME_DIR` on
+  Hyprland. On KDE that is one 1.5–2.5 MB file per poll, and a crash, a read-only
+  home, or a refused delete leaves it there. `capture.backend` now defaults to
+  `portal-screencast`, which reads frames over PipeWire and writes nothing at all
+  (2–3 ms a frame against ~220 ms, because there is no full-screen encode, write,
+  read and decode in the loop). It costs one consent dialog per session; the
+  restore token is kept in the config so later runs skip it. This is the first
+  release in which the ScreenCast path works at all - `create_screencast` sent
+  `CreateSession` a body D-Bus rejects, so it had never once run.
+- **The choice has a row in Settings and a command, because it had neither.**
+  Reading the screen was the one setting with no UI at all, which left
+  `config.json` as the only switch for the thing that decides whether a file is
+  written per poll. Settings gains a "Reading the screen" section that labels
+  each backend by what it does to the disk and says so when the stream cannot run
+  here, and `lintranslator capture` reports or sets it
+  (`lintranslator capture --backend portal-screenshot`).
+- **The picker still uses the screenshot portal**, deliberately: one grab, the
+  user asked for it and is watching, so a temporary file is the right trade. It
+  is also why picking a region works before any screen-sharing consent is given.
+- **A capture backend that cannot run says so, and falls back once.** If the
+  stream fails - no consent, a revoked session, no GStreamer - the portal takes
+  over for the rest of the run and the user is told once, with the reason. A
+  failure per poll would be its own kind of unusable. `lintranslator check` now
+  reports the session, the configured backend and whether it can run there, and
+  an unknown `capture.backend` is refused instead of silently meaning the portal.
+- **An environment that cannot stream is never asked to.** The stream is skipped
+  up front when the Python has no `pipewiresrc`, and on an X11 session under a
+  desktop whose portal refuses X11 outright - KDE's returns `OtherError` from
+  `CreateSession` there, and shows its own "Screen Sharing Not Available" dialog
+  before it does. Asking anyway bought the user that dialog on every launch and
+  an error code that says nothing. GNOME is still asked on X11, because it
+  screencasts through mutter and is not Wayland-only. Reading then happens the
+  older way, and says so once rather than looking like a failure.
+- **A screenshot the app could not delete is counted and reported**, instead of
+  being swallowed. `remove_screenshot`'s answer was discarded, so a refused or
+  failed delete left a picture of the user's screen on disk in silence - which is
+  how `~/Pictures` reached 1060 files and 2.2 GB. The delete also moved into a
+  `finally`, so a grab that fails *after* the portal wrote the file (an oversize
+  read, an undecodable image) still cleans up; previously those paths returned
+  before the delete ran. `ScreenGrabber.stats["leaks"]` counts them.
+- **The Pictures directory is read from `user-dirs.dirs`.** `$XDG_PICTURES_DIR`
+  is normally unset, and on a localized system the folder is not called
+  "Pictures" at all - so the portal's path fell outside the delete allow-list and
+  *every* grab was refused and left behind. `lintranslator check`'s backend line
+  and the leak note are what make that visible now.
+- **A portal timeout explains itself.** jeepney raises a bare `TimeoutError` with
+  no message, which bypassed `portal_request`'s own timeout handling: an
+  unanswered consent dialog surfaced as a silent, empty failure with no hint that
+  anything had been asked.
+
 **A read that finds nothing says which kind of nothing it was**
 
 - **"(no text found in this region)" was two different answers.** Tesseract

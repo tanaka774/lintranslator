@@ -47,3 +47,62 @@ def test_threshold_zero_on_the_command_line_means_no_cut(tmp_path):
     path.write_text('{"ocr": {"threshold": 128}}')
     args = parse_argv(["read", "--config", str(path), "--threshold", "0"])
     assert _load(args).ocr.threshold == 0
+
+
+# --------------------------------------------------------------------------- #
+# `capture` - the switch Settings did not have
+# --------------------------------------------------------------------------- #
+def test_capture_reports_the_backend_in_force(tmp_path, capsys):
+    from lintranslator.cli import cmd_capture, parse_argv
+
+    path = tmp_path / "config.json"
+    path.write_text('{"capture": {"backend": "portal-screenshot"}}')
+    assert cmd_capture(parse_argv(["capture", "--config", str(path)])) == 0
+    assert "portal-screenshot" in capsys.readouterr().out
+
+
+def test_capture_sets_the_backend(tmp_path, capsys):
+    from lintranslator.cli import cmd_capture, parse_argv
+    from lintranslator.config import Config
+
+    path = tmp_path / "config.json"
+    path.write_text("{}")
+    args = parse_argv(
+        ["capture", "--config", str(path), "--backend", "portal-screenshot"]
+    )
+    assert cmd_capture(args) == 0
+    assert Config.load(path).capture.backend == "portal-screenshot"
+    assert "portal-screenshot" in capsys.readouterr().out
+
+
+def test_capture_does_not_touch_the_translation_backend(tmp_path):
+    """`--backend` means the translate backend elsewhere; `capture` must not alias it."""
+    from lintranslator.cli import cmd_capture, parse_argv
+    from lintranslator.config import Config
+
+    path = tmp_path / "config.json"
+    path.write_text('{"translate": {"backend": "deepl"}}')
+    cmd_capture(parse_argv(["capture", "--config", str(path), "--backend", "portal-screenshot"]))
+    cfg = Config.load(path)
+    assert cfg.translate.backend == "deepl"
+    assert cfg.capture.backend == "portal-screenshot"
+
+
+def test_capture_refuses_a_backend_that_does_not_exist():
+    import pytest
+
+    from lintranslator.cli import parse_argv
+
+    with pytest.raises(SystemExit):
+        parse_argv(["capture", "--backend", "portal-screencastt"])
+
+
+def test_capture_warns_when_the_stream_cannot_run(tmp_path, capsys, monkeypatch):
+    from lintranslator import cli
+
+    monkeypatch.setattr(cli, "screencast_available", lambda: (False, "this is X11"))
+    args = cli.parse_argv(
+        ["capture", "--config", str(tmp_path / "c.json"), "--backend", "portal-screencast"]
+    )
+    assert cli.cmd_capture(args) == 0
+    assert "fall back" in capsys.readouterr().err

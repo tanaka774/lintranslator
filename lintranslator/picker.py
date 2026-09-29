@@ -1005,6 +1005,10 @@ class RegionPicker(Gtk.ApplicationWindow):
 
         def do_grab() -> bool:
             try:
+                # The screenshot portal on purpose, whatever `capture.backend`
+                # says: this is the one grab the user asked for and is watching,
+                # and it is why picking a region works before any screen-sharing
+                # consent has been given.
                 grabber = ScreenGrabber(self.config.capture.region)
                 try:
                     full = grabber.grab_full()

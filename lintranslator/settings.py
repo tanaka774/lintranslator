@@ -6,7 +6,10 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
+from .capture import BACKENDS as CAPTURE_BACKENDS  # noqa: E402
+from .capture import PORTAL_SCREENSHOT, SCREENCAST  # noqa: E402
 from .config import Config  # noqa: E402
+from .screencast import screencast_available  # noqa: E402
 from .geometry import DEFAULT_PROMPT, PROMPT_PRESETS  # noqa: E402
 from .languages import (  # noqa: E402
     CODES,
@@ -109,6 +112,25 @@ REASONING_CAUTION = {
 }
 
 BACKENDS_NEEDING_KEY = ("openrouter", "openai", "deepl", "google")
+
+#: Capture backends, labelled by what each one does to the disk - which is the
+#: whole difference between them, and the reason this row exists.
+CAPTURE_LABELS = {
+    SCREENCAST: "Live screen stream (writes nothing)",
+    PORTAL_SCREENSHOT: "Screenshot per read (writes a temporary file)",
+}
+CAPTURE_NOTES = {
+    SCREENCAST: (
+        "Reads frames from a screen-sharing stream. The desktop asks permission "
+        "once and the answer is remembered, so later runs start without a "
+        "prompt. Nothing is written to disk."
+    ),
+    PORTAL_SCREENSHOT: (
+        "Asks the desktop for a screenshot on every read. Each one is written to "
+        "your Pictures folder and deleted again - and a delete that fails leaves "
+        "a picture of your screen behind, which is what filled that folder up."
+    ),
+}
 
 
 class ModelPicker(Gtk.MenuButton):
@@ -732,6 +754,8 @@ class SettingsDialog(Gtk.Window):
         box.append(self._build_translation_section())
         box.append(Gtk.Separator())
         box.append(self._build_display_section())
+        box.append(Gtk.Separator())
+        box.append(self._build_capture_section())
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         actions.add_css_class("lintranslator-toolbar")
@@ -1462,12 +1486,64 @@ class SettingsDialog(Gtk.Window):
         frame.append(self.show_source)
         return frame
 
+    def _build_capture_section(self) -> Gtk.Widget:
+        """How the screen is read - the setting that decides if a file is written."""
+        frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        head = Gtk.Label(label="Reading the screen", xalign=0)
+        head.add_css_class("lintranslator-section")
+        frame.append(head)
+
+        grid = Gtk.Grid(column_spacing=10, row_spacing=8)
+        frame.append(grid)
+
+        grid.attach(Gtk.Label(label="Capture with", xalign=0), 0, 0, 1, 1)
+        # Keep the order from `capture.BACKENDS`, so the keys here cannot drift
+        # away from the ones the grabber actually accepts.
+        self._capture_order = list(CAPTURE_BACKENDS)
+        self.capture_dd = Gtk.DropDown.new_from_strings(
+            [CAPTURE_LABELS[key] for key in self._capture_order]
+        )
+        current = self.config.capture.backend
+        self.capture_dd.set_selected(
+            next(
+                (i for i, key in enumerate(self._capture_order) if key == current),
+                0,
+            )
+        )
+        self.capture_dd.set_hexpand(True)
+        self.capture_dd.connect("notify::selected", lambda *_: self._on_capture_changed())
+        grid.attach(self.capture_dd, 1, 0, 1, 1)
+
+        self.capture_note = Gtk.Label(label="", xalign=0, wrap=True)
+        self.capture_note.add_css_class("lintranslator-hint")
+        self.capture_note.set_max_width_chars(70)
+        frame.append(self.capture_note)
+        self._on_capture_changed()
+        return frame
+
+    def _selected_capture_backend(self) -> str:
+        return self._capture_order[self.capture_dd.get_selected()]
+
+    def _on_capture_changed(self) -> None:
+        """Say what the chosen backend does to the disk, and whether it can run."""
+        key = self._selected_capture_backend()
+        note = CAPTURE_NOTES[key]
+        if key == SCREENCAST:
+            available, why = screencast_available()
+            if not available:
+                note += (
+                    f" It cannot run here: {why} - reads will fall back to the "
+                    "screenshot portal."
+                )
+        self.capture_note.set_text(note)
+
     def _on_save(self, _button: Gtk.Button) -> None:
         buffer = self.prompt_view.get_buffer()
         text = buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), False)
 
         backend = BACKENDS[self.backend_dd.get_selected()][0]
         self.config.translate.backend = backend
+        self.config.capture.backend = self._selected_capture_backend()
         model = self.model_entry.get_text().strip()
         self.config.translate.model = model
 

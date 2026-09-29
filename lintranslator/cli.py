@@ -9,9 +9,11 @@ import time
 from pathlib import Path
 
 from . import paths
+from .capture import BACKENDS, SCREENCAST
 from .config import Config, Region, key_issuer
 from .languages import CODES, deepl_code, google_code, ordered
 from .pipeline import Event, Pipeline
+from .screencast import screencast_available
 
 
 def _load(args) -> Config:
@@ -119,6 +121,29 @@ def cmd_check(args) -> int:
 
     region = cfg.capture.region
     print(f"region           : {region.mode} ({region.x}, {region.y}, {region.w}, {region.h})")
+
+    # Which backend reads the screen decides whether a file is written per poll,
+    # so say both what is configured and whether it can actually run here.
+    session = os.environ.get("XDG_SESSION_TYPE", "unknown")
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "unknown")
+    print(f"session          : {session} / {desktop}")
+    print(f"capture backend  : {cfg.capture.backend}")
+    if cfg.capture.backend == SCREENCAST:
+        available, why = screencast_available()
+        if available:
+            print("  screencast     : ok (PyGObject, GStreamer, pipewiresrc)")
+        else:
+            print(f"  screencast     : UNAVAILABLE - {why}")
+            print(
+                "                   reads fall back to the screenshot portal, "
+                "which writes a file per grab"
+            )
+    else:
+        print(
+            "  portal         : each read writes a full-screen PNG that is then "
+            "deleted;"
+        )
+        print("                   'portal-screencast' reads a live stream and writes nothing")
 
     backend = cfg.translate.backend
     print(f"translate backend: {backend}", end="")
@@ -597,6 +622,39 @@ def cmd_region(args) -> int:
     return 0
 
 
+def cmd_capture(args) -> int:
+    """Show or set how the screen is read.
+
+    This decides whether reading the screen writes a file, and Settings has no
+    row for it, so it needs a way in that is not hand-editing config.json.
+    """
+    cfg = _load(args)
+    if args.capture_backend is None:
+        print(f"capture backend: {cfg.capture.backend}")
+        if cfg.capture.backend == SCREENCAST:
+            available, why = screencast_available()
+            if not available:
+                print(
+                    f"  but it cannot run here: {why} - reads fall back to the "
+                    "screenshot portal",
+                    file=sys.stderr,
+                )
+        return 0
+
+    cfg.capture.backend = args.capture_backend
+    path = cfg.save(args.config)
+    print(f"capture backend saved to {path}: {args.capture_backend}")
+    if args.capture_backend == SCREENCAST:
+        available, why = screencast_available()
+        if not available:
+            print(
+                f"  note: it cannot run here: {why} - reads will fall back to the "
+                "screenshot portal, which writes a file per read",
+                file=sys.stderr,
+            )
+    return 0
+
+
 def cmd_languages(args) -> int:
     """List the codes the app can ask for, so `check` can point somewhere useful."""
     from .languages import search, short_code, tesseract_lang
@@ -815,6 +873,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--h", type=float, required=True)
     sp.add_argument("--fraction", action="store_true", help="values are 0..1 fractions")
     sp.set_defaults(func=cmd_region)
+
+    sp = sub.add_parser(
+        "capture",
+        help="show or set how the screen is read (a live stream, or a file per read)",
+    )
+    # `add_common` is not used here: it defines `--backend` for the *translation*
+    # backend, and this subcommand means the capture backend by that name.
+    sp.add_argument("--config", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    sp.add_argument(
+        "--backend",
+        dest="capture_backend",
+        choices=BACKENDS,
+        help="portal-screencast reads a live stream and writes nothing; "
+        "portal-screenshot writes a temporary PNG per read",
+    )
+    sp.set_defaults(func=cmd_capture)
 
     sp = sub.add_parser(
         "languages",

@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .capture import Frame, ScreenGrabber
+from .capture import Frame, ScreenGrabber, build_grabber
 from .config import Config, Region
 from .detect import (
     ChangeDetector,
@@ -129,7 +129,11 @@ class Pipeline:
         # Called with a short message the user asked to be told about.
         self.on_note = on_note
 
-        self.grabber = ScreenGrabber(config.capture.region)
+        self.grabber = build_grabber(
+            config,
+            on_note=self._note,
+            on_restore_token=self._remember_restore_token,
+        )
         self.ocr = TesseractOcr(
             langs=config.ocr.langs,
             psm=config.ocr.psm,
@@ -466,6 +470,16 @@ class Pipeline:
             self.on_note(message)
         except Exception:  # noqa: BLE001 - a UI callback must not kill the loop
             pass
+
+    def _remember_restore_token(self, token: str) -> None:
+        """Persist the ScreenCast token so the next run skips the consent dialog."""
+        if not token or token == self.config.capture.restore_token:
+            return
+        self.config.capture.restore_token = token
+        try:
+            self.config.save()
+        except Exception as exc:  # noqa: BLE001 - a read-only config is not fatal
+            self._note(f"could not save the screen-cast permission token: {exc}")
 
     def _emit(
         self,

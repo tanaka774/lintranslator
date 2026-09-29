@@ -23,10 +23,16 @@ cd lintranslator
 
 #    tesseract and the GTK stack. PyGObject and pycairo come from the distro
 #    rather than from pip: they bind system libraries.
-sudo pacman -S tesseract python-gobject python-cairo          # Arch / CachyOS
+#    gst-plugin-pipewire is what lets the default capture backend read the
+#    screen-share stream; without it the app falls back to the screenshot
+#    portal, which writes a temporary file per read.
+sudo pacman -S tesseract python-gobject python-cairo \
+               gst-plugin-pipewire gst-plugins-base   # Arch / CachyOS
 # sudo apt install tesseract-ocr python3-gi python3-gi-cairo python3-cairo \
-#                  gir1.2-gtk-4.0                              # Debian / Ubuntu
-# sudo dnf install tesseract python3-gobject python3-cairo gtk4 # fedora
+#                  gir1.2-gtk-4.0 gstreamer1.0-pipewire \
+#                  gstreamer1.0-plugins-base            # Debian / Ubuntu
+# sudo dnf install tesseract python3-gobject python3-cairo gtk4 \
+#                  pipewire-gstreamer gstreamer1-plugins-base # fedora
 
 uv venv --python /usr/bin/python3 --system-site-packages .venv
 uv pip install --python .venv/bin/python -e .
@@ -108,10 +114,13 @@ git clone https://github.com/tanaka774/lintranslator
 cd lintranslator
 
 # 2. tesseract and the GTK stack. PyGObject and pycairo come from the distro
-#    rather than from pip: they bind system libraries.
-sudo pacman -S tesseract python-gobject python-cairo          # Arch / CachyOS
+#    rather than from pip: they bind system libraries. gst-plugin-pipewire is
+#    what lets the default capture backend read the screen-share stream.
+sudo pacman -S tesseract python-gobject python-cairo \
+               gst-plugin-pipewire gst-plugins-base   # Arch / CachyOS
 # sudo apt install tesseract-ocr python3-gi python3-gi-cairo python3-cairo \
-#                  gir1.2-gtk-4.0                              # Debian / Ubuntu
+#                  gir1.2-gtk-4.0 gstreamer1.0-pipewire \
+#                  gstreamer1.0-plugins-base            # Debian / Ubuntu
 
 # 3. environment. The interpreter must be the distro's own Python: PyGObject is a
 #    compiled binding to it, and --system-site-packages is what exposes it.
@@ -202,10 +211,17 @@ which is measured in `probe/RESULTS.md`.
 | target | status |
 |---|---|
 | **Linux + KDE Plasma 6 / Wayland** | **verified** - the environment every measurement here was taken on |
-| **Linux + X11 / XWayland** | works, and window placement and keep-above genuinely work here |
+| **Linux + X11 / XWayland** | works, and window placement and keep-above genuinely work here; reads use the screenshot portal, because KDE's portal refuses to screen-share an X11 session |
 | **Linux + Wayland, other compositors** | depends on the portal backend; the hotkey and the keep-above workaround are the KDE-specific parts |
 | **Linux + GNOME** | core expected to work, untested here; `xdg-desktop-portal-gnome` does not implement the shortcut portal at all, so bind the hotkey by hand |
 | **macOS / Windows** | **not supported** - not merely untested: the capture and hotkey layers have nothing to talk to |
+
+Reading the screen is the one layer that depends on the *session* rather than the
+distribution. It defaults to a PipeWire screen-share stream, which writes nothing
+to disk, and falls back on its own to the screenshot portal - one temporary PNG
+per read - wherever a stream is not available. `lintranslator check` says which
+one is in force and why; `lintranslator capture` changes it. The full table is in
+[Compatibility](docs/install.md#compatibility).
 
 Linux is a hard requirement, not a preference. Capture, the global hotkey and the
 control socket all assume it, and none of them has a fallback. The detail - which
@@ -226,8 +242,15 @@ Wayland or X11 desktop with PyGObject.
 - Throughput on a local model is your server's, not this app's: the panel waits
   for one line at a time, and a model on CPU takes about a second per line. The
   timeout for a loopback endpoint is 120 s by default for exactly that reason.
-- The PipeWire `ScreenCast` backend is implemented but not wired to the pipeline;
-  the `portal-screenshot` path is the default and is fast enough at 2 fps.
+- Reading the screen defaults to the PipeWire `ScreenCast` stream, which needs a
+  desktop whose portal implements it (KDE, GNOME, wlroots and Hyprland all do), a
+  running PipeWire, and GStreamer with `pipewiresrc` in the Python running the
+  app. Where any of those is missing the app says so once and reads with the
+  screenshot portal instead. That fallback writes a full-screen PNG per read into
+  your Pictures folder and deletes it again, so a failed delete leaves a picture
+  of your screen behind - the panel says so if it happens. The stream path has
+  only been exercised on KDE Wayland; GNOME, wlroots and X11 are reasoned about,
+  not run.
 - The panel cannot position itself under the dialogue box on native Wayland, where
   stacking belongs to the compositor. Drag it into place, or use XWayland.
 - While the picker is on screen, reading pauses on purpose. Self-capture is

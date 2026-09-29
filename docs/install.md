@@ -19,10 +19,18 @@ and the keep-above recipes live.
 Linux is a hard requirement, not a preference. Three layers assume it, and none of
 them has a fallback:
 
-* **Capture** is `org.freedesktop.portal.Screenshot` / `ScreenCast` over D-Bus
-  (`portal.py`). There is no other grabber in the tree, because on Wayland
-  `mss`, `import` and X11 grabs return black.
-  No portal, no pixels.
+* **Capture** is `org.freedesktop.portal.ScreenCast` / `Screenshot` over D-Bus
+  (`portal.py`, `screencast.py`). There is no other grabber in the tree, because
+  on Wayland `mss`, `import` and X11 grabs return black.
+  No portal, no pixels. Which of the two is used is `capture.backend`, and it
+  defaults to the stream: that reads frames over PipeWire and writes nothing,
+  where a screenshot per read means the portal writes a full-screen PNG into your
+  Pictures folder for the app to delete again. The stream needs a portal that
+  implements ScreenCast (KDE, GNOME, wlroots and Hyprland do; `xdg-desktop-portal-gtk`
+  does not), a running PipeWire, GStreamer with `pipewiresrc`, and - on KDE - a
+  Wayland session, since KDE's portal refuses to screen-share an X11 one. When
+  any of that is missing the app reads with the screenshot portal instead and
+  says so once.
 * **The global hotkey** is `org.freedesktop.portal.GlobalShortcuts` (`hotkey.py`).
   KDE implements it; the compositor shows its own binding dialog and then sends
   the key. Coverage elsewhere is patchy: `xdg-desktop-portal-gnome` does not
@@ -66,9 +74,14 @@ cd lintranslator
 # 2. tesseract, and the GTK stack. PyGObject and pycairo come from the distro
 #    rather than from pip: they are bindings to system libraries, and a pip
 #    build of them needs a compiler and the cairo headers.
-sudo pacman -S tesseract python-gobject python-cairo   # Arch / CachyOS
+#    gst-plugin-pipewire is what lets the default capture backend read the
+#    screen-share stream; without it the app falls back to the screenshot
+#    portal and writes a temporary file per read.
+sudo pacman -S tesseract python-gobject python-cairo \
+               gst-plugin-pipewire gst-plugins-base   # Arch / CachyOS
 # sudo apt install tesseract-ocr python3-gi python3-gi-cairo python3-cairo \
-#                  gir1.2-gtk-4.0                       # Debian / Ubuntu
+#                  gir1.2-gtk-4.0 gstreamer1.0-pipewire \
+#                  gstreamer1.0-plugins-base            # Debian / Ubuntu
 
 # 3. environment. The interpreter has to be the distro's own Python: PyGObject is
 #    a compiled binding to that exact interpreter, so a uv-managed 3.12 cannot
@@ -176,6 +189,9 @@ tessdata dir     : /home/you/.local/share/lintranslator/tessdata
 portal ScreenCast: v5
 portal Screenshot: v2
 region           : fraction (0.10, 0.78, 0.80, 0.12)
+session          : wayland / KDE
+capture backend  : portal-screencast
+  screencast     : ok (PyGObject, GStreamer, pipewiresrc)
 translate backend: openrouter (English->Japanese)
   model: google/gemini-2.5-flash-lite
   api base: (provider default)
@@ -184,6 +200,13 @@ languages        : eng_Latn -> jpn_Jpan
 PyGObject (GUI)  : installed
 RESULT: ready
 ```
+
+The two capture lines are worth reading together: the backend is a setting, and
+whether it can run here is a fact about the session. On an X11 session under KDE
+that second line reads `UNAVAILABLE - this desktop's screen-sharing portal
+refuses X11 sessions`, and reads then fall back to the screenshot portal, which
+writes a file per grab. `lintranslator capture --backend portal-screenshot` makes
+that explicit rather than incidental.
 
 A config left on a backend this version has no implementation for - `ct2` and
 `local` are the two such values - is reported and moved to `none`, rather than

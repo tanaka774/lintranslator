@@ -37,11 +37,19 @@ class Region:
 
 @dataclass
 class CaptureConfig:
-    backend: str = "portal-screenshot"  # "portal-screenshot" | "portal-screencast"
+    # "portal-screencast" reads a live PipeWire stream, so no frame ever touches
+    # disk. "portal-screenshot" is the one-shot portal: correct for the picker's
+    # single user-initiated grab, but as a polling loop it makes the portal write
+    # a full-screen PNG per grab, which the app then has to find and delete - and
+    # which is left behind in ~/Pictures whenever that delete fails.
+    backend: str = "portal-screencast"  # "portal-screenshot" | "portal-screencast"
     fps: float = 2.0
     region: Region = field(
         default_factory=lambda: Region(0.10, 0.78, 0.80, 0.12, "fraction")
     )
+    # From the ScreenCast portal, so a later run can skip the consent dialog.
+    # It is per-session state, not a secret, but it is the user's to revoke.
+    restore_token: str | None = None
 
 
 @dataclass

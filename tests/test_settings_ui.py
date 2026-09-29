@@ -988,3 +988,57 @@ def test_saving_leaves_the_layout_alone(tmp_path):
         assert dlg.config.ocr.psm == 7
     finally:
         dlg.destroy()
+
+
+# --------------------------------------------------------------------------- #
+# Reading the screen
+# --------------------------------------------------------------------------- #
+def test_the_capture_row_shows_the_configured_backend(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"capture": {"backend": "portal-screenshot"}}')
+    dlg = SettingsDialog(None, Config.load(path))
+    try:
+        assert dlg._selected_capture_backend() == "portal-screenshot"
+    finally:
+        dlg.destroy()
+
+
+def test_saving_writes_the_capture_backend(dialog):
+    """The row exists so this is not a hand-edit of config.json."""
+    idx = dialog._capture_order.index("portal-screenshot")
+    dialog.capture_dd.set_selected(idx)
+    dialog._on_save(None)
+    assert dialog.config.capture.backend == "portal-screenshot"
+
+
+def test_the_capture_note_says_what_the_backend_does_to_the_disk(dialog):
+    dialog.capture_dd.set_selected(dialog._capture_order.index("portal-screenshot"))
+    assert "Pictures" in dialog.capture_note.get_text()
+
+    dialog.capture_dd.set_selected(dialog._capture_order.index("portal-screencast"))
+    note = dialog.capture_note.get_text()
+    assert "Nothing is written to disk" in note
+    assert "permission" in note
+
+
+def test_the_capture_note_warns_when_the_stream_cannot_run(dialog, monkeypatch):
+    """An environment that cannot stream must not surface only after a fallback."""
+    monkeypatch.setattr(
+        settings_mod, "screencast_available", lambda: (False, "no pipewire here")
+    )
+    dialog.capture_dd.set_selected(dialog._capture_order.index("portal-screencast"))
+    dialog._on_capture_changed()
+    assert "cannot run here" in dialog.capture_note.get_text()
+    assert "no pipewire here" in dialog.capture_note.get_text()
+
+    monkeypatch.setattr(settings_mod, "screencast_available", lambda: (True, ""))
+    dialog._on_capture_changed()
+    assert "cannot run here" not in dialog.capture_note.get_text()
+
+
+def test_the_capture_row_offers_every_backend_the_grabber_accepts(dialog):
+    from lintranslator.capture import BACKENDS as GRABBER_BACKENDS
+
+    assert tuple(dialog._capture_order) == tuple(GRABBER_BACKENDS)
+    assert set(settings_mod.CAPTURE_LABELS) == set(GRABBER_BACKENDS)
+    assert set(settings_mod.CAPTURE_NOTES) == set(GRABBER_BACKENDS)
