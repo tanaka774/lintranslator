@@ -9,6 +9,7 @@ I run and test mainly on kde wayland but it should work mostly on other linux DE
   model you serve yourself, and pick languages of source and destination.
 - Select the area you want to translate, where ocr runs.
 - Choose "Start" and it opens a panel which shows a translated result. 
+*The first time you'll be asked the permission to share your screen, and please choose the option to share your entire screen which could have your monitor or screen name.
 
 [lintranslator_demo.webm](https://github.com/user-attachments/assets/b43b4580-044b-4783-b868-0ec2132f5c19)
 
