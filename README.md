@@ -47,7 +47,7 @@ uv pip install --python .venv/bin/python -e .
 - And I made this mainly for translation on story-based game which shows dialogues on a specific area. So idk this app matches other usages, but I'm sure it basically works.
 
 ## TODO
-- [ ] capture window or full-screen, not only current selected area
+- [ ] capture a specific window, not only current selected area
 - [ ] feed image into llm directly
 
 ---
