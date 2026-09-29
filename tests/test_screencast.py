@@ -86,7 +86,19 @@ def test_an_unknown_backend_is_refused_not_ignored():
     assert "capture.backend" in str(excinfo.value)
 
 
-def test_the_screencast_backend_builds_a_stream():
+@pytest.fixture
+def stream_available(monkeypatch):
+    """Pretend this machine can stream, so the wiring is what is under test.
+
+    Without this the suite would assert on the machine's GStreamer rather than on
+    `build_grabber` - and CI has no PyGObject at all.
+    """
+    monkeypatch.setattr(
+        "lintranslator.capture.screencast_available", lambda: (True, "")
+    )
+
+
+def test_the_screencast_backend_builds_a_stream(stream_available):
     config = Config()
     config.capture.backend = SCREENCAST
     grabber = build_grabber(config)
@@ -96,7 +108,7 @@ def test_the_screencast_backend_builds_a_stream():
         grabber.close()
 
 
-def test_the_default_backend_is_the_one_that_writes_nothing():
+def test_the_default_backend_is_the_one_that_writes_nothing(stream_available):
     """The default must not be the backend that leaves a full-screen PNG per poll."""
     assert CaptureConfig().backend == SCREENCAST
     grabber = build_grabber(Config())
@@ -123,7 +135,7 @@ def test_every_declared_backend_is_buildable():
         build_grabber(config).close()
 
 
-def test_the_restore_token_is_handed_to_the_stream():
+def test_the_restore_token_is_handed_to_the_stream(stream_available):
     config = Config()
     config.capture.backend = SCREENCAST
     config.capture.restore_token = "tok-123"
