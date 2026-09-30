@@ -728,7 +728,7 @@ def test_a_reread_while_reading_is_paused_is_not_lost():
     now = 0.5
     pipe.step(now)
     assert screen.i == -1, "captured while our own window was on screen"
-    assert notes == ["re-read queued — reading is paused"], notes
+    assert notes == ["re-read queued — the region picker is on screen"], notes
 
     reason["value"] = None
     now += 0.5

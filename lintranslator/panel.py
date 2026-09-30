@@ -211,7 +211,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         self._translation_started = 0.0
         # Why capturing must wait right now, or None; a plain callable, never a GTK call
         self.gate = GUARD.reason
-        # Set by the region picker to bring it back; None hides the Region button
+        # Set by the region picker to bring it back; None hides the Select region button
         self.on_region_request = None
         self._gated = False
         self.control = None
@@ -419,7 +419,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
 
     def _build_actions(self) -> None:
         """Create the action buttons, in the order they appear on the card."""
-        self.region_btn = LabelButton("Region…")
+        self.region_btn = LabelButton("Select region")
         self.region_btn.set_tooltip_text(
             "Capture the screen again and show the region picker, to move or "
             "resize the box being read"
@@ -593,7 +593,7 @@ class TranslatorPanel(Gtk.ApplicationWindow):
         return True
 
     def enable_region_button(self, callback) -> None:
-        """Show the Region button, wired to whatever restores the picker."""
+        """Show the Select region button, wired to whatever restores the picker."""
         self.on_region_request = callback
         self.region_btn.set_visible(True)
         self._schedule_relayout()

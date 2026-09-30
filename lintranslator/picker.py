@@ -27,6 +27,12 @@ HANDLE = 8  # px grab tolerance for dragging an existing edge
 # preview magnification, not the recipe's OCR upscale
 PREVIEW_SCALE = 3
 PICKER_WINDOW = "picker"
+# Why reading is paused while this window is up. "Press Apply box" is the one
+# instruction that works everywhere: a compositor-side minimise is invisible to
+# GTK on Wayland, so telling the user to minimise would be a dead end there.
+PICKER_ON_SCREEN = (
+    "the region picker is on screen — press Apply box to keep translating"
+)
 # ms to wait for the compositor to unmap this window before grabbing, so the
 # picker is not captured as part of the screenshot
 CAPTURE_DELAY_MS = 1000
@@ -83,10 +89,14 @@ class RegionPicker(Gtk.ApplicationWindow):
 
         self.connect("close-request", self._on_close_request)
 
-        # this window must not be captured: report map/unmap so the pipeline
-        # pauses instead of reading its own UI
-        self.connect("map", lambda *_: self._on_mapped(True))
-        self.connect("unmap", lambda *_: self._on_mapped(False))
+        # This window must not be captured: report whether it is on screen so the
+        # pipeline pauses instead of reading its own UI. The guard is re-derived
+        # from the window's state on every one of these events rather than being
+        # toggled by whichever signal arrived, so a missed or late event cannot
+        # leave reading paused with nothing on screen to explain it.
+        self.connect("map", lambda *_: self._sync_guard())
+        self.connect("unmap", lambda *_: self._sync_guard())
+        self.connect("notify::visible", lambda *_: self._sync_guard())
 
         self._build()
         self._set_watching(False)
@@ -786,17 +796,22 @@ class RegionPicker(Gtk.ApplicationWindow):
         self._set_watching(True)
         self._minimise_for_watching()
 
-    def _on_mapped(self, mapped: bool) -> None:
-        """Tell the pipeline whether this window is on screen."""
-        if mapped:
-            GUARD.set_mapped(
-                PICKER_WINDOW,
-                True,
-                "the region picker is on screen — minimise it to keep translating",
-            )
+    def _sync_guard(self) -> None:
+        """Tell the pipeline whether this window can appear in a capture.
+
+        Asked of the window itself instead of trusting `unmap` alone: the pause
+        belongs to the state the window is in now, not to the last signal GTK
+        happened to deliver.
+        """
+        if self._is_on_screen():
+            GUARD.set_mapped(PICKER_WINDOW, True, PICKER_ON_SCREEN)
         else:
             GUARD.clear(PICKER_WINDOW)
         self._refresh_watch_status()
+
+    def _is_on_screen(self) -> bool:
+        """Whether this window's surface can be captured right now."""
+        return bool(self.get_visible() and self.get_mapped())
 
     def _minimise_for_watching(self) -> None:
         """Get this window off the screen; minimise is not honoured everywhere."""
@@ -806,8 +821,11 @@ class RegionPicker(Gtk.ApplicationWindow):
 
     def _ensure_off_screen(self) -> bool:
         """Fallback: hide the window if it is somehow still on screen."""
-        if self._watching and self.get_visible() and self.get_mapped():
+        if self._watching and self._is_on_screen():
             self.set_visible(False)
+            # Hiding it is what lifts the pause, and saying so from the state
+            # rather than waiting for `unmap` is the point of this method.
+            self._sync_guard()
         return False
 
     def restore(self) -> None:
@@ -815,9 +833,9 @@ class RegionPicker(Gtk.ApplicationWindow):
         if hasattr(self, "unminimize"):
             self.unminimize()
         self._refresh_watch_status()
-        # wait only when still mapped: the window must leave the screen first or
-        # the grab would contain it
-        if self.get_mapped():
+        # wait only when still on screen: the window must leave it first or the
+        # grab would contain it
+        if self._is_on_screen():
             self._capture_screen(
                 delay_ms=CAPTURE_DELAY_MS,
                 note="capturing in 1s — switch to the game now…",
@@ -876,20 +894,20 @@ class RegionPicker(Gtk.ApplicationWindow):
         if not getattr(self, "_watching", False):
             self.watch_status.set_text("")
             return
-        if self.get_mapped():
+        if self._is_on_screen():
             self.watch_status.set_text(
                 "PAUSED — this window is on screen, so the box is not being read "
-                "(it would be captured too). Minimise it, or press Apply box."
+                "(it would be captured too). Press Apply box to get it out of the way."
             )
         elif self.get_visible():
             self.watch_status.set_text(
                 "LIVE — this window is off screen and the box is being read. "
-                "Press Region on the panel to re-capture and bring it back."
+                "Press Select region on the panel to re-capture and bring it back."
             )
         else:
             self.watch_status.set_text(
-                "LIVE — this window is hidden while watching. Press Region on the "
-                "panel to re-capture and bring it back."
+                "LIVE — this window is hidden while watching. Press Select region on "
+                "the panel to re-capture and bring it back."
             )
 
     def _on_quit_clicked(self, _button: Gtk.Button) -> None:

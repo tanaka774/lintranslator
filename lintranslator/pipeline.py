@@ -233,7 +233,9 @@ class Pipeline:
             if reason != self._gate_reason:
                 self._enter_gate(reason)
             if forced:
-                self._note("re-read queued — reading is paused")
+                # Name the window holding the gate: "reading is paused" alone
+                # leaves the user with no idea what to move out of the way.
+                self._note(f"re-read queued — {reason}")
             return None
         if self._gate_reason is not None:
             self._leave_gate()

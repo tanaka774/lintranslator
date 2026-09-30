@@ -158,10 +158,15 @@ def test_start_gets_the_picker_off_the_screen(picker):
     assert picker.minimised == [True], "the picker stayed on screen while watching"
 
 
-def test_the_picker_tells_the_guard_when_it_is_visible(picker):
-    """A mapped picker is a reason to pause; unmapped is not."""
-    picker._on_mapped(True)
-    assert GUARD.reason() and "picker" in GUARD.reason()
+def test_the_picker_tells_the_guard_when_it_is_visible(picker, monkeypatch):
+    """A picker that can be captured is a reason to pause."""
+    monkeypatch.setattr(picker, "get_visible", lambda: True)
+    monkeypatch.setattr(picker, "get_mapped", lambda: True)
+
+    picker._sync_guard()
+
+    assert GUARD.reason() == picker_mod.PICKER_ON_SCREEN
+    assert "Apply box" in GUARD.reason(), "the reason must name the way out"
 
 
 def test_the_card_names_the_language_pair_it_is_translating_into(picker):
@@ -179,9 +184,23 @@ def test_the_card_names_the_language_pair_it_is_translating_into(picker):
     assert "eng→Japanese" in panel.backend_label.get_text()
 
 
-def test_an_unmapped_picker_is_not_a_reason_to_pause(picker):
-    picker._on_mapped(False)
+def test_an_unmapped_picker_is_not_a_reason_to_pause(picker, monkeypatch):
+    monkeypatch.setattr(picker, "get_visible", lambda: True)
+    monkeypatch.setattr(picker, "get_mapped", lambda: True)
+    picker._sync_guard()
+    assert GUARD.reason() is not None
+
+    # What hiding the window looks like: the state says so even if the `unmap`
+    # signal never arrives, and the pause has to lift from the state.
+    monkeypatch.setattr(picker, "get_visible", lambda: False)
+    picker._sync_guard()
+
     assert GUARD.reason() is None
+
+
+def test_the_region_button_says_what_it_does(picker):
+    """The panel's way back to the picker is named for the action it takes."""
+    assert picker._panel.region_btn.get_label() == "Select region"
 
 
 def test_the_card_says_when_nothing_is_being_translated(picker):
@@ -278,6 +297,24 @@ def test_the_watch_button_says_what_it_will_do(picker):
     assert "LIVE" in picker.watch_status.get_text()
 
 
+def test_hiding_the_picker_lifts_the_pause_without_an_unmap(picker, monkeypatch):
+    """The fallback hide must clear the guard from the state, not the signal."""
+    state = {"visible": True, "mapped": True}
+    monkeypatch.setattr(picker, "get_visible", lambda: state["visible"])
+    monkeypatch.setattr(picker, "get_mapped", lambda: state["mapped"])
+    monkeypatch.setattr(
+        picker, "set_visible", lambda value: state.__setitem__("visible", value)
+    )
+    picker._watching = True
+    picker._sync_guard()
+    assert GUARD.reason() is not None
+
+    picker._ensure_off_screen()
+
+    assert state["visible"] is False, "the window was left on screen"
+    assert GUARD.reason() is None, "the pause outlived the window it was for"
+
+
 def test_the_picker_opens_without_the_card(picker):
     """Picking a region is one window's job."""
     assert picker.presented == [], "the card was on screen before Start"
@@ -310,10 +347,11 @@ def test_the_region_button_reopens_on_a_fresh_screenshot(picker, fake_grabber, m
 
 
 def test_recapturing_waits_while_the_picker_is_still_on_screen(picker, fake_grabber, monkeypatch):
-    """A mapped picker has to leave the screen first, or the shot would contain it."""
+    """A picker on screen has to leave it first, or the shot would contain it."""
     scheduled = []
     monkeypatch.setattr(picker_mod.GLib, "timeout_add", lambda ms, cb: scheduled.append(ms))
     monkeypatch.setattr(picker, "get_mapped", lambda: True)
+    monkeypatch.setattr(picker, "get_visible", lambda: True)
     monkeypatch.setattr(picker, "present", lambda: None)
 
     picker.restore()

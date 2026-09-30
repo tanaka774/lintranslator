@@ -258,7 +258,10 @@ Wayland or X11 desktop with PyGObject.
 - While the picker is on screen, reading pauses on purpose. Self-capture is
   prevented by *not capturing*, because Wayland gives no way to test whether one of
   our own windows overlaps the box, so a picker parked over the game costs
-  translation time until it is minimised.
+  translation time until it is out of the way. **Apply box** always gets it off
+  the screen; a compositor-side minimise only counts on X11, where the window
+  manager unmaps the window and GTK hears about it - on Wayland the window stays
+  "mapped" as far as GTK can tell, and the pause stays with it.
 - The GUI was verified by rendering it offscreen and driving the real drag handlers
   with synthetic gesture events - `probe/region_resize_check.py` resizes from all
   eight edges and corners - but no automated check moves a real mouse.

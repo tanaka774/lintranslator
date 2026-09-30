@@ -9,6 +9,33 @@ from there rather than keeping a second copy.
 
 ## [Unreleased]
 
+**A paused read says what is holding it, and the picker stops pausing once it is gone**
+
+- **A queued re-read names the window that is in the way.** Pressing Re-read
+  while reading was paused said only "re-read queued — reading is paused", and
+  that line replaced the "paused — the region picker is on screen" the panel had
+  just written, so the card named neither the cause nor the way out. The note
+  carries the reason now - "re-read queued — the region picker is on screen —
+  press Apply box to keep translating". The button still cannot override the
+  pause, which is the point of the pause, but it no longer hides why it is there.
+- **The picker's guard follows the window, not the signal that happened to
+  arrive.** The pause was set on `map` and cleared on `unmap`, so a guard entry
+  left behind by a missed event paused reading with nothing on screen to explain
+  it. It is re-derived from the window's own state - visible and mapped - on
+  `map`, `unmap` and `notify::visible`, and the fallback hide re-derives it too,
+  so hiding the picker lifts the pause whether or not GTK delivers the event.
+- **A compositor-side minimise is not detectable on Wayland, and the reason no
+  longer pretends it is.** Measured on KDE Wayland with GTK 4.22: after
+  `Gtk.Window.minimize()` the window still reports `mapped=True` and
+  `visible=True`, its geometry is unchanged, no `unmap` is emitted, and
+  `Gdk.ToplevelState` reports no `MINIMIZED` flag. "Minimise it to keep
+  translating" was therefore a dead end there; the panel's reason and the
+  picker's own status line now name **Apply box**, which hides the window on
+  every backend.
+- **The panel's Region button is "Select region"**, which says what pressing it
+  does rather than naming the thing it selects. On a narrow card the longer label
+  pushes one more action into the ⋮ menu.
+
 **Reading the screen no longer writes it to disk**
 
 - **The polling loop reads a live stream instead of asking for a screenshot per
